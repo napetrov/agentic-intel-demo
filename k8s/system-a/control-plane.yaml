@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: control-plane-auth
+  namespace: platform
+type: Opaque
+stringData:
+  CONTROL_PLANE_TOKEN: CHANGE_ME_CONTROL_PLANE_TOKEN
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      serviceAccountName: control-plane
+      containers:
+        - name: control-plane
+          image: demo-control-plane:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENTS_NAMESPACE
+              value: agents
+            - name: SESSION_TEMPLATE_CONFIGMAP
+              value: session-pod-template
+            - name: CONTROL_PLANE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: control-plane-auth
+                  key: CONTROL_PLANE_TOKEN
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: platform
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane-nodeport
+  namespace: platform
+spec:
+  selector:
+    app: control-plane
+  type: NodePort
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 31000

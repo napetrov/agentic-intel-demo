@@ -1,0 +1,40 @@
+# Pod profiles for session pods and execution jobs
+# Used by control plane to resolve resource specs per task type
+
+profiles:
+  small:
+    description: "Orchestration and light agent tasks"
+    cpu_request: "1"
+    cpu_limit: "2"
+    memory_request: "2Gi"
+    memory_limit: "4Gi"
+    use_for:
+      - orchestration
+      - terminal_agent_light
+      - market_research_orchestrator
+
+  medium:
+    description: "Agent with local tools, file ops, moderate compute"
+    cpu_request: "4"
+    cpu_limit: "8"
+    memory_request: "8Gi"
+    memory_limit: "16Gi"
+    use_for:
+      - terminal_agent
+      - research_agent
+
+  large:
+    description: "Build and test workloads, compile-heavy tasks"
+    cpu_request: "16"
+    cpu_limit: "32"
+    memory_request: "32Gi"
+    memory_limit: "64Gi"
+    use_for:
+      - build_test
+      - heavy_compile
+
+# Default profile for new sessions
+default_session_profile: small
+
+# Scale-up path: session pod starts on small, execution job launched on large
+scale_up_via: execution_job

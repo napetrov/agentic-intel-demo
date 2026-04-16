@@ -1,0 +1,875 @@
+--- k8s/system-b/ollama.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: system-b
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data
+  namespace: system-b
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: system-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.6.8
+          ports:
+            - containerPort: 11434
+              name: http
+          env:
+            - name: OLLAMA_HOST
+              value: 0.0.0.0:11434
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "6"
+              memory: "12Gi"
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: system-b
+spec:
+  selector:
+    app: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-nodeport
+  namespace: system-b
+spec:
+  selector:
+    app: ollama
+  type: NodePort
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+      nodePort: 30434
+
+
+--- k8s/system-b/minio.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: system-b
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-creds
+  namespace: system-b
+type: Opaque
+stringData:
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin123
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: system-b
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: system-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+              name: api
+            - containerPort: 9001
+              name: console
+          envFrom:
+            - secretRef:
+                name: minio-creds
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: system-b
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-nodeport
+  namespace: system-b
+spec:
+  selector:
+    app: minio
+  type: NodePort
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      nodePort: 30900
+    - name: console
+      port: 9001
+      targetPort: 9001
+      nodePort: 30901
+
+
+--- k8s/system-a/litellm.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-secrets
+  namespace: inference
+type: Opaque
+stringData:
+  OPENAI_API_KEY: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: inference
+data:
+  config.yaml: |
+    model_list:
+      - model_name: fast
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "http://3.226.74.149:30434"
+
+      - model_name: default
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "http://3.226.74.149:30434"
+          timeout: 10
+        fallbacks: [reasoning]
+
+      - model_name: reasoning
+        litellm_params:
+          model: openai/gpt-4o
+          api_key: os.environ/OPENAI_API_KEY
+
+      - model_name: code
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "http://3.226.74.149:30434"
+        fallbacks: [reasoning]
+
+    router_settings:
+      routing_strategy: simple-shuffle
+      num_retries: 2
+      retry_after: 5
+
+    litellm_settings:
+      drop_params: true
+      set_verbose: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-latest
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          ports:
+            - containerPort: 4000
+              name: http
+          envFrom:
+            - secretRef:
+                name: litellm-secrets
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: inference
+spec:
+  selector:
+    app: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-nodeport
+  namespace: inference
+spec:
+  selector:
+    app: litellm
+  type: NodePort
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+      nodePort: 31400
+
+
+--- k8s/system-a/control-plane.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      containers:
+        - name: control-plane
+          image: demo-control-plane:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane
+  namespace: platform
+spec:
+  selector:
+    app: control-plane
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane-nodeport
+  namespace: platform
+spec:
+  selector:
+    app: control-plane
+  type: NodePort
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 31000
+
+
+--- k8s/system-a/rbac.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane-pod-manager
+  namespace: agents
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane-pod-manager
+  namespace: agents
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: control-plane-pod-manager
+
+
+--- k8s/system-a/session-pod-template.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-pod-config-template
+  namespace: agents
+data:
+  openclaw-config.yaml: |
+    runtime:
+      mode: daemon
+    models:
+      default:
+        provider: openai-compatible
+        base_url: http://litellm.inference.svc.cluster.local:4000/v1
+        model: default
+    artifacts:
+      provider: s3
+      endpoint: http://3.226.74.149:30900
+      bucket: demo-artifacts
+    control_plane:
+      endpoint: http://control-plane.platform.svc.cluster.local:8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session-pod-template
+  namespace: agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: session-pod
+  template:
+    metadata:
+      labels:
+        app: session-pod
+    spec:
+      containers:
+        - name: session-pod
+          image: demo-session-pod:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPENCLAW_CONFIG_PATH
+              value: /config/openclaw-config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /config/openclaw-config.yaml
+              subPath: openclaw-config.yaml
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: config
+          configMap:
+            name: session-pod-config-template
+
+
+--- runtimes/session-pod/Dockerfile
+FROM node:22-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    python3 \
+    python3-pip \
+    procps \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenClaw CLI
+RUN npm install -g openclaw
+
+WORKDIR /app
+
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]
+
+
+--- runtimes/session-pod/entrypoint.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-/config/openclaw.json}"
+
+if [ ! -f "$CONFIG_PATH" ]; then
+  echo "[session-pod] missing OpenClaw config: $CONFIG_PATH" >&2
+  exit 1
+fi
+
+echo "[session-pod] starting OpenClaw with config: $CONFIG_PATH"
+exec openclaw start --config "$CONFIG_PATH"
+
+
+--- runtimes/session-pod/openclaw-config.yaml
+# Template config for session pod runtime
+# Render into mounted runtime config/secret before launch.
+
+runtime:
+  mode: daemon
+
+models:
+  default:
+    provider: openai-compatible
+    base_url: http://litellm.inference.svc.cluster.local:4000/v1
+    model: default
+  fast:
+    provider: openai-compatible
+    base_url: http://litellm.inference.svc.cluster.local:4000/v1
+    model: fast
+  reasoning:
+    provider: openai-compatible
+    base_url: http://litellm.inference.svc.cluster.local:4000/v1
+    model: reasoning
+
+artifacts:
+  provider: s3
+  endpoint: http://3.226.74.149:30900
+  bucket: demo-artifacts
+  region: us-east-1
+
+control_plane:
+  endpoint: http://control-plane.platform.svc.cluster.local:8080
+
+session:
+  cleanup_idle_minutes: 30
+  hard_ttl_minutes: 120
+
+chat:
+  provider: telegram
+  mode: polling
+  # token via secret/env at deploy time
+
+tools:
+  exec:
+    enabled: true
+  files:
+    enabled: true
+
+
+--- services/control-plane/app.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from uuid import uuid4
+
+app = FastAPI(title="demo-control-plane")
+
+_sessions: dict[str, dict] = {}
+
+
+class SessionCreate(BaseModel):
+    user_id: str
+    agent_profile: str = "default"
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/sessions")
+def create_session(payload: SessionCreate):
+    session_id = f"sess-{uuid4().hex[:12]}"
+    record = {
+        "session_id": session_id,
+        "user_id": payload.user_id,
+        "agent_profile": payload.agent_profile,
+        "status": "created",
+    }
+    _sessions[session_id] = record
+    return record
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str):
+    return _sessions.get(session_id, {"error": "not_found"})
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: str):
+    existed = session_id in _sessions
+    _sessions.pop(session_id, None)
+    return {"deleted": existed, "session_id": session_id}
+
+
+--- services/control-plane/Dockerfile
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY app.py /app/app.py
+
+EXPOSE 8080
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+
+
+--- services/control-plane/requirements.txt
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+
+
+--- scripts/setup-system-a.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+SYSTEM_B_IP="${SYSTEM_B_IP:-3.226.74.149}"
+KUBECONFIG_A="${KUBECONFIG_A:-$HOME/.kube/system-a.yaml}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LITELLM_MANIFEST="$REPO_ROOT/k8s/system-a/litellm.yaml"
+
+echo "[setup-system-a] kubeconfig: $KUBECONFIG_A"
+echo "[setup-system-a] using System B IP: $SYSTEM_B_IP"
+
+kubectl --kubeconfig "$KUBECONFIG_A" apply -f "$LITELLM_MANIFEST"
+kubectl --kubeconfig "$KUBECONFIG_A" apply -f "$REPO_ROOT/k8s/system-a/session-pod-template.yaml"
+
+kubectl --kubeconfig "$KUBECONFIG_A" rollout status deploy/litellm -n inference --timeout=600s
+kubectl --kubeconfig "$KUBECONFIG_A" rollout status deploy/session-pod-template -n agents --timeout=600s
+
+echo "[setup-system-a] services deployed"
+echo "[setup-system-a] verify from reachable host:"
+echo "  curl http://localhost:31400/health/liveliness"
+echo "[setup-system-a] note: session pod image must exist in target cluster as demo-session-pod:latest"
+
+
+--- scripts/setup-system-b.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+SYSTEM_B_IP="${SYSTEM_B_IP:-3.226.74.149}"
+KUBECONFIG_B="${KUBECONFIG_B:-$HOME/.kube/system-b.yaml}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+echo "[setup-system-b] target System B: $SYSTEM_B_IP"
+echo "[setup-system-b] kubeconfig: $KUBECONFIG_B"
+
+kubectl --kubeconfig "$KUBECONFIG_B" apply -f "$REPO_ROOT/k8s/system-b/ollama.yaml"
+kubectl --kubeconfig "$KUBECONFIG_B" apply -f "$REPO_ROOT/k8s/system-b/minio.yaml"
+
+kubectl --kubeconfig "$KUBECONFIG_B" rollout status deploy/ollama -n system-b --timeout=600s
+kubectl --kubeconfig "$KUBECONFIG_B" rollout status deploy/minio -n system-b --timeout=600s
+
+echo "[setup-system-b] services deployed"
+echo "[setup-system-b] verify from reachable host:"
+echo "  curl http://$SYSTEM_B_IP:30434/api/tags"
+echo "  curl http://$SYSTEM_B_IP:30900/minio/health/live"
+echo "[setup-system-b] next manual step:"
+echo "  kubectl --kubeconfig \"$KUBECONFIG_B\" exec -n system-b deploy/ollama -- ollama pull qwen2.5:7b-instruct"
+
+
+--- scripts/smoke-test-session.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+KUBECONFIG_A="${KUBECONFIG_A:-$HOME/.kube/system-a.yaml}"
+SYSTEM_B_IP="${SYSTEM_B_IP:-3.226.74.149}"
+
+echo "[smoke-test] checking LiteLLM"
+curl -fsS http://localhost:31400/health/liveliness >/dev/null
+
+echo "[smoke-test] checking System B ollama reachability"
+curl -fsS "http://$SYSTEM_B_IP:30434/api/tags" >/dev/null
+
+echo "[smoke-test] checking System B minio reachability"
+curl -fsS "http://$SYSTEM_B_IP:30900/minio/health/live" >/dev/null
+
+echo "[smoke-test] checking session pod presence"
+kubectl --kubeconfig "$KUBECONFIG_A" get pods -n agents -l app=session-pod
+
+echo "[smoke-test] done"
+
+
+--- docs/implementation-decisions.md
+# Implementation Decisions — Working Demo Setup
+
+This document closes the immediate blocking decisions needed to start implementation.
+
+## 1. Image distribution path
+
+### Decision
+- **Single-node validation on `onedal-build`**: build images locally and import into the target k3s instance with `ctr images import`
+- **Real two-host demo**: use **GHCR** as the default image registry
+
+### Why
+- `ctr images import` is the shortest path for local validation, no registry setup required
+- GHCR is reproducible, simple enough for a demo, and avoids ad-hoc per-host image copying once System A / B are separate machines
+
+### Required image set
+- `demo-control-plane`
+- `demo-session-pod`
+- `demo-offload-worker`
+
+## 2. Offload API contract
+
+### Decision
+`POST /jobs`
+```json
+{
+  "job_type": "analytics",
+  "session_id": "sess-123",
+  "input": {
+    "artifacts": ["s3://demo-artifacts/sess-123/inputs/input.json"]
+  },
+  "params": {
+    "task": "market_research"
+  },
+  "result_prefix": "s3://demo-artifacts/sess-123/outputs/job-456/"
+}
+```
+
+Response:
+```json
+{
+  "job_id": "job-456",
+  "status": "submitted"
+}
+```
+
+`GET /jobs/{job_id}`
+```json
+{
+  "job_id": "job-456",
+  "session_id": "sess-123",
+  "status": "submitted|running|succeeded|failed",
+  "result_manifest": "s3://demo-artifacts/sess-123/outputs/job-456/result.json",
+  "error": null
+}
+```
+
+## 3. Result artifact contract
+
+### Decision
+Every offload job and scale-up job must produce a `result.json` manifest.
+
+Schema:
+```json
+{
+  "status": "succeeded|failed",
+  "summary": "short human-readable result",
+  "artifacts": [
+    {
+      "kind": "report|table|log|file",
+      "uri": "s3://demo-artifacts/...",
+      "name": "report.md"
+    }
+  ],
+  "metrics": {
+    "duration_sec": 12.4
+  },
+  "error": null
+}
+```
+
+### Rule
+- control plane and session pod only rely on `result.json`
+- any extra files are referenced from the manifest
+
+## 4. Session lifecycle / cleanup policy
+
+### Decision
+- create session pod on first user message
+- reuse the same pod for that user/chat while active
+- mark session stale after **30 minutes** without messages
+- hard-delete stale session pod after **2 hours** idle for MVP
+- sibling execution jobs use `ttlSecondsAfterFinished`
+
+### Why
+- simple enough for demo
+- avoids pod leaks
+- keeps user experience stable during short interactive sessions
+
+## 5. Implementation order
+1. single-node validation on `onedal-build`
+2. ollama + LiteLLM path
+3. MinIO path
+4. control plane skeleton
+5. session pod image
+6. Task 1 end-to-end

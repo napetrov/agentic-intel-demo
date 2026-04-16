@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-secrets
+  namespace: inference
+type: Opaque
+stringData:
+  OPENAI_API_KEY: ""
+  LITELLM_MASTER_KEY: "CHANGE_ME_BEFORE_DEPLOY"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: inference
+data:
+  config.yaml: |
+    model_list:
+      - model_name: fast
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
+
+      - model_name: default
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
+          timeout: 60
+        fallbacks: [reasoning]
+
+      - model_name: reasoning
+        litellm_params:
+          model: openai/gpt-4o
+          api_key: os.environ/OPENAI_API_KEY
+
+      - model_name: code
+        litellm_params:
+          model: ollama/qwen2.5:7b-instruct
+          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
+        fallbacks: [reasoning]
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+
+    router_settings:
+      routing_strategy: simple-shuffle
+      num_retries: 2
+      retry_after: 5
+
+    litellm_settings:
+      drop_params: true
+      set_verbose: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:v1.72.2-stable
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          ports:
+            - containerPort: 4000
+              name: http
+          envFrom:
+            - secretRef:
+                name: litellm-secrets
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: inference
+spec:
+  selector:
+    app: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-nodeport
+  namespace: inference
+spec:
+  selector:
+    app: litellm
+  type: NodePort
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+      nodePort: 31400

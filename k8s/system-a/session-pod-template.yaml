@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: session-pod-artifact-creds
+  namespace: agents
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telegram-bot
+  namespace: agents
+type: Opaque
+stringData:
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-pod-template
+  namespace: agents
+data:
+  pod.yaml: |
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      labels:
+        app: session-pod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: session-pod
+          image: demo-session-pod:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OPENCLAW_CONFIG_PATH
+              value: /config/openclaw-config.yaml
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: session-pod-artifact-creds
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: session-pod-artifact-creds
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-bot
+                  key: TELEGRAM_BOT_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /config/openclaw-config.yaml
+              subPath: openclaw-config.yaml
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: session-pod-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-pod-config
+  namespace: agents
+data:
+  openclaw-config.yaml: |
+    runtime:
+      mode: daemon
+    models:
+      default:
+        provider: openai-compatible
+        base_url: http://litellm.inference.svc.cluster.local:4000/v1
+        model: default
+      fast:
+        provider: openai-compatible
+        base_url: http://litellm.inference.svc.cluster.local:4000/v1
+        model: fast
+      reasoning:
+        provider: openai-compatible
+        base_url: http://litellm.inference.svc.cluster.local:4000/v1
+        model: reasoning
+    artifacts:
+      provider: s3
+      endpoint: ${SYSTEM_B_MINIO_ENDPOINT}
+      bucket: demo-artifacts
+      region: us-east-1
+    control_plane:
+      endpoint: http://control-plane.platform.svc.cluster.local:8080
+      token: ${CONTROL_PLANE_TOKEN}
+    session:
+      cleanup_idle_minutes: 30
+      hard_ttl_minutes: 120
+    chat:
+      provider: telegram
+      mode: polling
+      token: ${TELEGRAM_BOT_TOKEN}
+    tools:
+      exec:
+        enabled: true
+      files:
+        enabled: true

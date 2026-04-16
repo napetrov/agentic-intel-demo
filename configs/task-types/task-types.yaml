@@ -1,0 +1,29 @@
+# Task type definitions
+# Controls execution routing, model alias, offload eligibility
+
+task_types:
+  terminal_agent:
+    description: "Terminal and code execution tasks (Task 1)"
+    execution: local          # runs inside session pod on System A
+    model_alias: default
+    pod_profile: medium
+    offload_eligible: false
+    artifact_output: true
+
+  market_research:
+    description: "Market research report with GNR offload (Task 2)"
+    execution: orchestrated   # orchestration on System A, compute offloaded to System B
+    model_alias: reasoning
+    pod_profile: small
+    offload_eligible: true
+    offload_task_type: analytics
+    artifact_output: true
+
+  build_test:
+    description: "Build and test with scale-up on System A (Task 3)"
+    execution: scale_up       # session pod requests larger execution job
+    model_alias: code
+    pod_profile: small        # session pod is small, execution job uses large
+    execution_profile: large
+    offload_eligible: false
+    artifact_output: true

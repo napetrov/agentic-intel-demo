@@ -1,0 +1,21 @@
+# FILL IN before deploying — copy from this template
+
+cluster_name: system-a
+
+# Kubernetes API access (leave empty if using in-cluster ServiceAccount)
+kubeconfig: ""   # path to kubeconfig, empty = in-cluster
+
+namespaces:
+  agents: agents
+  inference: inference
+  platform: platform
+
+# LiteLLM endpoint (in-cluster)
+litellm_endpoint: "http://litellm.inference.svc.cluster.local:4000"
+
+# MinIO endpoint as seen from System A pods
+minio_endpoint: "http://FILL_IN:9000"   # NodePort or LB of System B minio
+artifact_bucket: "demo-artifacts"
+
+# Control plane external endpoint (for scripts and smoke tests)
+control_plane_external: "http://FILL_IN:8080"

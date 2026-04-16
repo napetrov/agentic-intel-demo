@@ -1,0 +1,132 @@
+# Repository Layout
+
+```
+agentic-intel-demo/
+│
+├── README.md
+│
+├── docs/
+│   ├── architecture.md          # full architecture breakdown
+│   ├── mvp-plan.md              # phased implementation plan
+│   ├── reusable-components.md   # what to reuse, what to build
+│   ├── repo-layout.md           # this file
+│   ├── open-questions.md        # decisions and unknowns
+│   ├── reproducibility.md       # how to redeploy from scratch
+│   ├── port-map.md              # fixed NodePort values + k3s install params
+│   └── single-node-validation.md # how to validate on onedal-build first
+│
+├── configs/
+│   ├── versions.yaml            # all component version pins
+│   ├── env/
+│   │   ├── system-a.yaml.template
+│   │   └── system-b.yaml.template
+│   ├── model-routing/
+│   │   └── litellm-config.yaml  # LiteLLM routing rules, aliases, fallbacks
+│   ├── pod-profiles/
+│   │   └── profiles.yaml        # small / medium / large pod specs
+│   ├── task-types/
+│   │   └── task-types.yaml      # task type definitions, execution policies
+│   └── offload-policies/
+│       └── offload-policies.yaml
+│
+├── k8s/
+│   ├── system-a/
+│   │   ├── namespaces.yaml
+│   │   ├── rbac.yaml            # ServiceAccount + RBAC for control plane
+│   │   ├── control-plane.yaml   # Deployment + Service
+│   │   ├── litellm.yaml         # Deployment + Service
+│   │   ├── chat-gateway.yaml    # optional mapper service for external ingress
+│   │   └── session-pod-template.yaml  # Pod template used by control plane
+│   ├── system-b/
+│   │   ├── namespaces.yaml
+│   │   ├── ollama.yaml          # Deployment + Service (NodePort 30434)
+│   │   ├── minio.yaml           # Deployment + Service + hostPath/PVC
+│   │   ├── offload-api.yaml     # Deployment + Service (NodePort 30800)
+│   │   └── worker-job-template.yaml
+│   └── shared/
+│       ├── minio-secret.yaml.template
+│       └── system-b-kubeconfig-secret.yaml.template
+│
+├── services/
+│   ├── control-plane/
+│   │   ├── main.py              # FastAPI app
+│   │   ├── session_manager.py   # k8s pod create/delete/status
+│   │   ├── job_launcher.py      # execution job and offload dispatch
+│   │   ├── artifact_client.py   # artifact relay via MinIO
+│   │   ├── policy.py            # pod profile and routing resolution
+│   │   ├── db.py                # SQLite session/job registry
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   ├── offload-api/
+│   │   ├── main.py              # FastAPI app
+│   │   ├── job_runner.py        # k8s Job launch on System B
+│   │   ├── artifact_client.py   # MinIO write helpers
+│   │   ├── requirements.txt
+│   │   └── Dockerfile
+│   └── chat-gateway/
+│       ├── main.py              # optional chat_user -> session_id mapper
+│       ├── requirements.txt
+│       └── Dockerfile
+│
+├── runtimes/
+│   ├── session-pod/
+│   │   ├── Dockerfile           # Node.js + openclaw + tools
+│   │   └── openclaw-config.yaml # agent config template
+│   └── worker-images/
+│       ├── analytics-worker/
+│       │   ├── Dockerfile       # python:3.12-slim + pandas + sklearn + boto3
+│       │   └── run.py           # worker entry point
+│       └── build-test-worker/
+│           ├── Dockerfile       # build tools + compilers
+│           └── run.sh
+│
+├── demos/
+│   ├── task1-terminal-agent/
+│   │   ├── README.md
+│   │   └── task.yaml            # task definition for TerminalBench format
+│   ├── task2-market-research/
+│   │   ├── README.md
+│   │   ├── task.yaml
+│   │   └── sample-data/
+│   └── task3-scale-up-build-test/
+│       ├── README.md
+│       └── task.yaml
+│
+└── scripts/
+    ├── deploy.sh                # full deploy sequence
+    ├── reset.sh                 # clean reset without touching infra
+    ├── pull-models.sh           # pull local models into ollama
+    ├── check-minio.sh
+    ├── check-ollama.sh
+    ├── check-litellm.sh
+    ├── check-control-plane.sh
+    ├── check-offload-api.sh
+    └── smoke-test-session.sh
+```
+
+---
+
+## Namespace layout
+
+### System A
+| Namespace | Contents |
+|-----------|----------|
+| `agents` | session pods, session pod ServiceAccounts |
+| `inference` | LiteLLM proxy |
+| `platform` | control plane service |
+
+### System B
+| Namespace | Contents |
+|-----------|----------|
+| `system-b` | ollama, minio, offload API, worker jobs |
+
+---
+
+## Notes on layout decisions
+
+- `configs/` — all tunable policies live here, not in code
+- `k8s/` — separated by system for clear deployment targeting
+- `services/` — only custom code lives here; everything else is deployed from upstream images
+- `runtimes/` — container images only; agent logic is in OpenClaw config, not Dockerfile
+- `demos/` — one folder per demo task; self-contained and runnable independently
+- `scripts/` — all operational scripts; no undocumented manual steps

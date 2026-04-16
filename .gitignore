@@ -1,0 +1,10 @@
+configs/env/system-a.yaml
+configs/env/system-b.yaml
+*.env
+.env
+kubeconfig*
+**/kubeconfig*
+**/secret*
+**/secrets*
+__pycache__/
+*.pyc

@@ -1,0 +1,24 @@
+# FILL IN before deploying — copy from this template
+
+cluster_name: system-b
+
+kubeconfig: ""   # path to kubeconfig for System B, empty = in-cluster
+
+namespaces:
+  services: system-b
+
+# ollama endpoint (in-cluster on System B)
+ollama_endpoint: "http://ollama.system-b.svc.cluster.local:11434"
+
+# MinIO endpoints
+minio_endpoint_internal: "http://minio.system-b.svc.cluster.local:9000"
+minio_nodeport: "30900"   # port exposed on System B node, reachable from System A
+
+# Offload API endpoint
+offload_api_endpoint: "http://offload-api.system-b.svc.cluster.local:8080"
+
+# External endpoint for System B offload API (for control plane on System A)
+offload_api_external: "http://FILL_IN_SYSTEM_B_IP:30800"
+
+# System B node address reachable from System A
+system_b_node_ip: "FILL_IN_SYSTEM_B_IP"

@@ -1,0 +1,38 @@
+# LiteLLM routing configuration
+# Deploy as ConfigMap, mount at /app/config.yaml
+
+model_list:
+  # Local SLM on System B via ollama
+  - model_name: fast
+    litellm_params:
+      model: ollama/qwen2.5:7b-instruct
+      api_base: "http://SYSTEM_B_IP:30434"
+
+  - model_name: default
+    litellm_params:
+      model: ollama/qwen2.5:7b-instruct
+      api_base: "http://SYSTEM_B_IP:30434"
+      timeout: 10
+    # fallback to cloud if local times out
+    fallbacks: [reasoning]
+
+  # Cloud model for heavy reasoning
+  - model_name: reasoning
+    litellm_params:
+      model: openai/gpt-4o          # or anthropic/claude-sonnet-4-5
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: code
+    litellm_params:
+      model: ollama/qwen2.5:7b-instruct
+      api_base: "http://SYSTEM_B_IP:30434"
+    fallbacks: [reasoning]
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  retry_after: 5
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
