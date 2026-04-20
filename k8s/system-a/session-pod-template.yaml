@@ -35,15 +35,22 @@ data:
       labels:
         app: session-pod
     spec:
-      securityContext:
-        runAsNonRoot: true
+      restartPolicy: OnFailure
       containers:
-        - name: session-pod
-          image: demo-session-pod:dev
-          imagePullPolicy: IfNotPresent
+        - name: agent
+          image: ${SESSION_IMAGE}
+          imagePullPolicy: Never
           env:
             - name: OPENCLAW_CONFIG_PATH
-              value: /config/openclaw-config.yaml
+              value: /config/openclaw.json
+            - name: AWS_REGION
+              value: ${AWS_REGION}
+            - name: CLAUDE_CODE_USE_BEDROCK
+              value: "1"
+            - name: AWS_BEARER_TOKEN_BEDROCK
+              value: ${AWS_BEARER_TOKEN_BEDROCK}
+            - name: ANTHROPIC_DEFAULT_SONNET_MODEL
+              value: ${ANTHROPIC_DEFAULT_SONNET_MODEL}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -54,28 +61,16 @@ data:
                 secretKeyRef:
                   name: session-pod-artifact-creds
                   key: AWS_SECRET_ACCESS_KEY
-            - name: TELEGRAM_BOT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: telegram-bot
-                  key: TELEGRAM_BOT_TOKEN
           volumeMounts:
             - name: config
-              mountPath: /config/openclaw-config.yaml
-              subPath: openclaw-config.yaml
+              mountPath: /config
           resources:
             requests:
-              cpu: "1"
-              memory: "1Gi"
+              cpu: 500m
+              memory: 512Mi
             limits:
               cpu: "2"
-              memory: "2Gi"
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+              memory: 1Gi
       volumes:
         - name: config
           configMap:
@@ -87,39 +82,65 @@ metadata:
   name: session-pod-config
   namespace: agents
 data:
-  openclaw-config.yaml: |
-    runtime:
-      mode: daemon
-    models:
-      default:
-        provider: openai-compatible
-        base_url: http://litellm.inference.svc.cluster.local:4000/v1
-        model: default
-      fast:
-        provider: openai-compatible
-        base_url: http://litellm.inference.svc.cluster.local:4000/v1
-        model: fast
-      reasoning:
-        provider: openai-compatible
-        base_url: http://litellm.inference.svc.cluster.local:4000/v1
-        model: reasoning
-    artifacts:
-      provider: s3
-      endpoint: ${SYSTEM_B_MINIO_ENDPOINT}
-      bucket: demo-artifacts
-      region: us-east-1
-    control_plane:
-      endpoint: http://control-plane.platform.svc.cluster.local:8080
-      token: ${CONTROL_PLANE_TOKEN}
-    session:
-      cleanup_idle_minutes: 30
-      hard_ttl_minutes: 120
-    chat:
-      provider: telegram
-      mode: polling
-      token: ${TELEGRAM_BOT_TOKEN}
-    tools:
-      exec:
-        enabled: true
-      files:
-        enabled: true
+  openclaw.json: |-
+    {
+      "gateway": {
+        "mode": "local",
+        "port": 18789,
+        "bind": "loopback",
+        "auth": { "mode": "none" }
+      },
+      "models": {
+        "providers": {
+          "litellm": {
+            "baseUrl": "http://litellm.inference.svc.cluster.local:4000/v1",
+            "apiKey": "none",
+            "auth": "api-key",
+            "api": "openai-completions",
+            "models": [
+              { "id": "system-b-vllm-qwen3-4b-fast", "name": "System B vLLM Qwen3-4B Fast", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
+              { "id": "system-b-vllm-qwen3-4b-default", "name": "System B vLLM Qwen3-4B Default", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 }
+            ]
+          },
+          "amazon-bedrock": {
+            "baseUrl": "https://bedrock-runtime.${AWS_REGION}.amazonaws.com",
+            "auth": "aws-sdk",
+            "api": "bedrock-converse-stream",
+            "models": [
+              { "id": "${BEDROCK_MODEL_ID}", "name": "Claude Sonnet", "contextWindow": 200000, "maxTokens": 8192 }
+            ]
+          }
+        }
+      },
+      "agents": {
+        "defaults": {
+          "model": { "primary": "amazon-bedrock/${BEDROCK_MODEL_ID}", "fallbacks": ["litellm/system-b-vllm-qwen3-4b-fast"] },
+          "workspace": "/workspace"
+        }
+      },
+      "channels": {
+        "telegram": {
+          "enabled": true,
+          "accounts": {
+            "session-agent": {
+              "enabled": true,
+              "botToken": "${TELEGRAM_BOT_TOKEN}",
+              "dmPolicy": "open",
+              "groupPolicy": "open",
+              "allowFrom": ["${TELEGRAM_ALLOWED_FROM}"],
+              "groupAllowFrom": ["${TELEGRAM_ALLOWED_FROM}"]
+            }
+          }
+        }
+      },
+      "plugins": {
+        "allow": ["telegram", "amazon-bedrock", "memory-core", "acpx"],
+        "entries": {
+          "telegram": { "enabled": true },
+          "amazon-bedrock": { "enabled": true }
+        }
+      },
+      "tools": {
+        "exec": { "security": "full", "ask": "off" }
+      }
+    }

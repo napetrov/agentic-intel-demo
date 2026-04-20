@@ -220,6 +220,10 @@ Items are grouped by layer. Each item has a status and a notes field.
 - **Status**: ⬜ DEFERRED
 - **Notes**: demo is manually deployed; automate after first working slice
 
+### Q9.4 What is still missing for OpenClaw operator deployment to be reproducible?
+- **Status**: 🟡 DECISION NEEDED
+- **Notes**: the main known gap is no fully documented operator manifest source + sample `OpenClawInstance` + secret contract + image distribution contract in this repo. A runbook now exists, but the exact operator bundle/source and instance spec still need to be committed or referenced explicitly.
+
 ---
 
 ### Q1.6 What fixed NodePort values are assigned to cross-system services?
@@ -243,9 +247,9 @@ Items are grouped by layer. Each item has a status and a notes field.
 - **Answer**: no; use IP:NodePort for all cross-system references
 
 ### Q1.9 Where are container images built and stored?
-- **Status**: 🔴 OPEN
-- **Why**: required for session pod, control plane, and worker images
-- **Notes**: need decision on GHCR/Docker Hub/local registry/ctr import
+- **Status**: 🟢 RESOLVED
+- **Answer**: single-node validation may use local build + `ctr images import`; reproducible multi-host path should use a registry image reference
+- **Notes**: current repo supports local import for System A and should document the same decision for operator-managed images explicitly
 
 ### Q1.10 How is the onedal-build single-node validation environment set up?
 - **Status**: 🟢 RESOLVED

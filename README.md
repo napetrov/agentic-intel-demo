@@ -1,12 +1,12 @@
 # Agentic Execution on Intel CPUs Demo
 
 Demo-first repository area for a reproducible two-system prototype:
-- System A: Intel CPU Kubernetes environment for agent session pods and local engineering execution
+- System A: Intel CPU Kubernetes environment for OpenClaw instances managed by `openclaw-operator`
 - System B: GNR Intel CPU Kubernetes environment for local SLM, offload analytics, and shared services
 
 ## Goals
 - Keep the user interacting with an agent, not with Kubernetes or physical systems
-- Run one agent session per pod
+- Manage OpenClaw instance lifecycle only through `openclaw-operator`
 - Support 3 demo scenarios:
   1. Terminal agent
   2. Market research report with GNR offload
@@ -14,6 +14,8 @@ Demo-first repository area for a reproducible two-system prototype:
 - Prefer ready-made components over custom platform work
 
 ## Documents
+- `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker
+- `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
 - `docs/implementation-guide.md` — current working implementation path, fixes, and reproducible setup guide
 - `docs/architecture.md` — architecture breakdown and execution model
 - `docs/mvp-plan.md` — minimal MVP path and implementation order
@@ -23,20 +25,23 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
 
 ## Current validated direction
-The originally sketched System B path used `ollama`, but the currently validated working setup uses **vLLM** with:
-- model: `Qwen/Qwen3-4B-Instruct-2507`
-- context length: `32768`
-- CPU profile: `16 CPU / 32Gi`
+The current validated direction is:
+- `openclaw-operator` is the primary and only supported instance-management path
+- System B model serving uses **vLLM** with:
+  - model: `Qwen/Qwen3-4B-Instruct-2507`
+  - context length: `32768`
+  - CPU profile: `16 CPU / 32Gi`
 
-Use `docs/implementation-guide.md` as the source of truth for the current bring-up flow.
+Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
 ## Scripts
-- `scripts/setup-system-a.sh` — apply System A manifests
+- `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
+- `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
+- `scripts/setup-system-a.sh` — current System A manifest setup materials
 - `scripts/setup-system-b.sh` — original System B ollama-based path
 - `scripts/setup-system-b-vllm.sh` — current validated System B vLLM path
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
 - `scripts/cleanup-system-a.sh` — reduce disk pressure on System A safely
-- `scripts/smoke-test-session.sh` — end-to-end smoke test entry point
 
 ## Guiding principles
 - Demo first, not platform first
@@ -46,9 +51,9 @@ Use `docs/implementation-guide.md` as the source of truth for the current bring-
 - Reuse OpenClaw, Kubernetes, LightLLM, Terminal Bench, and an OpenAI-compatible local SLM where possible
 
 ## Recommended first slice
-1. Session pod on System A
-2. Local tools execution
-3. Model access through LightLLM
-4. Artifact/log return
-5. Then add scale-up path
-6. Then add System B offload path
+1. Install `openclaw-operator`
+2. Apply CRD safely and verify controller health
+3. Create one `OpenClawInstance`
+4. Verify model access through LiteLLM/vLLM
+5. Verify instance-managed gateway/service health
+6. Then add scale-up and System B offload behavior

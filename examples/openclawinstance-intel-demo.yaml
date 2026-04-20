@@ -1,0 +1,96 @@
+apiVersion: openclaw.rocks/v1alpha1
+kind: OpenClawInstance
+metadata:
+  name: intel-demo-operator
+spec:
+  gateway:
+    replicas: 1
+  image:
+    repository: ghcr.io/openclaw-rocks/openclaw
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    - name: AWS_REGION
+      value: us-east-2
+    - name: CLAUDE_CODE_USE_BEDROCK
+      value: "1"
+    - name: ANTHROPIC_DEFAULT_SONNET_MODEL
+      value: arn:aws:bedrock:us-east-2:372075448100:application-inference-profile/7dupg9shizme
+    - name: BEDROCK_MODEL_ID
+      value: us.anthropic.claude-sonnet-4-6
+    - name: TELEGRAM_ALLOWED_FROM
+      value: "293894843"
+  envFromSecrets:
+    - name: intel-demo-operator-secrets
+  services:
+    gateway:
+      type: ClusterIP
+    telemetry:
+      type: ClusterIP
+  storage:
+    workspace:
+      size: 10Gi
+  config:
+    openclaw.json: |
+      {
+        "gateway": {
+          "mode": "local",
+          "port": 18789,
+          "bind": "0.0.0.0",
+          "auth": { "mode": "none" }
+        },
+        "models": {
+          "providers": {
+            "litellm": {
+              "baseUrl": "http://litellm.inference.svc.cluster.local:4000/v1",
+              "apiKey": "none",
+              "auth": "api-key",
+              "api": "openai-completions",
+              "models": [
+                { "id": "fast", "name": "Fast (Qwen3-4B)", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
+                { "id": "default", "name": "Default (Qwen3-4B)", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
+                { "id": "deepseek-sambanova", "name": "DeepSeek V3.1 via SambaNova", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 }
+              ]
+            },
+            "amazon-bedrock": {
+              "baseUrl": "https://bedrock-runtime.us-east-2.amazonaws.com",
+              "auth": "aws-sdk",
+              "api": "bedrock-converse-stream",
+              "models": [
+                { "id": "us.anthropic.claude-sonnet-4-6", "name": "Claude Sonnet", "contextWindow": 200000, "maxTokens": 8192 }
+              ]
+            }
+          }
+        },
+        "agents": {
+          "defaults": {
+            "model": { "primary": "amazon-bedrock/us.anthropic.claude-sonnet-4-6", "fallbacks": ["litellm/fast"] },
+            "workspace": "/workspace"
+          }
+        },
+        "channels": {
+          "telegram": {
+            "enabled": true,
+            "accounts": {
+              "session-agent": {
+                "enabled": true,
+                "botToken": "${TELEGRAM_BOT_TOKEN}",
+                "dmPolicy": "open",
+                "groupPolicy": "open",
+                "allowFrom": ["293894843"],
+                "groupAllowFrom": ["293894843"]
+              }
+            }
+          }
+        },
+        "plugins": {
+          "allow": ["telegram", "amazon-bedrock", "memory-core", "acpx"],
+          "entries": {
+            "telegram": { "enabled": true },
+            "amazon-bedrock": { "enabled": true }
+          }
+        },
+        "tools": {
+          "exec": { "security": "full", "ask": "off" }
+        }
+      }

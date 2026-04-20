@@ -10,7 +10,7 @@ metadata:
   namespace: platform
 type: Opaque
 stringData:
-  CONTROL_PLANE_TOKEN: CHANGE_ME_CONTROL_PLANE_TOKEN
+  CONTROL_PLANE_TOKEN: ${CONTROL_PLANE_TOKEN}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -30,13 +30,25 @@ spec:
       serviceAccountName: control-plane
       containers:
         - name: control-plane
-          image: demo-control-plane:dev
-          imagePullPolicy: IfNotPresent
+          image: ${CONTROL_IMAGE}
+          imagePullPolicy: Never
           env:
             - name: AGENTS_NAMESPACE
               value: agents
             - name: SESSION_TEMPLATE_CONFIGMAP
               value: session-pod-template
+            - name: SYSTEM_B_KUBECONFIG
+              value: /etc/system-b/kubeconfig
+            - name: MINIO_ENDPOINT
+              value: ${SYSTEM_B_MINIO_ENDPOINT}
+            - name: MINIO_ACCESS_KEY
+              value: ${MINIO_ACCESS_KEY}
+            - name: MINIO_SECRET_KEY
+              value: ${MINIO_SECRET_KEY}
+            - name: MINIO_BUCKET
+              value: demo-artifacts
+            - name: BEARER_TOKEN
+              value: ${CONTROL_PLANE_TOKEN}
             - name: CONTROL_PLANE_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -51,19 +63,21 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 20
           resources:
             requests:
-              cpu: "250m"
+              cpu: "200m"
               memory: "256Mi"
             limits:
               cpu: "1"
-              memory: "1Gi"
+              memory: "512Mi"
+          volumeMounts:
+            - mountPath: /etc/system-b
+              name: system-b-kubeconfig
+              readOnly: true
+      volumes:
+        - name: system-b-kubeconfig
+          secret:
+            secretName: system-b-kubeconfig
 ---
 apiVersion: v1
 kind: Service

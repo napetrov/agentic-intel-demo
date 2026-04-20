@@ -4,16 +4,6 @@ metadata:
   name: inference
 ---
 apiVersion: v1
-kind: Secret
-metadata:
-  name: litellm-secrets
-  namespace: inference
-type: Opaque
-stringData:
-  OPENAI_API_KEY: ""
-  LITELLM_MASTER_KEY: "CHANGE_ME_BEFORE_DEPLOY"
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: litellm-config
@@ -21,40 +11,35 @@ metadata:
 data:
   config.yaml: |
     model_list:
-      - model_name: fast
+      - model_name: system-b-vllm-qwen3-4b-fast
         litellm_params:
-          model: ollama/qwen2.5:7b-instruct
-          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
+          model: openai/Qwen/Qwen3-4B-Instruct-2507
+          api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
+          api_key: none
 
-      - model_name: default
+      - model_name: system-b-vllm-qwen3-4b-default
         litellm_params:
-          model: ollama/qwen2.5:7b-instruct
-          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
+          model: openai/Qwen/Qwen3-4B-Instruct-2507
+          api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
+          api_key: none
+          timeout: 30
+
+      - model_name: aws-bedrock-claude-sonnet
+        litellm_params:
+          model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+          api_key: os.environ/AWS_BEARER_TOKEN_BEDROCK
+          aws_region_name: os.environ/AWS_REGION
           timeout: 60
-        fallbacks: [reasoning]
 
-      - model_name: reasoning
+      - model_name: sambanova-deepseek-v3-1
         litellm_params:
-          model: openai/gpt-4o
-          api_key: os.environ/OPENAI_API_KEY
-
-      - model_name: code
-        litellm_params:
-          model: ollama/qwen2.5:7b-instruct
-          api_base: "${SYSTEM_B_OLLAMA_ENDPOINT}"
-        fallbacks: [reasoning]
-
-    general_settings:
-      master_key: os.environ/LITELLM_MASTER_KEY
-
-    router_settings:
-      routing_strategy: simple-shuffle
-      num_retries: 2
-      retry_after: 5
+          model: sambanova/DeepSeek-V3.1
+          api_key: os.environ/SAMBANOVA_API_KEY
+          timeout: 60
 
     litellm_settings:
       drop_params: true
-      set_verbose: false
+      set_verbose: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -73,37 +58,37 @@ spec:
     spec:
       containers:
         - name: litellm
-          image: ghcr.io/berriai/litellm:v1.72.2-stable
+          image: ghcr.io/berriai/litellm:main-v1.63.11-stable
           args: ["--config", "/app/config.yaml", "--port", "4000"]
           ports:
             - containerPort: 4000
               name: http
-          envFrom:
-            - secretRef:
-                name: litellm-secrets
+          env:
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            - name: AWS_BEARER_TOKEN_BEDROCK
+              value: "${AWS_BEARER_TOKEN_BEDROCK}"
+            - name: SAMBANOVA_API_KEY
+              value: "${SAMBANOVA_API_KEY}"
+            - name: CLAUDE_CODE_USE_BEDROCK
+              value: "1"
           volumeMounts:
             - name: litellm-config
               mountPath: /app/config.yaml
               subPath: config.yaml
           readinessProbe:
             httpGet:
-              path: /health/liveliness
+              path: /health/readiness
               port: 4000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health/liveliness
-              port: 4000
-            initialDelaySeconds: 30
-            periodSeconds: 20
           resources:
             requests:
               cpu: "500m"
               memory: "512Mi"
             limits:
               cpu: "2"
-              memory: "2Gi"
+              memory: "1Gi"
       volumes:
         - name: litellm-config
           configMap:

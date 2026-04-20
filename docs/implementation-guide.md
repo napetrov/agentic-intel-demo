@@ -439,9 +439,24 @@ A setup is considered good when all items below pass:
 
 ---
 
+## Operator path status
+The operator-managed deployment path is the intended and only supported instance lifecycle path.
+
+What was observed:
+- the operator controller deployment came up
+- the CRD `openclawinstances.openclaw.rocks` hit a real Kubernetes annotation-size blocker when installed via raw `kubectl apply -k`
+- after working around the CRD install, an `OpenClawInstance` creation path started
+- an instance named `intel-demo-operator` reached `Provisioning`
+
+Important conclusion:
+- the operator path is the source of truth
+- the remaining gap is reproducibility of install/recovery and committing the missing operator-owned artifacts into the repo
+
+Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific install, recovery, and missing work.
+
 ## Next documentation step
-After this document, create:
+After this document, create or maintain:
 1. `scripts/setup-system-b-vllm.sh`
 2. `scripts/check-system-b-vllm.sh`
 3. `scripts/cleanup-system-a.sh`
-4. a short operator runbook for reset/recovery
+4. `docs/operator-runbook.md`

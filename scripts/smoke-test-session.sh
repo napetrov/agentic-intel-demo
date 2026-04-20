@@ -4,6 +4,7 @@ set -euo pipefail
 KUBECONFIG_A="${KUBECONFIG_A:-$HOME/.kube/system-a.yaml}"
 SYSTEM_A_IP="${SYSTEM_A_IP:-127.0.0.1}"
 SYSTEM_B_IP="${SYSTEM_B_IP:-}"
+SYSTEM_B_VLLM_ENDPOINT="${SYSTEM_B_VLLM_ENDPOINT:-http://$SYSTEM_B_IP:30434/v1}"
 CONTROL_PLANE_TOKEN="${CONTROL_PLANE_TOKEN:-}"
 TEST_USER_ID="${TEST_USER_ID:-smoke-user}"
 TEST_AGENT_PROFILE="${TEST_AGENT_PROFILE:-default}"
@@ -26,8 +27,8 @@ curl -fsS "http://$SYSTEM_A_IP:31400/health/liveliness" >/dev/null
 echo "[smoke-test] checking control-plane health"
 curl -fsS "http://$SYSTEM_A_IP:31000/health" >/dev/null
 
-echo "[smoke-test] checking System B ollama reachability"
-curl -fsS "http://$SYSTEM_B_IP:30434/api/tags" | grep -q 'qwen2.5:7b-instruct'
+echo "[smoke-test] checking System B vLLM reachability"
+curl -fsS "$SYSTEM_B_VLLM_ENDPOINT/models" | grep -q 'Qwen/Qwen3-4B-Instruct-2507'
 
 echo "[smoke-test] checking System B minio reachability"
 curl -fsS "http://$SYSTEM_B_IP:30900/minio/health/live" >/dev/null

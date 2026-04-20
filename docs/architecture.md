@@ -3,37 +3,26 @@
 ## Overview
 
 Two-system deployment. Users interact with agents, not infrastructure.
-Each agent runs in an isolated Kubernetes pod.
+OpenClaw runtime instances are created and managed by `openclaw-operator`.
 
 ```
 User (Telegram / Teams / Web)
   │
   ▼
-Chat Gateway  (maps chat_user → session_id)
+OpenClawInstance (System A, managed by openclaw-operator)
   │
-  ▼
-Control Plane (System A) ─────────────────────── MinIO (System B, via NodePort)
-  │   │   │                                              ▲
-  │   │   └── GET/POST /offload ──► System B Offload API │
-  │   │                                └── Worker Job ───┘
-  │   └── POST /scale-up ──► sibling execution Job (System A)
-  │                                └── writes results ──► MinIO
-  ▼
-Session Pod (System A, long-lived daemon)
-  ├── OpenClaw runtime
-  ├── Tools layer
-  │     ├── exec (terminal/shell)
-  │     ├── read/write/edit (files)
-  │     ├── scale_up.sh  — calls Control Plane POST /scale-up
-  │     ├── offload.py   — calls Control Plane POST /offload
-  │     └── artifact.py  — calls Control Plane GET /artifacts
-  ├── Workspace PVC (per-session)
-  └── Model Client → LITELLM_BASE_URL (env var)
-                          │
-                          ▼
-                    LiteLLM (System A, inference namespace)
-                      ├──► ollama SLM (System B, NodePort 30434)
-                      └──► Cloud model endpoint
+  ├── OpenClaw gateway/runtime
+  ├── workspace/storage
+  ├── configured channels/tools/plugins
+  └── Model Client → LiteLLM (System A, inference namespace)
+                         │
+                         ▼
+                   vLLM / cloud backends
+
+System B provides shared services such as:
+- vLLM model backend
+- MinIO
+- offload analytics/services
 ```
 
 > **Note:** Session pod never contacts System B directly.
@@ -74,15 +63,9 @@ Defined by profiles, not hardcoded. See `configs/pod-profiles.yaml`.
 Manages session and execution lifecycle.
 
 ### API surface (HTTP/REST)
-```
-POST   /sessions                 create session pod
-GET    /sessions/{id}            get session status
-DELETE /sessions/{id}            terminate session
-POST   /sessions/{id}/scale-up   request larger execution profile
-POST   /offload                  submit offload job to System B
-GET    /offload/{job_id}         poll offload job status
-GET    /artifacts/{ref}          retrieve artifact reference
-```
+The earlier control-plane sketch used explicit `/sessions` APIs, but for instance lifecycle the supported contract should now be the `OpenClawInstance` custom resource managed by the operator.
+
+Any helper APIs should be treated as supporting services, not the source of truth for instance creation or deletion.
 
 ### Internal modules
 - **Session Manager** — pod create/delete, status, session registry
@@ -91,10 +74,10 @@ GET    /artifacts/{ref}          retrieve artifact reference
 - **Offload Gateway Client** — calls System B offload API
 - **Artifact Registry** — stores refs, signed URLs
 
-### Ready-made: use Kubernetes Jobs API + a thin Python/FastAPI wrapper
-- No need to write a scheduler, Kubernetes does scheduling
-- Control plane wraps `kubectl` / k8s Python client
-- Session state stored in Postgres or simple SQLite for demo
+### Ready-made: use operator-managed lifecycle plus thin supporting services
+- Kubernetes still does scheduling
+- `openclaw-operator` should own instance reconciliation
+- supporting services may exist for offload and artifacts, but not as the primary lifecycle manager for instances
 
 ---
 

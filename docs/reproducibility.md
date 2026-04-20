@@ -11,7 +11,9 @@ Anyone with:
 - the secrets listed in this document
 - this repository
 
-should be able to run the deploy script and get a working demo.
+should be able to install `openclaw-operator`, apply one `OpenClawInstance`, and get a working demo.
+
+Use `docs/first-green-path.md` as the shortest checklist to the first actually proven green instance.
 
 ---
 
@@ -30,6 +32,7 @@ aws CLI    >= 2 (for MinIO artifact tests)
 ### Access required
 - kubeconfig for System A cluster
 - kubeconfig for System B cluster (or same if single cluster)
+- a host environment that actually has `kubectl` installed for the target cluster workflow
 - Telegram bot token
 - Cloud model API key (OpenAI / Anthropic / AWS Bedrock)
 - OpenClaw auth/license secret if required by runtime
@@ -133,61 +136,38 @@ cp configs/env/system-b.yaml.template configs/env/system-b.yaml
 # 0.5 Install k3s and export kubeconfigs
 # See docs/port-map.md and docs/single-node-validation.md
 
-# 1. Create namespaces
+# 1. Create namespaces and backing services
 kubectl --context system-a apply -f k8s/system-a/namespaces.yaml
 kubectl --context system-b apply -f k8s/system-b/namespaces.yaml
-
-# 2. Provision secrets (see above)
-
-# 3. Deploy MinIO on System B
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
-# verify:
-./scripts/check-minio.sh
+# System B model backend should use the validated vLLM path
 
-# 4. Deploy ollama on System B
-kubectl --context system-b apply -f k8s/system-b/ollama.yaml
-# pull model:
-./scripts/pull-models.sh
-# verify:
-./scripts/check-ollama.sh
+# 2. Provision operator-managed instance secrets
+kubectl apply -f k8s/shared/intel-demo-operator-secrets.yaml.template
 
-# 5. Deploy LiteLLM on System A
-kubectl --context system-a apply -f k8s/system-a/litellm.yaml
-# verify:
-./scripts/check-litellm.sh
+# 3. Install openclaw-operator
+# apply CRD separately if needed; see docs/operator-runbook.md
 
-# 6. Deploy control plane on System A
-kubectl --context system-a apply -f k8s/system-a/rbac.yaml
-kubectl --context system-a apply -f k8s/system-a/control-plane.yaml
-# verify:
-./scripts/check-control-plane.sh
+# 4. Apply one OpenClawInstance
+kubectl apply -f examples/openclawinstance-intel-demo.yaml
 
-# 7. Deploy offload API on System B
-kubectl --context system-b apply -f k8s/system-b/offload-api.yaml
-# verify:
-./scripts/check-offload-api.sh
-
-# 8. Build and distribute images
-# choose one path: GHCR / Docker Hub / local registry / ctr import
-
-# 9. Test end-to-end session launch
-./scripts/smoke-test-session.sh
+# 5. Verify operator-managed lifecycle
+./scripts/check-operator-prereqs.sh
+./scripts/smoke-test-operator-instance.sh
 ```
 
 ---
 
 ## Verification scripts
 
-Each component has a check script in `scripts/`:
+Current operator-first checks in `scripts/`:
 
 | Script | What it checks |
 |--------|----------------|
-| `check-minio.sh` | write/read artifact to MinIO from a test pod |
-| `check-ollama.sh` | curl ollama `/api/tags`, verify model is present |
-| `check-litellm.sh` | curl `/v1/chat/completions` via LiteLLM with `default` model |
-| `check-control-plane.sh` | `POST /sessions`, verify pod created |
-| `check-offload-api.sh` | `POST /jobs` with test payload, verify job runs |
-| `smoke-test-session.sh` | full Task 1 flow via Telegram or API, including session creation and response validation |
+| `check-operator-prereqs.sh` | operator prerequisites, CRD/controller/log commands |
+| `smoke-test-operator-instance.sh` | lifecycle verification checklist for `OpenClawInstance` |
+
+Legacy component checks may still exist in the repo, but they are not the canonical instance-management path.
 
 ---
 
@@ -237,3 +217,17 @@ kubectl --context system-a rollout restart deploy/control-plane -n platform
 # if needed, recreate secrets after reset
 # reset script may optionally delete and require reapply of secrets
 ```
+
+## Operator-specific recovery note
+
+If using the OpenClaw operator path, do not assume `kubectl apply -k` of the whole bundle is safe for large CRDs.
+
+The CRD `openclawinstances.openclaw.rocks` may fail with `metadata.annotations: Too long`.
+
+For operator recovery:
+- apply the CRD separately
+- prefer server-side apply or create/replace for the CRD
+- then apply the controller manifests
+- then create the `OpenClawInstance`
+
+See `docs/operator-runbook.md`.
