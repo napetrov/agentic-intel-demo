@@ -315,14 +315,14 @@ runDemoBtn.addEventListener('click', () => {
 
   progressTimer = setInterval(() => {
     const elapsed = Math.min((Date.now() - startTs) / 1000, totalDuration / 1000);
-    const currentText = metricsEl.querySelector('.metric-card:nth-child(2) .metric-value')?.textContent || '0';
+    const currentMetrics = metricsEl.querySelectorAll('.metric-value');
     renderMetrics({
       Elapsed: `${elapsed.toFixed(1)}s`,
-      Tokens: currentText,
+      Tokens: currentMetrics[1]?.textContent || '0',
       Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
-      Route: metricsEl.querySelector('.metric-card:nth-child(4) .metric-value')?.textContent || 'preparing',
-      Tools: metricsEl.querySelector('.metric-card:nth-child(5) .metric-value')?.textContent || 'initializing',
-      Artifacts: metricsEl.querySelector('.metric-card:nth-child(6) .metric-value')?.textContent || '0'
+      Route: currentMetrics[3]?.textContent || 'preparing',
+      Tools: currentMetrics[4]?.textContent || 'initializing',
+      Artifacts: currentMetrics[5]?.textContent || '0'
     });
     if (elapsed >= totalDuration / 1000) clearInterval(progressTimer);
   }, 250);
