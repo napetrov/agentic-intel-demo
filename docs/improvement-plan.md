@@ -134,19 +134,20 @@ Everything beyond that is platform work that depends on actually having a cluste
 ## 8. Appendix — exact commands I ran
 
 ```bash
-# Web demo
-cd web-demo && python3 -m http.server 8080 --bind 127.0.0.1 &
-curl -sI http://127.0.0.1:8080/ | head -1      # HTTP/1.0 200 OK
-node --check app.js                              # FAILED before fix, passes after
+# Run all commands from the repo root.
 
-# Offload worker (run from repo root)
-cd ..
+# Web demo
+(cd web-demo && python3 -m http.server 8080 --bind 127.0.0.1) &
+curl -sI http://127.0.0.1:8080/ | head -1      # HTTP/1.0 200 OK
+node --check web-demo/app.js                    # FAILED before fix, passes after
+
+# Offload worker
 python3 -m venv /tmp/offload-venv
 /tmp/offload-venv/bin/pip install fastapi==0.115.12 'uvicorn[standard]==0.34.2' \
   boto3==1.37.38 pandas==2.2.3 scikit-learn==1.6.1 numpy==2.2.5
-cd runtimes/offload-worker
-MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=dummy MINIO_SECRET_KEY=dummy \
-  /tmp/offload-venv/bin/uvicorn app:app --host 127.0.0.1 --port 8081 &
+(cd runtimes/offload-worker && \
+  MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=dummy MINIO_SECRET_KEY=dummy \
+  /tmp/offload-venv/bin/uvicorn app:app --host 127.0.0.1 --port 8081) &
 curl -s http://127.0.0.1:8081/health
 curl -s -X POST http://127.0.0.1:8081/run -H 'content-type: application/json' \
   -d '{"task_type":"echo","payload":{"msg":"hello"}}'
