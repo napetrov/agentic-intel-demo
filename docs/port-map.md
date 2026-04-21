@@ -96,7 +96,7 @@ kubectl config get-contexts   # should show both
 
 k3s clusters have separate CoreDNS — `svc.cluster.local` does NOT cross clusters.
 All cross-system references use `<system-b-ip>:<NodePort>` hardcoded in configs.
-Configure in `configs/env/system-b.yaml`:
+Configure in `config/env/system-b.yaml`:
 
 ```yaml
 system_b_node_ip: "192.168.x.x"   # fill in actual LAN IP

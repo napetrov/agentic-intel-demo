@@ -15,7 +15,7 @@ agentic-intel-demo/
 │   ├── port-map.md              # fixed NodePort values + k3s install params
 │   └── single-node-validation.md # how to validate on onedal-build first
 │
-├── configs/
+├── config/
 │   ├── versions.yaml            # all component version pins
 │   ├── env/
 │   │   ├── system-a.yaml.template
@@ -118,7 +118,7 @@ agentic-intel-demo/
 
 ## Notes on layout decisions
 
-- `configs/` — all tunable policies live here, not in code
+- `config/` — tunable policies, templates, and version pins live here
 - `k8s/` — separated by system for clear deployment targeting
 - `services/` — only custom code lives here; everything else is deployed from upstream images
 - `runtimes/` — container images only; agent logic is in OpenClaw config, not Dockerfile

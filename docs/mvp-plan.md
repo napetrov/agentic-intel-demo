@@ -23,8 +23,8 @@ Get both systems to a known state before any service is deployed.
 - For onedal-build single-node validation, use the two-k3s-instance setup in `docs/single-node-validation.md`
 
 ### Deliverables
-- `configs/env/system-a.yaml` — System A endpoints and cluster info
-- `configs/env/system-b.yaml` — System B endpoints and cluster info
+- `config/env/system-a.yaml` — System A endpoints and cluster info
+- `config/env/system-b.yaml` — System B endpoints and cluster info
 - Network connectivity verified (documented in `docs/reproducibility.md`)
 
 ### Check: done when
@@ -53,7 +53,7 @@ Deploy local SLM on System B and verify it answers via OpenAI-compatible API.
 - [ ] Test LiteLLM endpoint from a test pod on System A
 
 ### Config files
-- `configs/model-routing/litellm-config.yaml`
+- `config/model-routing/litellm-config.yaml`
 - `k8s/system-b/ollama.yaml`
 - `k8s/system-a/litellm.yaml`
 
@@ -181,7 +181,7 @@ Extend control plane and agent with scale-up support.
 - [ ] Result returned via MinIO artifact, then to user
 
 ### Config files
-- `configs/pod-profiles/profiles.yaml`
+- `config/pod-profiles/profiles.yaml`
 
 ### Check: done when
 Agent requests scale-up, larger Job runs, result returned to user.

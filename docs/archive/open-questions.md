@@ -83,7 +83,7 @@ Items are grouped by layer. Each item has a status and a notes field.
   - `fast` → local SLM always
   - `reasoning` → cloud model
   - `default` → local SLM with cloud fallback if timeout >10s
-- **Notes**: captured in `configs/model-routing/litellm-config.yaml`
+- **Notes**: captured in `config/model-routing/litellm-config.yaml`
 
 ### Q3.4 LiteLLM deployment: standalone pod or sidecar?
 - **Status**: 🟢 RESOLVED

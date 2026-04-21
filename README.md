@@ -66,7 +66,7 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 
 ## Repo curation notes
 - `config/` is the canonical location for current live demo/runtime config
-- `configs/` contains reference templates and older design-time config material pending consolidation
+- `config/` contains the canonical live and reference config used by this repo
 - `archive/` contains review bundles and historical review artifacts
 - `docs/archive/` contains historical planning and bring-up notes that are not the primary operator-first demo path
 - `scripts/legacy/`, `legacy/services/`, and `legacy/runtimes/` contain the deprecated raw control-plane/session-pod path kept only for reference

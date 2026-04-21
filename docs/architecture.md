@@ -48,7 +48,7 @@ One pod per active user session.
 - **Model client** — single endpoint pointing at LightLLM
 
 ### Pod sizing
-Defined by profiles, not hardcoded. See `configs/pod-profiles/profiles.yaml`.
+Defined by profiles, not hardcoded. See `config/pod-profiles/profiles.yaml`.
 
 | Profile | CPU | Memory | Use case |
 |---------|-----|--------|----------|
@@ -101,7 +101,7 @@ Agent always calls one URL, LightLLM decides the backend.
 | `code` | local SLM or cloud | configurable |
 
 ### Routing policy (declarative, not code)
-See `configs/model-routing/litellm-config.yaml`.
+See `config/model-routing/litellm-config.yaml`.
 
 ### Deployment
 - **Ready-made**: LiteLLM OSS — `ghcr.io/berriai/litellm`

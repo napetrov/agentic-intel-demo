@@ -76,7 +76,7 @@ kubectl create secret generic system-b-kubeconfig -n platform \
 
 Before running the deploy script, fill in:
 
-### `configs/env/system-a.yaml`
+### `config/env/system-a.yaml`
 ```yaml
 cluster_name: system-a
 control_plane_url: https://api.system-a.example.com
@@ -89,7 +89,7 @@ minio_endpoint: http://system-b-minio:9000  # reachable from System A pods
 artifact_bucket: demo-artifacts
 ```
 
-### `configs/env/system-b.yaml`
+### `config/env/system-b.yaml`
 ```yaml
 cluster_name: system-b
 control_plane_url: https://api.system-b.example.com
@@ -105,7 +105,7 @@ offload_api_endpoint: http://offload-api.system-b.svc.cluster.local:8080
 
 ## Component versions
 
-All component versions are pinned in `configs/versions.yaml`:
+All component versions are pinned in `config/versions.yaml`:
 
 ```yaml
 components:
@@ -129,8 +129,8 @@ models:
 # 0. Clone repo and configure env
 git clone <repo>
 cd agentic-intel-demo
-cp configs/env/system-a.yaml.template configs/env/system-a.yaml
-cp configs/env/system-b.yaml.template configs/env/system-b.yaml
+cp config/env/system-a.yaml.template config/env/system-a.yaml
+cp config/env/system-b.yaml.template config/env/system-b.yaml
 # fill in system-a.yaml and system-b.yaml
 
 # 0.5 Install k3s and export kubeconfigs
@@ -178,7 +178,7 @@ Legacy component checks may still exist in the repo, but they are not the canoni
 - Config templates (`.yaml.template`)
 - Deploy scripts
 - Verification scripts
-- Version pins (`configs/versions.yaml`)
+- Version pins (`config/versions.yaml`)
 - Documentation
 
 ### Never commit
@@ -189,8 +189,8 @@ Legacy component checks may still exist in the repo, but they are not the canoni
 
 ### `.gitignore` additions
 ```
-configs/env/system-a.yaml
-configs/env/system-b.yaml
+config/env/system-a.yaml
+config/env/system-b.yaml
 *.env
 kubeconfig*
 ```

@@ -1,5 +1,5 @@
-configs/env/system-a.yaml
-configs/env/system-b.yaml
+config/env/system-a.yaml
+config/env/system-b.yaml
 *.env
 .env
 kubeconfig*

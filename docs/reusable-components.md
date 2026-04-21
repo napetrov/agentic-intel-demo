@@ -24,7 +24,7 @@ This document lists what to reuse as-is, what to configure, and what to build mi
 - **Repo**: https://github.com/BerriAI/litellm
 - **Use for**: single model endpoint for all agent calls, routing policy
 - **Deploy**: `docker pull ghcr.io/berriai/litellm:main-latest`
-- **Config**: `configs/model-routing/litellm-config.yaml`
+- **Config**: `config/model-routing/litellm-config.yaml`
 - **Notes**: supports local SLM + cloud backends, retry logic, cost tracking
 
 ### ollama (for local SLM — MVP choice)
@@ -126,5 +126,5 @@ For demo MVP:
 
 ## Component version pinning
 
-All deployed components should be version-pinned in `configs/versions.yaml`
+All deployed components should be version-pinned in `config/versions.yaml`
 to make the demo reproducible. See `docs/reproducibility.md`.
