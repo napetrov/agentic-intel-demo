@@ -28,6 +28,7 @@ Then immediately state the operator-friendly flow:
 The scenario should look like a mini Terminal Bench style run:
 - identify a bounded terminal task
 - run a sequence of real commands
+- solve the reference task defined in `agents/scenarios/terminal-agent/terminal-bench-reference.md` unless a better bounded repo task is chosen
 - check outputs against an explicit success condition
 - return a concise engineering summary with evidence
 

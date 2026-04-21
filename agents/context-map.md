@@ -8,6 +8,7 @@ Use:
 - agents/orchestrator.md
 - agents/scenarios/terminal-agent/flow.md
 - agents/scenarios/terminal-agent/terminal-bench-task.md
+- agents/scenarios/terminal-agent/terminal-bench-reference.md
 - agents/tasks/engineering/general.md
 - docs/contracts/task-routing.md
 - config/demo-systems.yaml

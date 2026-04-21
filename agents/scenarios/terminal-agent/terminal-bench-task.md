@@ -2,7 +2,13 @@
 
 ## Objective
 
-Execute a small but real terminal task that resembles a Terminal Bench flow rather than a synthetic chat-only answer.
+Execute a specific bounded terminal task that resembles a Terminal Bench flow rather than a synthetic chat-only answer.
+
+## Reference task
+
+Use `agents/scenarios/terminal-agent/terminal-bench-reference.md` as the concrete reference task spec.
+
+The preferred default task is `repo-structure-audit-and-fixup`.
 
 ## Preferred task pattern
 
@@ -10,8 +16,9 @@ Choose one bounded task from this order of preference:
 
 ### Option A — Real repo task
 - inspect the current repo
+- start with the reference task `repo-structure-audit-and-fixup` unless a better equally bounded repo task is explicitly available
 - find a safe read-only or minimally invasive engineering task
-- examples: run a targeted test, inspect a script path, validate config references, render a file inventory, verify a documented command path
+- examples: validate config references, render a file inventory, verify a documented command path, generate a structured audit artifact
 
 ### Option B — Controlled terminal bench task
 If the repo does not contain a clean runnable target, run a controlled terminal task such as:
