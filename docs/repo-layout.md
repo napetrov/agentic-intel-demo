@@ -93,15 +93,9 @@ agentic-intel-demo/
 │       └── task.yaml
 │
 └── scripts/
-    ├── deploy.sh                # full deploy sequence
-    ├── reset.sh                 # clean reset without touching infra
-    ├── pull-models.sh           # pull local models into ollama
-    ├── check-minio.sh
-    ├── check-ollama.sh
-    ├── check-litellm.sh
-    ├── check-control-plane.sh
-    ├── check-offload-api.sh
-    └── smoke-test-session.sh
+    ├── ... current operator/demo scripts ...
+    └── legacy/
+        └── smoke-test-session.sh
 ```
 
 ---

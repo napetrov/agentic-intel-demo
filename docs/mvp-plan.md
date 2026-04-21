@@ -106,7 +106,7 @@ Deploy minimal control plane on System A.
 - [ ] Session registry in SQLite (embedded in control plane for MVP)
 
 ### Code location
-`services/control-plane/`
+`legacy/services/control-plane/`
 
 ### Config files
 - `k8s/system-a/control-plane.yaml`
@@ -141,8 +141,8 @@ Define and launch a session pod that runs OpenClaw agent.
 - [ ] Update control plane to launch this image as session pod
 
 ### Config files
-- `runtimes/session-pod/Dockerfile`
-- `runtimes/session-pod/openclaw-config.yaml`
+- `legacy/runtimes/session-pod/Dockerfile`
+- `legacy/runtimes/session-pod/openclaw-config.yaml`
 - `k8s/system-a/session-pod-template.yaml`
 
 ### Check: done when

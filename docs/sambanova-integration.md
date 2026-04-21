@@ -31,7 +31,7 @@ LiteLLM documents a native `sambanova/` provider route, so using LiteLLM is clea
 The repo now includes:
 - `SAMBANOVA_API_KEY` in `k8s/shared/intel-demo-operator-secrets.yaml.template`
 - LiteLLM route `deepseek-sambanova` in `k8s/system-a/litellm.yaml`
-- `SAMBANOVA_API_KEY` env handling in `scripts/setup-system-a.sh`
+- `SAMBANOVA_API_KEY` env handling in `scripts/legacy/setup-system-a.sh`
 - direct and LiteLLM smoke-test scripts for SambaNova
 
 ## Suggested validation

@@ -20,12 +20,11 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/contracts/offload-result-contract.md` — strict System A ↔ System B execution/result boundary
 - `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker
 - `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
-- `docs/implementation-guide.md` — current working implementation path, fixes, and reproducible setup guide
+- `docs/implementation-guide.md` — implementation notes and migration context for the current demo
 - `docs/architecture.md` — architecture breakdown and execution model
 - `docs/mvp-plan.md` — minimal MVP path and implementation order
 - `docs/reusable-components.md` — what to reuse vs what to build
-- `docs/repo-layout.md` — proposed service/config/repo structure
-- `docs/open-questions.md` — decisions and unknowns to resolve
+- `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
 
 ## Current validated direction
@@ -41,8 +40,8 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 ## Scripts
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
 - `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
-- `scripts/setup-system-a.sh` — current System A manifest setup materials
-- `scripts/setup-system-b.sh` — original System B ollama-based path
+- `scripts/legacy/setup-system-a.sh` — legacy System A raw-manifest setup materials
+- `scripts/legacy/setup-system-b.sh` — legacy System B ollama-based path
 - `scripts/setup-system-b-vllm.sh` — current validated System B vLLM path
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
 - `scripts/cleanup-system-a.sh` — reduce disk pressure on System A safely
@@ -64,3 +63,10 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 4. Verify model access through LiteLLM/vLLM
 5. Verify instance-managed gateway/service health
 6. Then add scale-up and System B offload behavior
+
+## Repo curation notes
+- `config/` is the canonical location for current live demo/runtime config
+- `configs/` contains reference templates and older design-time config material pending consolidation
+- `archive/` contains review bundles and historical review artifacts
+- `docs/archive/` contains historical planning and bring-up notes that are not the primary operator-first demo path
+- `scripts/legacy/`, `legacy/services/`, and `legacy/runtimes/` contain the deprecated raw control-plane/session-pod path kept only for reference

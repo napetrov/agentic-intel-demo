@@ -93,7 +93,7 @@ curl http://localhost:31000/health
 ## Step 4 — Build and load session pod image
 
 ```bash
-cd runtimes/session-pod
+cd legacy/runtimes/session-pod
 docker build -t demo-session-pod:latest .
 # Import into System A k3s (no registry needed for single-node):
 docker save demo-session-pod:latest | k3s-a ctr images import -
@@ -104,7 +104,7 @@ docker save demo-session-pod:latest | k3s-a ctr images import -
 ## Step 5 — End-to-end smoke test
 
 ```bash
-./scripts/smoke-test-session.sh
+./scripts/legacy/smoke-test-session.sh
 ```
 
 This creates a session, sends a test message, and verifies a response.

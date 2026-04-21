@@ -60,7 +60,7 @@ The original MVP docs assumed:
 The working System B path uses **vLLM**, not ollama.
 
 That means:
-- `scripts/setup-system-b.sh` is conceptually outdated for the current working path
+- `scripts/legacy/setup-system-b.sh` is conceptually outdated for the current working path
 - the System B model service is now OpenAI-compatible via vLLM directly
 - the deployed model is `Qwen/Qwen3-4B-Instruct-2507`
 - the validated working context length is `32768`
@@ -217,7 +217,7 @@ modelConfigs:
 To make the setup reproducible, align the repo with the working implementation.
 
 ### Replace the old System B script path
-Current `scripts/setup-system-b.sh` still references ollama. Add a new script for the working vLLM path.
+Current `scripts/legacy/setup-system-b.sh` still references ollama. Add a new script for the working vLLM path.
 
 Recommended scripts:
 - `scripts/setup-system-b-vllm.sh`
@@ -334,7 +334,7 @@ curl http://<SYSTEM_A_IP>:31000/health
 
 ### Session path
 ```bash
-./scripts/smoke-test-session.sh
+./scripts/legacy/smoke-test-session.sh
 ```
 
 ### System B model path

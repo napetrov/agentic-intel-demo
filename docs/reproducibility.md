@@ -13,7 +13,7 @@ Anyone with:
 
 should be able to install `openclaw-operator`, apply one `OpenClawInstance`, and get a working demo.
 
-Use `docs/first-green-path.md` as the shortest checklist to the first actually proven green instance.
+Use the operator install and runbook docs in the main `docs/` directory as the primary checklist to the first proven green instance.
 
 ---
 
