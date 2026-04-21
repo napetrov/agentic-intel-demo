@@ -278,7 +278,7 @@ runDemoBtn.addEventListener('click', () => {
       t: '2.1s', tokens: '980', route: 'LiteLLM → SambaNova', tools: 'read, exec', artifacts: '0',
       phase: 'Planning',
       desc: 'The system selected the model route and prepared the workspace.',
-      log: '$ pwd\n/workspace-intel-dev/agentic-intel-demo\n$ ls -la agents/tasks\nlarge-build-test.md\nmarket-research.md\nterminal-agent.md\n$ sed -n '\''1,8p'\'' agents/tasks/terminal-agent.md\nbrief loaded\nroute selected: LiteLLM -> SambaNova\n'
+      log: "$ pwd\n/workspace-intel-dev/agentic-intel-demo\n$ ls -la agents/tasks\nlarge-build-test.md\nmarket-research.md\nterminal-agent.md\n$ sed -n '1,8p' agents/tasks/terminal-agent.md\nbrief loaded\nroute selected: LiteLLM -> SambaNova\n"
     },
     {
       at: 6800,
