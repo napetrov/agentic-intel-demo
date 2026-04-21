@@ -1,38 +1,58 @@
 # Context Map
 
-## Terminal Agent
+## Guided scenarios
+
+### Terminal Agent
 Use:
 - agents/common.md
-- agents/tasks/terminal-agent.md
+- agents/orchestrator.md
+- agents/scenarios/terminal-agent/flow.md
+- agents/scenarios/terminal-agent/terminal-bench-task.md
+- agents/tasks/engineering/general.md
 - docs/contracts/task-routing.md
 - config/demo-systems.yaml
 
-## Market Research
+### Market Research
 Use:
 - agents/common.md
-- agents/tasks/market-research.md
+- agents/orchestrator.md
+- agents/scenarios/market-research/flow.md
+- agents/scenarios/market-research/report-task.md
+- agents/tasks/analytics/general.md
 - docs/contracts/task-routing.md
 - docs/contracts/offload-result-contract.md
 - config/demo-systems.yaml
 
-## Large Build/Test
+### Large Build/Test
 Use:
 - agents/common.md
-- agents/tasks/large-build-test.md
+- agents/orchestrator.md
+- agents/scenarios/large-build-test/flow.md
+- agents/scenarios/large-build-test/build-task.md
+- agents/tasks/engineering/build-and-test.md
 - docs/contracts/task-routing.md
 - config/demo-systems.yaml
 
-## General engineering
+## Freeform task families
+
+### General engineering
 Use:
 - agents/common.md
-- agents/tasks/general-engineering.md
+- agents/tasks/engineering/general.md
 - docs/contracts/task-routing.md
 - config/demo-systems.yaml
 
-## General data processing
+### Build and test
 Use:
 - agents/common.md
-- agents/tasks/general-data-processing.md
+- agents/tasks/engineering/build-and-test.md
+- docs/contracts/task-routing.md
+- config/demo-systems.yaml
+
+### General analytics
+Use:
+- agents/common.md
+- agents/tasks/analytics/general.md
 - docs/contracts/task-routing.md
 - docs/contracts/offload-result-contract.md
 - config/demo-systems.yaml
