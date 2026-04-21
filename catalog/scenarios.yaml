@@ -1,0 +1,30 @@
+scenarios:
+  terminal_agent:
+    label: "Terminal Agent"
+    execution_mode: local_standard
+    task_family: software_engineering
+    initial_user_message: "Starting isolated engineering demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: null
+
+  market_research:
+    label: "Market Research"
+    execution_mode: offload_system_b
+    task_family: data_processing
+    initial_user_message: "Starting market research demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent
+
+  large_build_test:
+    label: "Large Build/Test"
+    execution_mode: local_large
+    task_family: software_engineering
+    initial_user_message: "Starting large build/test demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent

@@ -1,0 +1,23 @@
+telegram:
+  enabled: true
+  mode: guided_first
+
+  buttons:
+    - terminal_agent
+    - market_research
+    - large_build_test
+    - open_chat_mode
+    - show_status
+    - reset_session
+
+  commands:
+    - start
+    - status
+    - reset
+
+  chat_mode:
+    enabled: true
+    requires_explicit_switch: true
+
+secrets:
+  telegram_bot_token: "SET_VIA_SECRET_STORE"

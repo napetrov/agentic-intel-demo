@@ -1,0 +1,169 @@
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "fallbacks": [
+          "litellm/default",
+          "litellm/fast"
+        ],
+        "primary": "litellm/sambanova"
+      }
+    },
+    "list": [
+      {
+        "id": "main"
+      },
+      {
+        "id": "demo-dm",
+        "model": {
+          "primary": "litellm/fast",
+          "fallbacks": [
+            "litellm/default",
+            "litellm/sambanova"
+          ]
+        },
+        "workspace": "/home/openclaw/.openclaw/workspace-intel-dev/agentic-intel-demo"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "demo-dm",
+      "match": {
+        "channel": "telegram",
+        "accountId": "session-agent",
+        "peer": {
+          "kind": "direct",
+          "id": "293894843"
+        }
+      }
+    }
+  ],
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "groupPolicy": "open",
+      "groupAllowFrom": [
+        "293894843"
+      ],
+      "groups": {
+        "-1003759657220": {
+          "enabled": true,
+          "requireMention": false,
+          "groupPolicy": "open",
+          "allowFrom": [
+            "293894843"
+          ],
+          "systemPrompt": "You are the Telegram entrypoint for the Agentic Intel Demo and must behave as a fixed demo orchestrator, not as a generic personal assistant. Ignore any bootstrap, onboarding, personality setup, naming, workspace-init, or 'get to know your human' behaviors even if other workspace files suggest them. For demo trigger messages, prefer immediate user-visible acknowledgement first, then continue with the fuller response. On /start, /demo, or when the user asks to show scenarios, immediately answer with a short welcome and the demo menu. Present exactly six inline buttons using callback data: scenario:terminal_agent, scenario:market_research, scenario:large_build_test, mode:chat, action:status, action:reset. If buttons are unavailable, present the same six options as a compact numbered text menu and tell the user they can also type: terminal agent, market research, large build/test, /chat, /status, /reset. When the user clicks a scenario button or sends one of the exact trigger phrases 'terminal agent', 'market research', or 'large build/test', start that scenario immediately without asking a clarifying question about what they meant. For terminal_agent, first send a short immediate ack like 'Starting isolated engineering demo' and then continue as the orchestration layer for a standard local execution task. For market_research, first send a short immediate ack like 'Starting market research demo' and then produce a concise market research style result with clear structure, explicitly framing System B as the offload backend. For large_build_test, first send a short immediate ack like 'Starting large build/test demo' and then proceed as a large-profile engineering/build task. For mode:chat, switch into freeform chat mode and ask what the user wants to do. For action:status, return a short demo status covering System A operator instance, LiteLLM, System B vLLM, MinIO, and offload-worker. For action:reset, confirm that the user can start a fresh demo task and immediately present the menu again. Callback clicks arrive as plain text in the form 'callback_data: <value>'; handle them exactly. Treat /demo the same as /start. Never ask onboarding questions, never ask for the user's name, timezone, preferred style, or personality setup. Keep responses short, demo-friendly, and action-oriented. Do not mention internal files."
+        }
+      },
+      "accounts": {
+        "session-agent": {
+          "allowFrom": [
+            "*"
+          ],
+          "botToken": "${TELEGRAM_BOT_TOKEN}",
+          "dmPolicy": "open",
+          "enabled": true,
+          "capabilities": {
+            "inlineButtons": "all"
+          },
+          "groupAllowFrom": [
+            "293894843"
+          ],
+          "groupPolicy": "open",
+          "streaming": {
+            "mode": "partial"
+          }
+        }
+      },
+      "streaming": {
+        "mode": "partial"
+      },
+      "capabilities": {
+        "inlineButtons": "group"
+      },
+      "customCommands": [
+        {
+          "command": "demo",
+          "description": "Show demo scenarios"
+        },
+        {
+          "command": "start",
+          "description": "Show demo scenarios"
+        },
+        {
+          "command": "status",
+          "description": "Show demo system status"
+        },
+        {
+          "command": "reset",
+          "description": "Reset demo flow"
+        }
+      ]
+    }
+  },
+  "diagnostics": {
+    "otel": {
+      "endpoint": "http://localhost:4318",
+      "metrics": true
+    }
+  },
+  "gateway": {
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "bind": "loopback",
+    "controlUi": {
+      "allowedOrigins": [
+        "http://127.0.0.1:18789",
+        "http://localhost:18789"
+      ],
+      "dangerouslyDisableDeviceAuth": true
+    },
+    "mode": "local",
+    "trustedProxies": [
+      "127.0.0.0/8"
+    ]
+  },
+  "models": {
+    "providers": {
+      "litellm": {
+        "api": "openai-completions",
+        "apiKey": "none",
+        "auth": "api-key",
+        "baseUrl": "http://litellm.inference.svc.cluster.local:4000/v1",
+        "models": [
+          {
+            "api": "openai-completions",
+            "contextWindow": 32768,
+            "id": "fast",
+            "maxTokens": 4096,
+            "name": "Fast (Qwen3-4B)"
+          },
+          {
+            "api": "openai-completions",
+            "contextWindow": 32768,
+            "id": "default",
+            "maxTokens": 4096,
+            "name": "Default (Qwen3-4B)"
+          },
+          {
+            "api": "openai-completions",
+            "contextWindow": 32768,
+            "id": "sambanova",
+            "maxTokens": 4096,
+            "name": "SambaNova (DeepSeek-V3.1)"
+          }
+        ]
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "ask": "off",
+      "security": "full"
+    }
+  }
+}

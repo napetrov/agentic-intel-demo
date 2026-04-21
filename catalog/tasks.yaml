@@ -1,0 +1,36 @@
+task_families:
+  software_engineering:
+    default_execution: local_standard
+    alternate_execution:
+      - local_large
+    supported_in_chat_mode: true
+    capabilities:
+      - shell
+      - git
+      - python
+      - build_tools
+
+  data_processing:
+    default_execution: offload_system_b
+    alternate_execution: []
+    supported_in_chat_mode: true
+    capabilities:
+      - python
+      - analytics_tools
+
+  machine_learning:
+    default_execution: offload_system_b
+    alternate_execution:
+      - local_large
+    supported_in_chat_mode: true
+    capabilities:
+      - python
+      - ml_stack
+
+  system_administration:
+    default_execution: local_standard
+    alternate_execution: []
+    supported_in_chat_mode: true
+    capabilities:
+      - diagnostics
+      - shell

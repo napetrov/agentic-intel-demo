@@ -1,0 +1,32 @@
+control:
+  owner_of_policy: system_a
+  owner_of_session_state: system_a
+  owner_of_user_status: system_a
+
+systems:
+  system_a:
+    role: control_plane
+    provides:
+      - telegram_session_binding
+      - routing
+      - standard_execution
+      - large_execution
+      - result_delivery
+
+    profiles:
+      standard:
+        cpu: "4"
+        memory: "8Gi"
+      large:
+        cpu: "16"
+        memory: "32Gi"
+
+  system_b:
+    role: offload_execution_backend
+    accepts_offload_jobs: true
+    returns_structured_results: true
+
+    profiles:
+      analytics:
+        cpu: "32"
+        memory: "64Gi"

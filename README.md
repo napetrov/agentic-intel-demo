@@ -14,6 +14,10 @@ Demo-first repository area for a reproducible two-system prototype:
 - Prefer ready-made components over custom platform work
 
 ## Documents
+- `docs/demo-overview.md` — concise demo operating model for Telegram-first entry and two-system execution
+- `docs/contracts/session-lifecycle.md` — System A-owned lifecycle and user-visible state model
+- `docs/contracts/task-routing.md` — policy-driven routing for standard, local-large, and offload paths
+- `docs/contracts/offload-result-contract.md` — strict System A ↔ System B execution/result boundary
 - `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker
 - `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
 - `docs/implementation-guide.md` — current working implementation path, fixes, and reproducible setup guide
@@ -47,6 +51,9 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 - Demo first, not platform first
 - Start with the shortest end-to-end path
 - Prefer explicit flows over hidden automation
+- System A is the single owner of session state, routing policy, and user-visible status
+- System B is an execution backend, not a second control plane
+- Guided Telegram UX is the default; freeform chat is explicit
 - Keep inference, routing, and execution policies declarative
 - Reuse OpenClaw, Kubernetes, LightLLM, Terminal Bench, and an OpenAI-compatible local SLM where possible
 
