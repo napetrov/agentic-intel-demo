@@ -139,7 +139,8 @@ cd web-demo && python3 -m http.server 8080 --bind 127.0.0.1 &
 curl -sI http://127.0.0.1:8080/ | head -1      # HTTP/1.0 200 OK
 node --check app.js                              # FAILED before fix, passes after
 
-# Offload worker
+# Offload worker (run from repo root)
+cd ..
 python3 -m venv /tmp/offload-venv
 /tmp/offload-venv/bin/pip install fastapi==0.115.12 'uvicorn[standard]==0.34.2' \
   boto3==1.37.38 pandas==2.2.3 scikit-learn==1.6.1 numpy==2.2.5
