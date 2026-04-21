@@ -40,6 +40,7 @@ Follow-up: a one-line check in CI (`node --check web-demo/*.js`) would have caug
 `k8s/system-a/litellm.yaml:68-72` pushes `SAMBANOVA_API_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, `TELEGRAM_BOT_TOKEN` (in `session-pod-template.yaml`) as `value: "${VAR}"`, which assumes an unadvertised `envsubst` pre-step and bypasses the `k8s/shared/intel-demo-operator-secrets.yaml.template` that already exists. These should move to `valueFrom: secretKeyRef`, and the apply scripts should `kubectl create secret` (or `kustomize` overlay) explicitly.
 
 ### 2.4 Version drift
+
 | File | Says |
 |------|------|
 | `config/versions.yaml` | `litellm: v1.72.2-stable`, `ollama: 0.6.8`, model `qwen2.5:7b-instruct` |
