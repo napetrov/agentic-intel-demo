@@ -137,7 +137,7 @@ Everything beyond that is platform work that depends on actually having a cluste
 # Web demo
 cd web-demo && python3 -m http.server 8080 --bind 127.0.0.1 &
 curl -sI http://127.0.0.1:8080/ | head -1      # HTTP/1.0 200 OK
-node --check web-demo/app.js                     # FAILED before fix, passes after
+node --check app.js                              # FAILED before fix, passes after
 
 # Offload worker
 python3 -m venv /tmp/offload-venv
