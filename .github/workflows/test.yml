@@ -1,0 +1,37 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offload-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install offload-worker deps + pytest
+        working-directory: runtimes/offload-worker
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            boto3==1.37.38 \
+            pandas==2.2.3 \
+            scikit-learn==1.6.1 \
+            numpy==2.2.5 \
+            httpx==0.28.1 \
+            pytest==8.3.5
+      - name: pytest
+        working-directory: runtimes/offload-worker
+        env:
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: dummy
+          MINIO_SECRET_KEY: dummy
+        run: pytest -v

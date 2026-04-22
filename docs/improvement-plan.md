@@ -1,6 +1,6 @@
 # Improvement Plan
 
-Written after a local analysis and trial run of the repo on 2026-04-21. This document lists concrete, actionable improvements grouped by severity, and records what was actually executed locally vs. what only describes a remote cluster.
+Written after a local analysis and trial run of the repo on 2026-04-21, with a follow-up k3s session on 2026-04-22. This document lists concrete, actionable improvements grouped by severity, and records what was actually executed locally vs. what only describes a remote cluster.
 
 The repo's operator-first direction (see `docs/operator-gap-analysis.md`) is accepted as the target. This plan is about closing the gap between that stated direction and what the repo currently contains.
 
@@ -8,21 +8,26 @@ The repo's operator-first direction (see `docs/operator-gap-analysis.md`) is acc
 
 ## 1. What I ran locally
 
-Local environment: Linux sandbox, Python 3.12 venv, Node 22, no Kubernetes, no remote SSH hosts reachable.
+Local environment: Linux sandbox, Python 3.12 venv, Node 22, Docker Hub blocked, `ghcr.io` / `registry.k8s.io` / `github.com` reachable, no remote SSH hosts.
 
 | Component | Command | Result |
 |-----------|---------|--------|
 | `web-demo` | `python3 -m http.server 8080` (inside `web-demo/`) | Serves 200 for `/`, `/app.js`, `/styles.css`. |
-| `web-demo/app.js` | `node --check web-demo/app.js` | **Fails before fix** — syntax error on line 281 caused by a shell-style `'\''` quote escape inside a single-quoted JS string literal. **Fixed in this change** by switching that log string to double quotes. After fix: `node --check` passes. |
-| `runtimes/offload-worker` | `uvicorn app:app` in a venv with pinned deps from the Dockerfile, dummy `MINIO_*` env | `/health` returns `{"status":"ok"}`. `echo`, `pandas_describe`, `sklearn_train` tasks all return valid results with small payloads (no S3 path taken). |
+| `web-demo/app.js` | `node --check web-demo/app.js` | **Failed before fix** — syntax error on line 281 caused by a shell-style `'\''` quote escape inside a single-quoted JS string literal. **Fixed**. After fix: passes. |
+| `runtimes/offload-worker` | `uvicorn app:app` with pinned deps from the Dockerfile, dummy `MINIO_*` env | `/health` returns `{"status":"ok"}`. `echo`, `pandas_describe`, `sklearn_train` all return valid results. |
+| `runtimes/offload-worker/tests/` | `pytest` (added in this change) | 7/7 pass: health, echo, pandas-from-dict, pandas-from-CSV-string, sklearn_train, unknown-task error path, 422 validation. |
 | All `*.sh` in `scripts/` | `bash -n` | All pass. |
-| All `*.yaml`/`*.yml` in repo | `yaml.safe_load_all` | All parse. |
-| Python modules | `python3 -m py_compile` on `runtimes/offload-worker/app.py`, `scripts/telegram-send-menu.py` | Both compile. |
+| All `*.yaml` / `*.yml` | `yaml.safe_load_all` | All parse. |
+| All `*.py` | `python3 -m py_compile` | All pass. |
+| `k8s/` + `examples/` manifests | `kubeconform -strict -ignore-missing-schemas -skip CustomResourceDefinition` | 35/36 valid, 1 skipped (OpenClawInstance CR — no CRD to validate against). |
+| k3s v1.31.4 single node | `k3s server --disable traefik --disable metrics-server` | Came up Ready. API server / scheduler / controller-manager healthy. `envsubst` + `kubectl apply --server-side` succeeded on every manifest after the namespace fixes below. **No pod could actually start** — the sandbox's runc blocks pod-sandbox creation (`can't get final child's PID from pipe: EOF`); sandbox limit, not a repo issue. |
 
 What I could **not** run locally:
-- the `openclaw-operator` install (no cluster)
-- LiteLLM / vLLM / MinIO / Telegram — all require real credentials and remote hosts
-- `scripts/apply-operator-chat-config.sh` / `scripts/setup-system-b-vllm.sh` (they `ssh` into a fixed host)
+- Actual workloads — sandbox container runtime blocks all pod-sandbox creation
+- `openclaw-operator` install — operator image ref not pinned anywhere in the repo (operator-gap #4)
+- LiteLLM / vLLM / Telegram — require real credentials and remote hosts
+- `scripts/apply-operator-chat-config.sh` / `scripts/setup-system-b-vllm.sh` — they `ssh` into a fixed host (`onedal-build`)
+- MinIO / Ollama image pulls — images live on Docker Hub, which the sandbox can't reach
 
 ---
 
@@ -66,21 +71,59 @@ An agent configured with `litellm/default` will not resolve against the LiteLLM 
 ### 2.7 `docs/mvp-plan.md` directly contradicts the operator-first decision
 Phases 3–4 walk the reader through building a raw control plane in `legacy/services/control-plane/` and a bespoke session-pod image. Per `docs/operator-gap-analysis.md` this path is deprecated. Either (a) rewrite the plan around `openclaw-operator` install + `OpenClawInstance` apply + verify, or (b) move it under `docs/archive/` with a legacy banner.
 
+### 2.8 Manifests reference namespaces they don't create (fixed in this change)
+Found by actually running `kubectl apply -f k8s/system-a/rbac.yaml` on an empty k3s cluster:
+
+- `k8s/system-a/rbac.yaml` creates `Role` and `RoleBinding` in namespace `agents` but does not create the `agents` namespace. Fresh-cluster apply fails with `namespaces "agents" not found`.
+- `k8s/system-b/offload-worker.yaml` puts its `Deployment` and `Services` in namespace `system-b` but depends on `minio.yaml` or `ollama.yaml` being applied first to create that namespace. Apply order is undocumented; running just `kubectl apply -f k8s/system-b/offload-worker.yaml` on a fresh cluster fails.
+
+Both fixed here by adding explicit `kind: Namespace` at the top of each file. Going forward, every manifest that owns resources in a namespace should also own its own namespace declaration; kustomize overlays or a top-level `k8s/namespaces.yaml` are the two common patterns.
+
+### 2.9 `offload-worker.yaml` hardcodes `imagePullPolicy: Never` with an undocumented image tag
+`image: docker.io/library/demo-offload-worker:latest` with `imagePullPolicy: Never` means the image must already be loaded into every node's container runtime before apply. No doc or script builds/loads this image. The historical path (`scripts/legacy/build-images.sh` → `scripts/legacy/load-images-system-a.sh` via `ctr images import`) is marked legacy, yet this manifest still depends on that flow. Either:
+
+1. Ship the Dockerfile and publish the image to `ghcr.io/<org>/offload-worker:<tag>` with a non-`Never` pull policy, document the publish step; or
+2. Replace the Deployment with the ConfigMap-mounted `app.py` pattern (base `python:3.12-slim`, inline `pip install`, mount `runtimes/offload-worker/app.py` via ConfigMap) so it runs on any cluster without image distribution.
+
+### 2.10 k3s smoke-test outcome
+What landed successfully on a fresh k3s cluster (API server only — pod sandboxes blocked by the outer sandbox's runtime):
+
+| Manifest | Apply result |
+|----------|-------------|
+| `k8s/system-a/rbac.yaml` | ✅ after 2.8 fix |
+| `k8s/system-a/litellm.yaml` | ✅ |
+| `k8s/system-a/control-plane.yaml` | ✅ |
+| `k8s/system-a/session-pod-template.yaml` | ✅ |
+| `k8s/system-b/minio.yaml` | ✅ |
+| `k8s/system-b/offload-worker.yaml` | ✅ after 2.8 fix |
+| `k8s/system-b/ollama.yaml` | ✅ |
+| `k8s/shared/intel-demo-operator-secrets.yaml.template` | ✅ |
+| `examples/openclawinstance-intel-demo.yaml` | ❌ `no matches for kind "OpenClawInstance"` — expected (CRD not installed, operator-gap #1–#2) |
+
 ---
 
-## 3. Missing engineering hygiene
+## 3. Missing engineering hygiene (partly addressed in this change)
 
-No CI, no tests, no linter, no formatter, no Makefile. For a repo whose stated top goal is reproducibility, the absence is loud.
+Added in this PR:
 
-Concrete, cheap wins:
-1. **`.github/workflows/lint.yml`** running four checks that would have caught real bugs today:
-   - `bash -n scripts/**/*.sh`
-   - `python -c "import yaml; ..."` across all YAML
-   - `node --check web-demo/*.js`
-   - `python -m py_compile` + `ruff check` on `runtimes/` and `scripts/`
-2. **Minimal `pytest` for the offload-worker** covering the three task types and unknown-task error path using FastAPI's `TestClient`. No MinIO needed if payloads stay under the 4096-byte inline threshold (which is the path we already tested).
-3. **`Makefile` (or `justfile`) with the canonical verbs**: `make web-demo`, `make offload-worker`, `make lint`, `make test`. The repo currently requires a reader to discover invocation from individual shell scripts.
-4. **`web-demo/package.json`** with a trivial `"check": "node --check app.js"`. This is the fastest way to keep app.js honest.
+- **`.github/workflows/lint.yml`** — five jobs:
+  1. `bash -n` on every `scripts/**/*.sh`
+  2. `yaml.safe_load_all` on every `*.yaml`/`*.yml`
+  3. `node --check` on every `web-demo/*.js` (the exact check that would have caught the round-1 JS bug)
+  4. `python -m py_compile` on every `*.py`
+  5. `kubeconform -strict -ignore-missing-schemas -skip CustomResourceDefinition` on `k8s/` and `examples/`
+- **`.github/workflows/test.yml`** — runs `pytest` for `runtimes/offload-worker`.
+- **`runtimes/offload-worker/tests/test_app.py`** — 7 tests using FastAPI's `TestClient`; no network, no MinIO required.
+
+All five lint jobs and pytest pass locally before push.
+
+Still missing, for a follow-up:
+
+1. **`ruff check`** on `runtimes/` and `scripts/`. The py_compile gate catches syntax only; ruff catches unused imports, undefined names, etc.
+2. **`Makefile` (or `justfile`)** with the canonical verbs: `make web-demo`, `make offload-worker`, `make lint`, `make test`. The repo currently requires a reader to discover invocation from individual shell scripts.
+3. **`shellcheck`** on `scripts/**/*.sh` — catches quoting bugs that `bash -n` misses.
+4. **`markdownlint-cli2`** on `docs/**` — consistent table formatting, link-check.
+5. **k3s smoke job in CI** using `--disable traefik --disable metrics-server` to run `envsubst` + `kubectl apply` and diff status, so fresh-cluster regressions like 2.8 get caught in PR.
 
 ---
 
@@ -117,15 +160,17 @@ The web demo is 100% static narrative — useful as a storyboard, misleading as 
 
 ## 7. Recommended execution order
 
-If we had one engineer-day:
+If we had one engineer-day (done-in-this-PR marked ✅):
 
-1. Add `.github/workflows/lint.yml` with the four cheap checks. (15 min, catches 2.1 class of bugs forever.)
-2. Add `pytest` for `offload-worker` + fix 2.2 traceback leak. (45 min.)
-3. Reconcile the model aliases across LiteLLM config, operator chat config, and docs. Pick one set. (1 hr.)
-4. Bump `config/versions.yaml` to match the vLLM path, or delete it. (15 min.)
-5. Sweep stale ollama references; either delete or banner them. (1 hr.)
-6. Move `docs/mvp-plan.md` into `docs/archive/` and replace it with an operator-first minimum path (install operator → apply secret → apply `OpenClawInstance` → verify). (2 hr.)
-7. Move k8s secrets to `secretKeyRef` + `scripts/create-operator-secrets.sh`. (1 hr.)
+1. ✅ Add `.github/workflows/lint.yml` with the five cheap checks.
+2. ✅ Add `pytest` for `offload-worker` (7 tests, no MinIO needed). Traceback leak (2.2) still open — surface in a follow-up.
+3. ✅ Fix `rbac.yaml` and `offload-worker.yaml` missing-namespace bugs (2.8).
+4. Reconcile the model aliases across LiteLLM config, operator chat config, and docs. Pick one set. (1 hr.)
+5. Bump `config/versions.yaml` to match the vLLM path, or delete it. (15 min.)
+6. Sweep stale ollama references; either delete or banner them. (1 hr.)
+7. Move `docs/mvp-plan.md` into `docs/archive/` and replace it with an operator-first minimum path (install operator → apply secret → apply `OpenClawInstance` → verify). (2 hr.)
+8. Move k8s secrets to `secretKeyRef` + `scripts/create-operator-secrets.sh`. (1 hr.)
+9. Replace `image: docker.io/library/demo-offload-worker:latest` + `imagePullPolicy: Never` with either a published GHCR image or a ConfigMap-mounted `app.py` deploy (2.9). (1–2 hr.)
 
 Everything beyond that is platform work that depends on actually having a cluster to talk to.
 
@@ -155,4 +200,36 @@ curl -s -X POST http://127.0.0.1:8081/run -H 'content-type: application/json' \
   -d '{"task_type":"pandas_describe","payload":{"data":[{"a":1,"b":2},{"a":3,"b":4},{"a":5,"b":6}]}}'
 curl -s -X POST http://127.0.0.1:8081/run -H 'content-type: application/json' \
   -d '{"task_type":"sklearn_train","payload":{"X":[[0,0],[1,1],[0,1],[1,0],[2,2],[2,0]],"y":[0,1,0,1,1,1]}}'
+
+# Offload worker tests
+(cd runtimes/offload-worker && \
+  MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=dummy MINIO_SECRET_KEY=dummy \
+  pytest -v)    # 7 passed
+
+# k3s cluster smoke
+curl -sL -o /opt/kube/k3s \
+  "https://github.com/k3s-io/k3s/releases/download/v1.31.4%2Bk3s1/k3s"
+curl -sL -o /opt/kube/kubectl \
+  "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x /opt/kube/{k3s,kubectl}
+/opt/kube/k3s server --disable traefik --disable metrics-server \
+  --write-kubeconfig /etc/rancher/k3s/k3s.yaml --write-kubeconfig-mode 644 &
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+/opt/kube/kubectl get nodes   # vm Ready
+
+# Dry-run every manifest (after envsubst with dummy creds)
+export TELEGRAM_BOT_TOKEN=dummy SAMBANOVA_API_KEY=dummy AWS_BEARER_TOKEN_BEDROCK=dummy \
+  AWS_REGION=us-east-1 SYSTEM_B_VLLM_ENDPOINT=http://system-b:31000/v1 \
+  SYSTEM_B_MINIO_ENDPOINT=http://system-b:30900 \
+  MINIO_ACCESS_KEY=minio-dummy MINIO_SECRET_KEY=minio-dummy-secret-1234 \
+  CONTROL_PLANE_TOKEN=dummy SESSION_IMAGE=ghcr.io/ex/session:x \
+  CONTROL_IMAGE=ghcr.io/ex/control:x BEDROCK_MODEL_ID=x \
+  ANTHROPIC_DEFAULT_SONNET_MODEL=x TELEGRAM_ALLOWED_FROM=0
+for f in k8s/system-a/*.yaml k8s/system-b/*.yaml k8s/shared/*.template examples/*.yaml; do
+  envsubst < "$f" | /opt/kube/kubectl apply --server-side --dry-run=server -f -
+done
+
+# kubeconform schema check
+/tmp/kubeconform -strict -ignore-missing-schemas -skip CustomResourceDefinition \
+  k8s/ examples/   # 35 valid, 1 skipped (OpenClawInstance)
 ```
