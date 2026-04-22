@@ -1,0 +1,110 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n on all shell scripts
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r -d '' f; do
+            if ! bash -n "$f"; then
+              echo "::error file=$f::bash syntax error"
+              fail=1
+            fi
+          done < <(find scripts -type f -name '*.sh' -print0)
+          exit $fail
+
+  yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: yaml.safe_load_all on every *.yaml / *.yml
+        run: |
+          python - <<'PY'
+          import os, sys, yaml
+          bad = []
+          for dirpath, _, files in os.walk("."):
+              if "/.git/" in dirpath or dirpath.startswith("./.git"):
+                  continue
+              for fn in files:
+                  if fn.endswith((".yaml", ".yml")):
+                      p = os.path.join(dirpath, fn)
+                      try:
+                          list(yaml.safe_load_all(open(p)))
+                      except Exception as e:
+                          bad.append((p, str(e)))
+          for p, e in bad:
+              print(f"::error file={p}::YAML parse error: {e}")
+          sys.exit(1 if bad else 0)
+          PY
+
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: node --check on all web-demo JS
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r -d '' f; do
+            if ! node --check "$f"; then
+              echo "::error file=$f::JS parse error"
+              fail=1
+            fi
+          done < <(find web-demo -type f -name '*.js' -print0)
+          exit $fail
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: py_compile all *.py
+        run: |
+          set -e
+          fail=0
+          while IFS= read -r -d '' f; do
+            if ! python -m py_compile "$f"; then
+              echo "::error file=$f::Python syntax error"
+              fail=1
+            fi
+          done < <(find . -type f -name '*.py' -not -path './.git/*' -print0)
+          exit $fail
+
+  kubeconform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install kubeconform
+        run: |
+          curl -sSL -o kubeconform.tgz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform.tgz
+          chmod +x kubeconform
+      - name: validate k8s manifests against published schemas
+        run: |
+          # Manifests reference ${VAR} placeholders that are not valid YAML values
+          # on their own; strip quotes stay, but schema check is about shape not value.
+          ./kubeconform -summary -strict -ignore-missing-schemas \
+            -skip CustomResourceDefinition \
+            k8s/ examples/ || exit 1

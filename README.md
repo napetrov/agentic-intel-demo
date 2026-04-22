@@ -26,6 +26,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/reusable-components.md` — what to reuse vs what to build
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
+- `docs/improvement-plan.md` — analysis of the current repo, what was runnable locally, bugs found, and prioritized improvements
 
 ## Current validated direction
 The current validated direction is:
