@@ -33,8 +33,8 @@ What I could **not** run locally:
 
 ## 2. Real bugs found
 
-### 2.1 `web-demo/app.js` was not valid JavaScript (fixed in this change)
-Line 281 used shell-style `'\''` quote escaping inside a JS string literal. The file would throw a `SyntaxError` on load in any browser, which silently breaks the "Run demo" button and every scenario renderer (`renderScenario` is never reached because the file doesn't parse). This is the most visible user-facing bug in the repo. Fixed by switching that one string to double quotes so the embedded `'1,8p'` is literal.
+### 2.1 `web-demo/app.js` was not valid JavaScript (fixed independently on main)
+Line 281 used shell-style `'\''` quote escaping inside a JS string literal. The file would throw a `SyntaxError` on load in any browser, which silently breaks the "Run demo" button and every scenario renderer (`renderScenario` is never reached because the file doesn't parse). This PR initially fixed it by switching the outer quotes to double quotes; main's commit `c435e66` fixed the same line by escaping the inner `sed -n` arg differently. The two fixes are equivalent — main's landed first, this branch now carries main's version via merge. Either way the file now parses.
 
 Follow-up: a one-line check in CI (`node --check web-demo/*.js`) would have caught it.
 
