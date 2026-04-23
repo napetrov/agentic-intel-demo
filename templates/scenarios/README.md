@@ -21,9 +21,12 @@ ones in YAML keys.
 
 1. Pick the architecture variant from `docs/architecture-variants.md` that
    fits your scenario.
-2. Copy `scenario-spec.template.yaml` into `catalog/scenarios.yaml` and fill
-   in `id`, `label`, `execution_mode`, `task_family`, and the other fields
-   listed in `docs/scenario-spec.md`.
+2. Open `scenario-spec.template.yaml` and copy ONLY the `<scenario_id>:`
+   block (the indented entry), not the outer `scenarios:` line. Paste it as
+   a new entry under the existing `scenarios:` map in
+   `catalog/scenarios.yaml`, then fill in `id`, `label`, `execution_mode`,
+   `task_family`, and the other fields listed in `docs/scenario-spec.md`.
+   Never add a second top-level `scenarios:` key to `catalog/scenarios.yaml`.
 3. Create `agents/scenarios/<id>/` and copy `flow.template.md` into
    `flow.md` and `task-brief.template.md` into `<task-name>.md`. Fill both in.
 4. Add an entry to `agents/context-map.md` listing which files the

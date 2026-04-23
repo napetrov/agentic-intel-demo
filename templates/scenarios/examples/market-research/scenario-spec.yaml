@@ -1,6 +1,11 @@
 # Worked example — architecture variant: offload
 # Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
 # reference when using scenario-spec.template.yaml).
+#
+# NOTE: the `scenarios:` root key is shown here only so the example is a
+# valid YAML document on its own. When adding a new scenario to
+# `catalog/scenarios.yaml`, do NOT add a second `scenarios:` key; paste only
+# the `market_research:` entry below under the existing `scenarios:` map.
 
 scenarios:
 

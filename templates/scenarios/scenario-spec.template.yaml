@@ -1,13 +1,21 @@
 # Scenario catalog template.
 #
-# Copy this block under the `scenarios:` key in `catalog/scenarios.yaml` and
-# replace every <...> slot. Keep the top-level key (the scenario id) in
-# snake_case and unique across the catalog.
+# IMPORTANT: do NOT copy this file wholesale into `catalog/scenarios.yaml`.
+# `catalog/scenarios.yaml` already has a top-level `scenarios:` key; copying
+# the block below verbatim would create a duplicate top-level key, and most
+# YAML parsers keep only one — silently dropping existing scenarios.
+#
+# Instead, copy ONLY the `<scenario_id>:` block (everything starting at the
+# indented scenario id, without the outer `scenarios:` line) and paste it as
+# a new entry UNDER the existing `scenarios:` map in
+# `catalog/scenarios.yaml`. Replace every <...> slot. Keep the scenario id
+# in snake_case and unique across the catalog.
 #
 # See docs/scenario-spec.md for field-level requirements and the acceptance
 # checklist. See docs/architecture-variants.md for how execution_mode shapes
 # the architecture of the scenario.
 
+# ↓↓↓ copy ONLY from here down (the `<scenario_id>:` entry and its body) ↓↓↓
 scenarios:
 
   <scenario_id>:                          # snake_case, unique; used in callback data
@@ -25,3 +33,4 @@ scenarios:
     architecture_variant: <local-standard|local-large|offload>   # see docs/architecture-variants.md
     artifact_output: <true|false>
     offload_task_type: <analytics|null>   # only for execution_mode: offload_system_b
+# ↑↑↑ stop copying here; do NOT include the outer `scenarios:` line above ↑↑↑
