@@ -20,6 +20,8 @@ scenarios:
 
   <scenario_id>:                          # snake_case, unique; used in callback data
     label: "<Telegram button label>"      # short, fits an inline button
+    # Note: execution_mode uses underscores (matches catalog/tasks.yaml);
+    # architecture_variant below uses hyphens (matches docs/architecture-variants.md).
     execution_mode: <local_standard|local_large|offload_system_b>
     task_family: <task_family_id>         # must exist in catalog/tasks.yaml
     initial_user_message: "<exact text echoed back to user on start>"

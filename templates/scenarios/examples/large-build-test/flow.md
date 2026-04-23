@@ -37,6 +37,12 @@ Then briefly state the flow:
 - agent polls job completion via Control Plane
 - results surfaced via MinIO artifact (Control Plane relay) or job status
 
+The scale-up surface (`POST /sessions/{id}/scale-up`) is the planned
+contract per `docs/architecture.md` and `docs/mvp-plan.md` Phase 6 and is
+not yet live in `legacy/services/control-plane`. Use the same abstraction
+level as the live `agents/scenarios/*/flow.md` files when authoring a real
+scenario.
+
 ## Minimum evidence to show
 
 - profile selection statement

@@ -20,11 +20,16 @@ orchestrator.
 
 1. inspect target repo and identify the build/test invocation
 2. state "selecting large execution profile"
-3. request scale-up via Control Plane `POST /sessions/{id}/scale-up`
+3. request scale-up through Control Plane (planned surface:
+   `POST /sessions/{id}/scale-up`, per `docs/architecture.md`)
 4. wait for the execution Job to reach `running`
 5. stream or poll logs
 6. collect the exit code and test counts
 7. emit the structured result summary
+
+The scale-up and artifact-relay endpoints are the planned contract per
+`docs/architecture.md` and `docs/mvp-plan.md` Phase 6; they are not yet
+implemented in `legacy/services/control-plane`.
 
 ## Success criteria
 

@@ -32,15 +32,24 @@ Then state the flow briefly:
 ## Execution expectations
 
 - frame the research question and pick comparison dimensions
-- submit an offload job via `POST /offload` (Control Plane)
-- poll status via `GET /offload/{job_id}` (Control Plane)
-- fetch artifact ref via Control Plane artifact relay
+- submit the offload job through Control Plane (never direct to System B)
+- poll for completion through Control Plane
+- fetch the artifact via Control Plane artifact relay
 - assemble the analyst-style summary
+
+The specific endpoint surface (`POST /offload`, `GET /offload/{job_id}`,
+`GET /artifacts/{ref}`) is the planned contract documented in
+`docs/architecture.md` and `docs/mvp-plan.md` Phase 7. Treat it as the
+target shape; the live `legacy/services/control-plane` does not yet
+implement these routes. When authoring a real scenario, describe the
+behavior at the same abstraction level as the live
+`agents/scenarios/*/flow.md` files and point to the architecture doc for
+endpoint names.
 
 ## Minimum evidence to show
 
 - framed research question and comparison dimensions
-- offload job id returned by the Offload API
+- offload job id returned by the offload layer
 - artifact ref (MinIO path) relayed by Control Plane
 - concise analyst summary
 

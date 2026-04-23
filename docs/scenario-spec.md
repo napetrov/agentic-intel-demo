@@ -37,13 +37,18 @@ scenario is not acceptance-ready.
 
 ## Optional but recommended fields
 
+Optional fields may appear in the templates for documentation clarity, but
+they do not need to be present in the real `catalog/scenarios.yaml` entry
+when their values can be inferred or are inapplicable.
+
 - `architecture_variant` — one of `local-standard`, `local-large`, `offload`
   (see `docs/architecture-variants.md`). If omitted, it is inferred from
   `execution_mode`.
 - `pod_profile` override — set in `config/pod-profiles/profiles.yaml` only if
   the scenario genuinely needs a non-default profile.
-- `offload_task_type` — only for `offload_system_b`; must match the contract
-  in `docs/contracts/offload-result-contract.md`.
+- `offload_task_type` — only for `execution_mode: offload_system_b`; must
+  match the contract in `docs/contracts/offload-result-contract.md`. Omit
+  for non-offload scenarios.
 - `artifact_output: true|false` — whether the scenario is expected to write
   artifacts to the shared artifact path.
 - Success criteria checklist — objective, observable conditions the operator
@@ -74,8 +79,11 @@ scenario is not acceptance-ready.
 ### User experience
 - The orchestrator must be able to resolve the scenario from a Telegram
   callback and from at least one natural-language phrase.
-- The scenario must list the six-button guided menu as an allowed "next
-  action" surface (done at the orchestrator level, not per scenario).
+- The six-button guided menu is owned by the orchestrator
+  (`agents/orchestrator.md`). Scenario authors do NOT re-declare it per
+  scenario — they only list per-scenario transitions in `allowed_next_actions`
+  (typically `show_status`, `reset_session`, and any other scenario ids the
+  scenario may hand off to).
 - Every progress update must be one short line, consistent with the vocabulary
   in `templates/tg-messages.md`.
 

@@ -32,7 +32,10 @@ ones in YAML keys.
 4. Add an entry to `agents/context-map.md` listing which files the
    orchestrator should load for the new scenario.
 5. Add the Telegram triggers to the guided-triggers section of
-   `agents/orchestrator.md`.
+   `agents/orchestrator.md`. Keep callback identifiers and option ordering
+   consistent with the guided menu defined there; do not redefine the
+   six-button menu or control actions (`show_status`, `reset_session`,
+   `mode:chat`, etc.) in scenario files.
 6. Walk the acceptance checklist in `docs/scenario-spec.md`.
 
 ## Examples
