@@ -1,3 +1,9 @@
+const scenarioCapacity = {
+  'terminal-agent': { allocated: 2, scenarioMax: 8, clusterFree: 6 },
+  'market-research': { allocated: 4, scenarioMax: 8, clusterFree: 4 },
+  'large-build-test': { allocated: 16, scenarioMax: 32, clusterFree: 0 }
+};
+
 const scenarios = {
   'terminal-agent': {
     active: ['ui', 'openclaw', 'litellm', 'sambanova', 'systemA'],
@@ -103,7 +109,7 @@ const scenarios = {
   }
 };
 
-const timeline = document.getElementById('timeline');
+const toolActivityEl = document.getElementById('tool-activity');
 const result = document.getElementById('result');
 const consoleEl = document.getElementById('console');
 const commandLogEl = document.getElementById('command-log');
@@ -111,6 +117,12 @@ const metricsEl = document.getElementById('metrics');
 const fleetToastEl = document.getElementById('fleet-toast');
 const addAgentBtn = document.getElementById('add-agent');
 const runDemoBtn = document.getElementById('run-demo');
+const dataModeEl = document.getElementById('data-mode');
+const allocatedEl = document.getElementById('allocated-vcpu');
+const headroomEl = document.getElementById('headroom-vcpu');
+const scenarioMaxEl = document.getElementById('scenario-max');
+const clusterFreeEl = document.getElementById('cluster-free');
+const vcpuSliderEl = document.getElementById('vcpu-slider');
 const nodeEls = document.querySelectorAll('[data-node]');
 let fleetState = { total: 3, systemA: 2, systemB: 1 };
 let currentScenario = 'terminal-agent';
@@ -124,6 +136,33 @@ function renderConsole(entries) {
   consoleEl.innerHTML = Object.entries(entries).map(([k, v]) => `
     <div class="console-line"><span class="console-key">${k}</span><span class="console-val">${v}</span></div>
   `).join('');
+}
+
+function computeHeadroom(capacity) {
+  return Math.max(0, capacity.scenarioMax - capacity.allocated);
+}
+
+function renderToolActivity(rows) {
+  toolActivityEl.innerHTML = rows.map((row) => `
+    <div class="tool-row${row.empty ? ' empty' : ''}">
+      ${row.empty ? row.label : `<span class="tool-name">${row.name}</span><span class="tool-status">${row.status}</span>`}
+    </div>
+  `).join('');
+}
+
+function renderCapacity() {
+  const capacity = scenarioCapacity[currentScenario];
+  if (!capacity) return;
+  const headroom = computeHeadroom(capacity);
+  allocatedEl.textContent = capacity.allocated;
+  headroomEl.textContent = `+${headroom}`;
+  scenarioMaxEl.textContent = capacity.scenarioMax;
+  clusterFreeEl.textContent = capacity.clusterFree;
+  vcpuSliderEl.min = 1;
+  vcpuSliderEl.max = capacity.scenarioMax;
+  vcpuSliderEl.value = capacity.allocated;
+  vcpuSliderEl.disabled = capacity.clusterFree === 0 && capacity.allocated >= capacity.scenarioMax;
+  dataModeEl.textContent = 'Static demo data';
 }
 
 function renderFleet() {
@@ -146,16 +185,19 @@ function renderScenario(key) {
     const el = document.querySelector(`[data-node="${id}"]`);
     if (el) el.classList.add('active');
   });
-  timeline.innerHTML = scenario.timeline.map(([phase, text]) => `
-    <li><div class="phase">${phase}</div><div>${text}</div></li>
-  `).join('');
+  renderToolActivity([
+    { name: 'read', status: 'expected' },
+    { name: 'exec', status: key === 'market-research' ? 'optional' : 'expected' },
+    { name: 'summarize', status: 'expected' }
+  ]);
   commandLogEl.textContent = scenario.commandLog || 'No command log available.';
   renderMetrics(scenario.metrics || {
-    Elapsed: '—', Tokens: '—', Model: '—', Route: '—', Tools: '—', Artifacts: '—'
+    Model: '—', Route: '—', Tools: '—', Artifacts: '—'
   });
   result.textContent = scenario.result;
   result.className = 'result';
   renderConsole(scenario.console);
+  renderCapacity();
 }
 
 document.querySelectorAll('[data-scenario]').forEach((el) => {
@@ -171,16 +213,12 @@ document.querySelector('[data-action="status"]').addEventListener('click', () =>
     const el = document.querySelector(`[data-node="${id}"]`);
     if (el) el.classList.add('active');
   });
-  timeline.innerHTML = `
-    <li><div class="phase">OpenClaw</div><div>Orchestrator is reachable and ready.</div></li>
-    <li><div class="phase">LiteLLM</div><div>Gateway is available for model routing.</div></li>
-    <li><div class="phase">SambaNova</div><div>Inference path is active.</div></li>
-    <li><div class="phase">System A</div><div>CWF path is healthy.</div></li>
-    <li><div class="phase">System B</div><div>GNR path is healthy.</div></li>`;
-  commandLogEl.textContent = 'Status mode does not run commands. It shows live stack availability and routing readiness.';
+  renderToolActivity([
+    { name: 'status probe', status: 'active' },
+    { name: 'routing check', status: 'active' }
+  ]);
+  commandLogEl.textContent = 'Status mode shows stack availability only. It does not prove a real task execution happened.';
   renderMetrics({
-    Elapsed: 'live',
-    Tokens: 'n/a',
     Model: 'LiteLLM → SambaNova / SLM on GNR',
     Route: 'stack overview',
     Tools: 'status probes',
@@ -207,11 +245,9 @@ document.querySelector('[data-action="status"]').addEventListener('click', () =>
 
 document.querySelector('[data-action="reset"]').addEventListener('click', () => {
   resetArchitecture();
-  timeline.innerHTML = '<li class="empty">Select a scenario to light up the route.</li>';
+  renderToolActivity([{ empty: true, label: 'Select a scenario to view expected tool usage.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
   renderMetrics({
-    Elapsed: '—',
-    Tokens: '—',
     Model: '—',
     Route: '—',
     Tools: '—',
@@ -234,6 +270,21 @@ document.querySelector('[data-action="reset"]').addEventListener('click', () => 
     'artifact view': 'summary only'
   });
   renderFleet();
+});
+
+vcpuSliderEl.addEventListener('input', () => {
+  const capacity = scenarioCapacity[currentScenario];
+  if (!capacity) return;
+  const next = Number(vcpuSliderEl.value);
+  const maxReachable = Math.min(capacity.scenarioMax, capacity.allocated + capacity.clusterFree);
+  if (next > maxReachable) {
+    vcpuSliderEl.value = capacity.allocated;
+    return;
+  }
+  const delta = next - capacity.allocated;
+  capacity.allocated = next;
+  capacity.clusterFree = Math.max(0, capacity.clusterFree - delta);
+  renderCapacity();
 });
 
 addAgentBtn.addEventListener('click', () => {
@@ -261,83 +312,67 @@ runDemoBtn.addEventListener('click', () => {
   const steps = [
     {
       at: 400,
-      t: '0.4s', tokens: '210', route: 'OpenClaw accepted request', tools: 'session init', artifacts: '0',
-      phase: 'Accepted',
-      desc: 'OpenClaw accepted the demo request and created an isolated run.',
+      route: 'OpenClaw accepted request', tools: [
+        { name: 'session init', status: 'active' }
+      ], artifacts: '0',
       log: '$ openclaw demo run terminal-agent --isolated\nrequest accepted\nsession_id=demo-term-0420 sandbox=created\n'
     },
     {
       at: 2100,
-      t: '2.1s', tokens: '980', route: 'LiteLLM → SambaNova', tools: 'read, exec', artifacts: '0',
-      phase: 'Planning',
-      desc: 'The system selected the model route and prepared the workspace.',
-      log: '$ pwd\n/workspace-intel-dev/agentic-intel-demo\n$ find agents -maxdepth 3 -type f | sort\nagents/common.md\nagents/context-map.md\nagents/orchestrator.md\nagents/scenarios/terminal-agent/flow.md\nagents/scenarios/terminal-agent/terminal-bench-reference.md\nagents/scenarios/terminal-agent/terminal-bench-task.md\nagents/tasks/engineering/general.md\n$ sed -n "1,8p" agents/scenarios/terminal-agent/flow.md\nflow loaded\nroute selected: LiteLLM -> SambaNova\n'
+      route: 'LiteLLM → SambaNova', tools: [
+        { name: 'read', status: 'active' },
+        { name: 'exec', status: 'queued' }
+      ], artifacts: '0',
+      log: '$ pwd\n/workspace-intel-dev/agentic-intel-demo\n$ find agents -maxdepth 3 -type f | sort\n...\n'
     },
     {
       at: 6800,
-      t: '6.8s', tokens: '1840', route: 'System A (CWF)', tools: 'read, exec, summarize', artifacts: '1',
-      phase: 'Execution',
-      desc: 'Terminal commands are running on the primary CWF path.',
-      log: '$ ./scripts/legacy/smoke-test-session.sh --profile terminal-agent\n[bootstrap] workspace mounted\n[bootstrap] tools available: exec, read, summarize\n[exec] path=system-a\nToolchain checks passed\nCollecting logs...\n'
+      route: 'System A (CWF)', tools: [
+        { name: 'read', status: 'done' },
+        { name: 'exec', status: 'active' },
+        { name: 'summarize', status: 'queued' }
+      ], artifacts: '1',
+      log: '$ ./scripts/legacy/smoke-test-session.sh --profile terminal-agent\n[bootstrap] workspace mounted\n[exec] path=system-a\n'
     },
     {
       at: 11600,
-      t: '11.6s', tokens: '2760', route: 'System A (CWF)', tools: 'exec, read, summarize', artifacts: '2',
-      phase: 'Completion',
-      desc: 'Execution finished and the answer package is being assembled.',
-      log: '$ tail -n 10 /tmp/demo-terminal-workflow.log\ncommand completed\nartifacts packaged\nsummary generated\nresult ready\n$ ls artifacts/demo-terminal\ncommand-trace.txt\nsummary.md\n'
+      route: 'System A (CWF)', tools: [
+        { name: 'read', status: 'done' },
+        { name: 'exec', status: 'done' },
+        { name: 'summarize', status: 'active' }
+      ], artifacts: '2',
+      log: '$ tail -n 10 /tmp/demo-terminal-workflow.log\ncommand completed\nartifacts packaged\nsummary generated\n'
     }
   ];
 
   const totalDuration = steps[steps.length - 1].at;
-  const startTs = Date.now();
-  let progressTimer = null;
 
-  timeline.innerHTML = '';
   commandLogEl.textContent = '';
   result.textContent = 'Demo in progress...';
   result.className = 'result';
+  renderToolActivity([{ name: 'session init', status: 'active' }]);
   renderMetrics({
-    Elapsed: '0.0s',
-    Tokens: '0',
-    Model: 'LiteLLM route selected',
+    Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
     Route: 'preparing',
     Tools: 'initializing',
     Artifacts: '0'
   });
 
-  progressTimer = setInterval(() => {
-    const elapsed = Math.min((Date.now() - startTs) / 1000, totalDuration / 1000);
-    const currentMetrics = metricsEl.querySelectorAll('.metric-value');
-    renderMetrics({
-      Elapsed: `${elapsed.toFixed(1)}s`,
-      Tokens: currentMetrics[1]?.textContent || '0',
-      Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
-      Route: currentMetrics[3]?.textContent || 'preparing',
-      Tools: currentMetrics[4]?.textContent || 'initializing',
-      Artifacts: currentMetrics[5]?.textContent || '0'
-    });
-    if (elapsed >= totalDuration / 1000) clearInterval(progressTimer);
-  }, 250);
-
   steps.forEach((step) => {
     setTimeout(() => {
-      timeline.innerHTML += `<li><div class="phase">${step.phase}</div><div>${step.desc}</div></li>`;
       commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + step.log;
       commandLogEl.scrollTop = commandLogEl.scrollHeight;
+      renderToolActivity(step.tools);
       renderMetrics({
-        Elapsed: step.t,
-        Tokens: step.tokens,
         Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
         Route: step.route,
-        Tools: step.tools,
+        Tools: step.tools.map((tool) => tool.name).join(', '),
         Artifacts: step.artifacts
       });
     }, step.at);
   });
 
   setTimeout(() => {
-    clearInterval(progressTimer);
     renderScenario(currentScenario);
     runDemoBtn.textContent = restoreLabel;
     runDemoBtn.disabled = false;

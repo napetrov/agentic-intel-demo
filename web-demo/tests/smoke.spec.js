@@ -11,12 +11,12 @@ test('page loads with expected landmarks', async ({ page }) => {
   await expect(page.locator('#run-demo')).toContainText(/walkthrough/i);
 });
 
-test('each scenario card populates timeline with at least 3 items', async ({ page }) => {
+test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   for (const scenario of SCENARIOS) {
     await page.locator(`[data-scenario="${scenario}"]`).click();
-    const count = await page.locator('#timeline li:not(.empty)').count();
-    expect(count, `scenario ${scenario} should produce ≥3 timeline items`).toBeGreaterThanOrEqual(3);
+    const count = await page.locator('#tool-activity .tool-row:not(.empty)').count();
+    expect(count, `scenario ${scenario} should produce ≥3 tool rows`).toBeGreaterThanOrEqual(3);
     await expect(page.locator('#result')).not.toHaveText(/waiting/i);
   }
 });
@@ -31,7 +31,7 @@ test('run animated walkthrough disables then re-enables the button', async ({ pa
   // Full walkthrough runs in ~11.6s of staged steps + 250ms cleanup.
   await expect(btn).toBeEnabled({ timeout: 20000 });
   await expect(btn).toHaveText(originalLabel);
-  // Timeline should be non-empty after the walkthrough.
-  const count = await page.locator('#timeline li:not(.empty)').count();
+  // Tool activity should be non-empty after the walkthrough.
+  const count = await page.locator('#tool-activity .tool-row:not(.empty)').count();
   expect(count).toBeGreaterThanOrEqual(3);
 });
