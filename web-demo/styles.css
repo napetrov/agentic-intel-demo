@@ -43,6 +43,7 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   backdrop-filter: blur(14px);
 }
 .status-card { padding: 18px; }
+.status-note { margin: -4px 0 14px; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--cyan); margin-bottom: 12px; }
 .status-list { display: grid; gap: 10px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin-right: 10px; }
@@ -73,6 +74,12 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .ghost.small { padding: 10px 12px; font-size: 13px; }
 .primary { background: linear-gradient(135deg, var(--blue), var(--cyan)); color: #04101c; font-weight: 700; }
 .ghost { background: rgba(255,255,255,.04); color: var(--text); border: 1px solid var(--line); }
+.primary:focus-visible,
+.ghost:focus-visible,
+.scenario-card:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
 .architecture { padding: 20px; margin-bottom: 20px; background: var(--panel-2); }
 .arch-row, .arch-split { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .arch-row { margin-bottom: 16px; }
@@ -155,7 +162,8 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .timeline .phase { color: var(--cyan); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
 .result { min-height: 220px; padding: 18px; white-space: pre-line; }
 .command-log {
-  min-height: 520px;
+  min-height: 320px;
+  max-height: 60vh;
   margin: 0;
   padding: 16px;
   overflow: auto;
@@ -186,13 +194,6 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   color: var(--text);
   font-weight: 700;
 }
-.fleet-head {
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  font-size: 12px;
-  margin-bottom: 10px;
-}
 .fleet-toast {
   margin-bottom: 10px;
   padding: 10px 12px;
@@ -203,20 +204,6 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   font-size: 13px;
 }
 .hidden { display: none; }
-.fleet-view {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-.fleet-chip {
-  padding: 8px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.04);
-  color: #d7e6fb;
-  font-size: 12px;
-}
 .console { padding: 14px 16px; }
 .console-line {
   display: flex;

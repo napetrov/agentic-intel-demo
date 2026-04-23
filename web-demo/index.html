@@ -14,14 +14,15 @@
           <h1>Agentic Intelligence Demo</h1>
           <p class="lede">A web demo that shows OpenClaw orchestration, LiteLLM model routing, SambaNova inference, and execution across System A and System B.</p>
         </div>
-        <section class="status-card">
-          <div class="section-title">Live stack</div>
-          <div class="status-list">
-            <div><span class="dot ok"></span>OpenClaw orchestrator</div>
-            <div><span class="dot ok"></span>LiteLLM gateway</div>
-            <div><span class="dot ok"></span>SambaNova inference</div>
-            <div><span class="dot ok"></span>System A (CWF)</div>
-            <div><span class="dot ok"></span>System B (GNR)</div>
+        <section class="status-card" aria-labelledby="platform-health-title">
+          <div class="section-title" id="platform-health-title">Platform health</div>
+          <p class="status-note">Component reachability. Run counts and route details live in the architecture panel.</p>
+          <div class="status-list" role="list">
+            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>OpenClaw orchestrator</div>
+            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>LiteLLM gateway</div>
+            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>SambaNova inference</div>
+            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>System A (CWF)</div>
+            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>System B (GNR)</div>
           </div>
         </section>
       </aside>
@@ -29,12 +30,12 @@
         <section class="hero">
           <div>
             <div class="eyebrow">OpenClaw-powered demo portal</div>
-            <h2>Show the stack, not just the chat</h2>
-            <p>Make the architecture visible: OpenClaw coordinates the run, LiteLLM routes the model call, SambaNova performs inference, and the task executes on System A or System B.</p>
+            <h2>Pick a scenario to watch the stack work</h2>
+            <p>Choose one of the scenarios below. OpenClaw coordinates the run, LiteLLM routes the model call, SambaNova performs inference, and the task executes on System A or System B — the walkthrough lights up each step.</p>
           </div>
           <div class="hero-actions">
             <button class="ghost" data-action="status">Live status</button>
-            <button class="primary" id="run-demo">Run demo</button>
+            <button class="primary" id="run-demo">Run animated walkthrough</button>
             <button class="ghost" data-action="reset">Reset demo</button>
           </div>
         </section>
@@ -155,7 +156,7 @@
                   <div class="section-subtitle">Execution stages as they complete</div>
                 </div>
               </div>
-              <ol id="timeline" class="timeline">
+              <ol id="timeline" class="timeline" role="status" aria-live="polite" aria-atomic="false">
                 <li class="empty">Select a scenario to light up the route.</li>
               </ol>
             </div>
@@ -167,25 +168,17 @@
                   <div class="section-subtitle">Compact output for the demo viewer</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state">Waiting for scenario selection.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite">Waiting for scenario selection.</div>
             </div>
 
             <div class="panel console-panel">
               <div class="panel-head">
                 <div>
-                  <div class="section-title">Demo console</div>
-                  <div class="section-subtitle">Explain what answers where and why</div>
+                  <div class="section-title">Run context</div>
+                  <div class="section-subtitle">What answers where, for the current run</div>
                 </div>
               </div>
-              <div class="fleet-head">Fleet view</div>
-              <div id="fleet-toast" class="fleet-toast hidden">Agent added to fleet.</div>
-              <div id="fleet" class="fleet-view">
-                <div class="fleet-chip">OpenClaw agents: 3</div>
-                <div class="fleet-chip">System A: 2</div>
-                <div class="fleet-chip">System B: 1</div>
-                <div class="fleet-chip">SambaNova active</div>
-                <div class="fleet-chip">SLM on GNR available</div>
-              </div>
+              <div id="fleet-toast" class="fleet-toast hidden" role="status" aria-live="polite">Agent added to fleet.</div>
               <div id="console" class="console">
                 <div class="console-line"><span class="console-key">mode</span><span class="console-val">demo portal</span></div>
                 <div class="console-line"><span class="console-key">openclaw version</span><span class="console-val">2026.4.15</span></div>
