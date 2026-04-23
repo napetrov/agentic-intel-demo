@@ -114,7 +114,6 @@ const result = document.getElementById('result');
 const consoleEl = document.getElementById('console');
 const commandLogEl = document.getElementById('command-log');
 const metricsEl = document.getElementById('metrics');
-const fleetEl = document.getElementById('fleet');
 const fleetToastEl = document.getElementById('fleet-toast');
 const addAgentBtn = document.getElementById('add-agent');
 const runDemoBtn = document.getElementById('run-demo');
@@ -170,13 +169,6 @@ function renderFleet() {
   document.getElementById('agents-total').textContent = fleetState.total;
   document.getElementById('agents-a').textContent = fleetState.systemA;
   document.getElementById('agents-b').textContent = fleetState.systemB;
-  fleetEl.innerHTML = `
-    <div class="fleet-chip">OpenClaw agents: ${fleetState.total}</div>
-    <div class="fleet-chip">System A: ${fleetState.systemA}</div>
-    <div class="fleet-chip">System B: ${fleetState.systemB}</div>
-    <div class="fleet-chip">SambaNova active</div>
-    <div class="fleet-chip">SLM on GNR available</div>
-  `;
 }
 
 function renderMetrics(entries) {
@@ -313,6 +305,7 @@ addAgentBtn.addEventListener('click', () => {
 });
 
 runDemoBtn.addEventListener('click', () => {
+  const restoreLabel = runDemoBtn.textContent;
   runDemoBtn.textContent = 'Running...';
   runDemoBtn.disabled = true;
 
@@ -381,7 +374,7 @@ runDemoBtn.addEventListener('click', () => {
 
   setTimeout(() => {
     renderScenario(currentScenario);
-    runDemoBtn.textContent = 'Run demo';
+    runDemoBtn.textContent = restoreLabel;
     runDemoBtn.disabled = false;
   }, totalDuration + 250);
 });
