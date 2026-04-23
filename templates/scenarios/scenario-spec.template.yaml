@@ -1,0 +1,27 @@
+# Scenario catalog template.
+#
+# Copy this block under the `scenarios:` key in `catalog/scenarios.yaml` and
+# replace every <...> slot. Keep the top-level key (the scenario id) in
+# snake_case and unique across the catalog.
+#
+# See docs/scenario-spec.md for field-level requirements and the acceptance
+# checklist. See docs/architecture-variants.md for how execution_mode shapes
+# the architecture of the scenario.
+
+scenarios:
+
+  <scenario_id>:                          # snake_case, unique; used in callback data
+    label: "<Telegram button label>"      # short, fits an inline button
+    execution_mode: <local_standard|local_large|offload_system_b>
+    task_family: <task_family_id>         # must exist in catalog/tasks.yaml
+    initial_user_message: "<exact text echoed back to user on start>"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+      # add other scenario ids here if switching is supported
+    fallback_scenario: <scenario_id_or_null>
+
+    # Optional but recommended fields (keep or remove as needed):
+    architecture_variant: <local-standard|local-large|offload>   # see docs/architecture-variants.md
+    artifact_output: <true|false>
+    offload_task_type: <analytics|null>   # only for execution_mode: offload_system_b

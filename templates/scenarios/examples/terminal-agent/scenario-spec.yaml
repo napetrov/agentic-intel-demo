@@ -1,0 +1,18 @@
+# Worked example — architecture variant: local-standard
+# Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
+# reference when using scenario-spec.template.yaml).
+
+scenarios:
+
+  terminal_agent:
+    label: "Terminal Agent"
+    execution_mode: local_standard
+    task_family: software_engineering
+    initial_user_message: "Starting isolated engineering demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: null
+
+    architecture_variant: local-standard
+    artifact_output: false

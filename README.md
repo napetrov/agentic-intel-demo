@@ -22,11 +22,19 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
 - `docs/implementation-guide.md` — implementation notes and migration context for the current demo
 - `docs/architecture.md` — architecture breakdown and execution model
+- `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload)
+- `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
 - `docs/mvp-plan.md` — minimal MVP path and implementation order
 - `docs/reusable-components.md` — what to reuse vs what to build
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
 - `docs/improvement-plan.md` — analysis of the current repo, what was runnable locally, bugs found, and prioritized improvements
+
+## Authoring new demo scenarios
+External authors adding a new guided scenario should start here:
+- `docs/scenario-spec.md` — required fields and acceptance checklist
+- `docs/architecture-variants.md` — picking the execution mode / architecture variant
+- `templates/scenarios/` — copy-and-fill templates (`scenario-spec.template.yaml`, `flow.template.md`, `task-brief.template.md`) plus one worked example per variant under `templates/scenarios/examples/`
 
 ## Current validated direction
 The current validated direction is:

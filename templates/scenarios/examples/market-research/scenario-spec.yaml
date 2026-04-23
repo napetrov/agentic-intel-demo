@@ -1,0 +1,19 @@
+# Worked example — architecture variant: offload
+# Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
+# reference when using scenario-spec.template.yaml).
+
+scenarios:
+
+  market_research:
+    label: "Market Research"
+    execution_mode: offload_system_b
+    task_family: data_processing
+    initial_user_message: "Starting market research demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent
+
+    architecture_variant: offload
+    artifact_output: true
+    offload_task_type: analytics
