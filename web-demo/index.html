@@ -99,6 +99,26 @@
               <span class="arch-badge">agents: <span id="agents-b">1</span></span>
             </div>
           </div>
+          <div class="scaling-panel">
+            <div class="scaling-head">
+              <div>
+                <div class="section-title">Scaling controls</div>
+                <div class="section-subtitle">Demo-only capacity model for the selected scenario</div>
+              </div>
+              <div id="data-mode" class="data-mode-badge">Static demo data</div>
+            </div>
+            <div class="scaling-grid">
+              <div class="metric-card"><span class="metric-label">Allocated vCPU</span><span id="allocated-vcpu" class="metric-value">2</span></div>
+              <div class="metric-card"><span class="metric-label">Headroom</span><span id="headroom-vcpu" class="metric-value">+6</span></div>
+              <div class="metric-card"><span class="metric-label">Scenario max</span><span id="scenario-max" class="metric-value">8</span></div>
+              <div class="metric-card"><span class="metric-label">Cluster free</span><span id="cluster-free" class="metric-value">6</span></div>
+            </div>
+            <div class="scaling-controls-row">
+              <label class="scaling-label" for="vcpu-slider">vCPU allocation</label>
+              <input id="vcpu-slider" class="slider" type="range" min="1" max="8" step="1" value="2" />
+              <div class="scaling-hint">Headroom = min(scenario max, allocated + cluster free) − allocated</div>
+            </div>
+          </div>
         </section>
 
         <section class="cards">
@@ -127,6 +147,7 @@
                 <div class="section-subtitle">Watch the agent work in real time</div>
               </div>
             </div>
+            <div class="panel-note">This panel is scenario-driven demo output, not a live runtime tail.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -138,9 +159,8 @@
                   <div class="section-subtitle">Elapsed time, tokens, tools, route</div>
                 </div>
               </div>
+              <div class="panel-note">Tokens and route metrics are synthetic unless wired to a backend run source.</div>
               <div id="metrics" class="metrics-grid">
-                <div class="metric-card"><span class="metric-label">Elapsed</span><span class="metric-value">—</span></div>
-                <div class="metric-card"><span class="metric-label">Tokens</span><span class="metric-value">—</span></div>
                 <div class="metric-card"><span class="metric-label">Model</span><span class="metric-value">—</span></div>
                 <div class="metric-card"><span class="metric-label">Route</span><span class="metric-value">—</span></div>
                 <div class="metric-card"><span class="metric-label">Tools</span><span class="metric-value">—</span></div>
@@ -148,16 +168,16 @@
               </div>
             </div>
 
-            <div class="panel timeline-panel compact-status-panel">
+            <div class="panel tools-panel compact-status-panel">
               <div class="panel-head">
                 <div>
-                  <div class="section-title">Run status</div>
-                  <div class="section-subtitle">Execution stages as they complete</div>
+                  <div class="section-title">Tool activity</div>
+                  <div class="section-subtitle">Show which tools are being used during the run</div>
                 </div>
               </div>
-              <ol id="timeline" class="timeline">
-                <li class="empty">Select a scenario to light up the route.</li>
-              </ol>
+              <div id="tool-activity" class="tool-activity">
+                <div class="tool-row empty">Select a scenario to view expected tool usage.</div>
+              </div>
             </div>
 
             <div class="panel result-panel">
@@ -186,7 +206,7 @@
                 <div class="fleet-chip">SambaNova active</div>
                 <div class="fleet-chip">SLM on GNR available</div>
               </div>
-              <div id="console" class="console">
+              <div id="console" class="console console-scroll">
                 <div class="console-line"><span class="console-key">mode</span><span class="console-val">demo portal</span></div>
                 <div class="console-line"><span class="console-key">openclaw version</span><span class="console-val">2026.4.15</span></div>
                 <div class="console-line"><span class="console-key">orchestrator</span><span class="console-val">OpenClaw</span></div>
@@ -201,6 +221,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260423c"></script>
   </body>
 </html>
