@@ -18,11 +18,11 @@
           <div class="section-title" id="platform-health-title">Platform health</div>
           <p class="status-note">Component reachability. Run counts and route details live in the architecture panel.</p>
           <div class="status-list" role="list">
-            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>OpenClaw orchestrator</div>
-            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>LiteLLM gateway</div>
-            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>SambaNova inference</div>
-            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>System A (CWF)</div>
-            <div role="listitem"><span class="dot ok" role="img" aria-label="healthy"></span>System B (GNR)</div>
+            <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="openclaw"></span>OpenClaw orchestrator</div>
+            <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="litellm"></span>LiteLLM gateway</div>
+            <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="sambanova"></span>SambaNova inference</div>
+            <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemA"></span>System A (CWF / control-plane)</div>
+            <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemB"></span>System B (GNR / offload-worker)</div>
           </div>
         </section>
       </aside>
@@ -175,7 +175,7 @@
                 <div class="section-subtitle">Watch the agent work in real time</div>
               </div>
             </div>
-            <div class="panel-note">This panel is scenario-driven demo output, not a live runtime tail.</div>
+            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run walkthrough" submits a real shell task via the control-plane and shows worker stdout. Otherwise the panel falls back to the scripted walkthrough.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 

@@ -3,17 +3,23 @@
 This guide treats `openclaw-operator` as the only supported path for instance lifecycle.
 
 `openclaw-operator` is an **external upstream project** — we consume it as-is,
-we do not fork it. The exact upstream source ref (repository URL + release
-tag or commit) is not yet pinned in this repo; record it here once
-confirmed so bring-up is reproducible:
+we do not fork it. The install script clones the upstream repo and checks out
+a configurable ref:
 
-- **Upstream source**: `TBD` (fill in `git URL` + tag or commit SHA)
-- **Install source**: `TBD` (e.g. a release tarball, manifests path, or
-  `kustomize` URL used by `scripts/install-openclaw-operator.sh`)
+- **Upstream repo** (`OPENCLAW_OPERATOR_REPO`): defaults to
+  `https://github.com/openclaw-rocks/openclaw-operator.git`.
+- **Upstream ref** (`OPENCLAW_OPERATOR_REF`): defaults to `main`. Pin to a
+  tag or commit SHA in your environment for reproducible installs — the
+  script prints a warning when left at `main`.
+- **CRD path** (`OPERATOR_CRD_PATH`): defaults to
+  `config/crd/bases/openclawinstances.openclaw.rocks.yaml` inside the
+  checkout.
+- **Manifests path** (`OPERATOR_MANIFESTS_PATH`): defaults to `config/default`
+  inside the checkout.
 
-Until the above is filled in, treat `scripts/install-openclaw-operator.sh`
-as the canonical description of where the operator is pulled from — if you
-change the source there, update this file too.
+By default `scripts/install-openclaw-operator.sh` runs in dry-run mode and
+only prints the kubectl commands it would execute. Set `APPLY=1` to actually
+clone and apply against the current kube context.
 
 ## Safe install order
 
@@ -33,6 +39,16 @@ The CRD `openclawinstances.openclaw.rocks` previously failed on-cluster with:
 So the CRD should not be treated as just another file in a naive `kubectl apply -k` bundle if that reintroduces a giant client-side apply annotation.
 
 ## Preferred install command shape
+
+```bash
+# Dry-run first (no kubectl, no clone with apply):
+OPENCLAW_OPERATOR_REF=v0.1.0 ./scripts/install-openclaw-operator.sh
+
+# Then apply against the current kube context:
+APPLY=1 OPENCLAW_OPERATOR_REF=v0.1.0 ./scripts/install-openclaw-operator.sh
+```
+
+Equivalent raw commands (what the script runs in `server-side-crd` mode):
 
 ```bash
 kubectl apply --server-side -f <CRD_PATH>

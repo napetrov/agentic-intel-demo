@@ -63,8 +63,24 @@ The current validated direction is:
 
 Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
+## Local bring-up (laptop)
+For a single-host demo without Kubernetes, the repo ships a
+`docker-compose.yaml` that brings up MinIO, the offload-worker, the control
+plane, and the static web UI with an `/api` reverse proxy:
+
+```bash
+docker compose up --build
+# open http://localhost:8080 — "Run walkthrough" submits a real shell task
+# via the control plane and renders the worker stdout in the demo UI.
+```
+
+`task_type=shell` is fully self-contained on this path. `task_type=agent_invoke`
+is left unconfigured locally (no OpenClaw running); set `OPENCLAW_GATEWAY_URL`
+and `OPENCLAW_GATEWAY_TOKEN` in your shell before `compose up` to point the
+worker at a remote OpenClaw gateway.
+
 ## Scripts
-- `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`)
+- `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
 - `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
 - `scripts/setup-system-b-vllm.sh` — current validated System B vLLM path

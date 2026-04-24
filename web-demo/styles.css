@@ -46,8 +46,10 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .status-note { margin: -4px 0 14px; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--cyan); margin-bottom: 12px; }
 .status-list { display: grid; gap: 10px; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin-right: 10px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin-right: 10px; background: #555; }
 .dot.ok { background: var(--green); box-shadow: 0 0 14px rgba(73,217,135,.7); }
+.dot.warn { background: #d8a838; box-shadow: 0 0 12px rgba(216,168,56,.6); }
+.dot.down { background: #c25255; box-shadow: 0 0 12px rgba(194,82,85,.6); }
 .hero {
   padding: 24px;
   display: flex;
