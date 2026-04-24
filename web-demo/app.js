@@ -313,6 +313,8 @@ function buildWalkthroughPhases(scenario) {
   const timeline = scenario.timeline || [];
   const phaseCount = Math.max(1, timeline.length);
   const chunkSize = Math.ceil(lines.length / phaseCount);
+  const parsedArtifacts = Number(scenario.metrics.Artifacts);
+  const artifactTotal = Number.isFinite(parsedArtifacts) ? parsedArtifacts : phaseCount;
 
   return timeline.map((entry, idx) => {
     const chunk = lines.slice(idx * chunkSize, (idx + 1) * chunkSize).join('\n');
@@ -330,7 +332,7 @@ function buildWalkthroughPhases(scenario) {
       detail: entry[1],
       chunk,
       tools,
-      artifacts: String(Math.min(idx + 1, Number(scenario.metrics.Artifacts) || (idx + 1)))
+      artifacts: String(Math.min(idx + 1, artifactTotal))
     };
   });
 }
