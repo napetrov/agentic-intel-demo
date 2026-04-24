@@ -39,10 +39,23 @@ def die(msg: str, extra: object = None) -> None:
 
 def main() -> int:
     with httpx.Client(base_url=CONTROL_PLANE, timeout=TIMEOUT) as c:
-        # 0. health
-        h = c.get("/health")
-        if h.status_code != 200:
-            die("control-plane /health not 200", h.text)
+        # 0. health — retry: the preceding CI step already waits for a
+        # 200 on /health, but a cold process can still return stale
+        # connections on the first driver request under load. Cheap.
+        deadline = time.time() + 30
+        last_error: object = None
+        h = None
+        while time.time() < deadline:
+            try:
+                h = c.get("/health")
+                if h.status_code == 200:
+                    break
+                last_error = h.text
+            except httpx.HTTPError as exc:
+                last_error = exc
+            time.sleep(0.5)
+        if h is None or h.status_code != 200:
+            die("control-plane /health never became ready", last_error)
         print(f"OK  /health -> {h.json()}")
 
         # 1. small-payload path
@@ -119,15 +132,25 @@ def main() -> int:
         print(f"OK  /artifacts/{ref} -> presigned URL")
 
     # 6. fetch the artifact via the presigned URL (outside the control plane).
-    # Rewrite the host if MinIO advertised an in-cluster hostname (it won't
-    # here — we configured http://localhost:9000 — but this keeps the
-    # driver portable).
+    # If MinIO advertised an in-cluster hostname we rewrite the URL host to
+    # `localhost` so the runner can actually reach it. SigV4 includes the
+    # Host header in the signature, so we must preserve the ORIGINAL host
+    # (the one the URL was signed with) as an explicit `Host` header —
+    # otherwise MinIO returns `SignatureDoesNotMatch`. See
+    # https://github.com/minio/minio/issues/11870.
     url = art["url"]
     parsed = urlparse(url)
+    headers: dict[str, str] = {}
     if parsed.hostname and parsed.hostname not in {"localhost", "127.0.0.1"}:
-        url = url.replace(f"{parsed.scheme}://{parsed.hostname}", "http://localhost")
+        original_host = parsed.hostname
+        if parsed.port:
+            original_host = f"{original_host}:{parsed.port}"
+        url = url.replace(
+            f"{parsed.scheme}://{parsed.netloc}", "http://localhost"
+        )
+        headers["Host"] = original_host
     with httpx.Client(timeout=TIMEOUT) as c:
-        r = c.get(url)
+        r = c.get(url, headers=headers)
         if r.status_code != 200:
             die(f"presigned artifact fetch returned {r.status_code}", r.text[:200])
         body = r.json()

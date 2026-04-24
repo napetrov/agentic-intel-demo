@@ -60,7 +60,8 @@ class OffloadRequest(BaseModel):
     task_type: str = Field(min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     session_id: Optional[str] = None
-    timeout_seconds: Optional[float] = None
+    # gt=0: a non-positive timeout is a client error, not "use default".
+    timeout_seconds: Optional[float] = Field(default=None, gt=0)
 
 
 class OffloadSubmitted(BaseModel):
@@ -109,12 +110,19 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
             "completed_at": None,
         }
 
-    timeout = req.timeout_seconds if req.timeout_seconds else OFFLOAD_TIMEOUT_SECONDS
+    # `is not None`: 0 is an invalid request (validator rejects it), not
+    # "use the default". Truthiness would silently coerce 0 to default.
+    timeout = (
+        req.timeout_seconds
+        if req.timeout_seconds is not None
+        else OFFLOAD_TIMEOUT_SECONDS
+    )
     # httpx.HTTPError covers network/timeout/5xx via raise_for_status();
     # ValueError (parent of json.JSONDecodeError) covers a 200 response
     # body that is not valid JSON — e.g. an HTML error page returned by a
-    # misbehaving proxy. Either way, mark the job failed instead of
-    # leaving it stuck in `running`.
+    # misbehaving proxy. isinstance check rejects a JSON body that decodes
+    # to a list/scalar instead of an object. Either way, mark the job
+    # failed instead of leaving it stuck in `running`.
     try:
         resp = httpx.post(
             f"{OFFLOAD_WORKER_URL}/run",
@@ -127,6 +135,10 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
         )
         resp.raise_for_status()
         body = resp.json()
+        if not isinstance(body, dict):
+            raise ValueError(
+                f"unexpected offload-worker payload type: {type(body).__name__}"
+            )
     except (httpx.HTTPError, ValueError) as exc:
         with _jobs_lock:
             _jobs[job_id].update(

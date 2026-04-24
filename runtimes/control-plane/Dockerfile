@@ -2,13 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    fastapi==0.115.12 \
-    'uvicorn[standard]==0.34.2' \
-    httpx==0.28.1 \
-    boto3==1.37.38
+RUN useradd --create-home --uid 1000 --shell /bin/bash appuser
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app.py /app/app.py
+
+USER appuser
 
 EXPOSE 8080
 
