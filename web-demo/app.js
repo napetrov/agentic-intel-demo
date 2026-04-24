@@ -1,9 +1,10 @@
-const SYSTEM_A_TOTAL_VCPU = 16;
+const SYSTEM_A_TOTAL_VCPU = 512;
+const SYSTEM_B_TOTAL_VCPU = 100;
 
 const scenarios = {
   'terminal-agent': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
-    primary: { name: 'Terminal agent', vcpu: 4 },
+    primary: { name: 'Terminal agent', vcpu: 128 },
     subagent: null,
     services: { erag: false, 'ent-inference': false },
     crossSystemArrow: false,
@@ -18,7 +19,7 @@ const scenarios = {
       'enterprise inference': 'available as alternate route',
       'model route': 'LiteLLM → SambaNova',
       'session scope': 'isolated per user',
-      'placement': 'System A — 4/16 vCPU',
+      'placement': 'System A — 128/512 vCPU',
       'artifact view': 'engineering summary'
     },
     metrics: {
@@ -31,18 +32,18 @@ const scenarios = {
     },
     commandLog: `$ openclaw demo run terminal-agent --isolated\nrequest accepted\nsession_id=demo-term-0420 sandbox=created profile=engineering\n\n$ sed -n '1,40p' agents/scenarios/terminal-agent/terminal-bench-reference.md\n# Terminal Agent Demo — Reference Task Spec\n### Name\nrepo-structure-audit-and-fixup\n### Objective\nInspect the repo and produce a structured scenario/task inventory.\n\n$ ./scripts/session-bootstrap.sh --scenario terminal-agent\n[bootstrap] workspace mounted at /workspace-intel-dev/agentic-intel-demo\n[bootstrap] tools registered: exec, read, summarize\n[bootstrap] isolated temp dir: /tmp/demo-term-0420\n[check] demo-workspace/BOOTSTRAP.md loaded\n[check] scenario prompt loaded\n\n$ ./scripts/route-task.sh --scenario terminal-agent\n[classifier] workload=interactive engineering\n[inference] provider=litellm/sambanova\n[executor] target=system-a\n[decision] use primary CWF path\n\n$ git status --short\n M web-demo/app.js\n M web-demo/index.html\n M web-demo/styles.css\n\n$ ./scripts/smoke-test-operator-instance.sh --profile terminal-agent\n[step] validating shell access\n[step] validating repo context\n[step] validating writable artifact dir\n[ok] shell access confirmed\n[ok] repo context confirmed\n[ok] artifact dir ready\n\n$ ./scripts/demo-terminal-workflow.sh --emit-trace\n[1/6] inspect workspace layout\n[2/6] read task brief\n[3/6] run command batch\n[4/6] collect stdout/stderr\n[5/6] package artifacts\n[6/6] render operator summary\nworkflow complete`,
     timeline: [
-      ['Task received', 'OpenClaw accepts the request; System A reserves a 4 vCPU slice of the pool.'],
+      ['Task received', 'OpenClaw accepts the request; System A reserves a 128 vCPU slice of the pool.'],
       ['Workspace prepared', 'Session pod mounted on System A. Tools registered: exec, read, summarize.'],
       ['Command running', 'Terminal workflow executes directly on System A; no offload needed.'],
       ['Command completed', 'Command batch finishes; artifacts collected in the local session pod.'],
       ['Answer generated', 'Engineering summary delivered; capacity returned to the pool.']
     ],
-    result: `Terminal Agent\n\nSystem A spawns one 4 vCPU agent (¼ of the pool).\nLiteLLM routes inference to SambaNova.\nSystem B services stay idle — no offload needed.\n\nUser-visible outcome:\n- engineering summary\n- live route narrative\n- command evidence`
+    result: `Terminal Agent\n\nSystem A spawns one 128 vCPU agent (¼ of the pool).\nLiteLLM routes inference to SambaNova.\nSystem B services stay idle — no offload needed.\n\nUser-visible outcome:\n- engineering summary\n- live route narrative\n- command evidence`
   },
   'market-research': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
-    primary: { name: 'Market Research agent', vcpu: 4 },
-    subagent: { name: 'pandas subagent (spawned by MR)', vcpu: 4, spawnDelayMs: 2400 },
+    primary: { name: 'Market Research agent', vcpu: 128 },
+    subagent: { name: 'pandas subagent (spawned by MR)', vcpu: 25, spawnDelayMs: 2400 },
     services: { erag: true, 'ent-inference': false },
     crossSystemArrow: true,
     console: {
@@ -56,7 +57,7 @@ const scenarios = {
       'enterprise inference': 'idle for this scenario',
       'model route': 'LiteLLM → SambaNova',
       'session scope': 'isolated per user',
-      'placement': 'System A 4/16 + System B subagent',
+      'placement': 'System A 128/512 + System B 25/100 (subagent)',
       'artifact view': 'research brief'
     },
     metrics: {
@@ -69,17 +70,17 @@ const scenarios = {
     },
     commandLog: `$ openclaw demo run market-research --isolated\nrequest accepted\nsession_id=demo-research-0420 sandbox=created profile=research\n\n$ sed -n '1,40p' agents/scenarios/market-research/report-task.md\n# Market Research Demo Task\nObjective: recommend which SMB segment to target first for an AI meeting notes product.\nInputs: synthetic repo data under demo-inputs/market-research/.\n\n$ ./scripts/session-bootstrap.sh --scenario market-research\n[bootstrap] workspace mounted\n[bootstrap] retrieval cache ready (eRAG)\n[bootstrap] summarize tool ready\n[check] research prompt loaded\n\n$ ./scripts/route-task.sh --scenario market-research\n[classifier] workload=research synthesis\n[inference] provider=litellm/sambanova\n[executor] primary=system-a\n[executor] subagent=system-b (pandas analytics)\n[decision] spawn cross-system subagent for offload analytics\n\n$ ./scripts/research-brief.sh --topic market-map --emit-sources\n[1/5] normalize request\n[2/5] gather source snippets via eRAG\n[3/5] dispatch pandas subagent to System B\n[4/5] synthesize summary\n[5/5] assemble brief\nbrief complete`,
     timeline: [
-      ['Input accepted', 'OpenClaw accepts the scenario; MR agent takes 4 vCPU on System A.'],
-      ['Subagent spawned', 'MR agent dispatches a pandas subagent to System B; eRAG activates for retrieval.'],
+      ['Input accepted', 'OpenClaw accepts the scenario; MR agent takes 128 vCPU on System A.'],
+      ['Subagent spawned', 'MR agent dispatches a 25 vCPU pandas subagent to System B; eRAG activates for retrieval.'],
       ['Analytics offload', 'pandas subagent crunches data on System B while MR continues on A.'],
       ['Synthesis', 'SambaNova via LiteLLM summarizes the combined findings.'],
       ['Result ready', 'Research brief delivered; subagent and eRAG wind down.']
     ],
-    result: `Market Research\n\nSystem A spawns one 4 vCPU agent (¼ of the pool).\nThe MR agent spawns a pandas subagent on System B for analytics offload.\neRAG service activates for retrieval; Enterprise Inference stays idle.\n\nUser-visible outcome:\n- market snapshot\n- risks and opportunities\n- why this route was chosen`
+    result: `Market Research\n\nSystem A spawns one 128 vCPU agent (¼ of the pool).\nThe MR agent spawns a 25 vCPU pandas subagent on System B for analytics offload.\neRAG service activates for retrieval; Enterprise Inference stays idle.\n\nUser-visible outcome:\n- market snapshot\n- risks and opportunities\n- why this route was chosen`
   },
   'large-build-test': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova', 'ent-inference-route'],
-    primary: { name: 'Build/Test', vcpu: 16 },
+    primary: { name: 'Build/Test', vcpu: 512 },
     subagent: null,
     services: { erag: false, 'ent-inference': true },
     crossSystemArrow: false,
@@ -94,7 +95,7 @@ const scenarios = {
       'enterprise inference': 'active — SLM route lit',
       'model route': 'LiteLLM → SambaNova + Ent. Inference (SLM)',
       'session scope': 'isolated per user',
-      'placement': 'System A 16/16 (pool full)',
+      'placement': 'System A 512/512 (pool full)',
       'artifact view': 'build/test summary'
     },
     metrics: {
@@ -105,15 +106,15 @@ const scenarios = {
       Tools: 'exec, read, summarize',
       Artifacts: '3'
     },
-    commandLog: `$ openclaw demo run large-build-test --burst\nrequest accepted\nsession_id=demo-build-0420 profile=burst workload=heavy\n\n$ sed -n '1,40p' agents/scenarios/large-build-test/build-task.md\n# Large Build/Test Demo Task\nObjective: run a larger build/test workflow with explicit large-profile framing and concrete evidence.\n\n$ ./scripts/session-bootstrap.sh --scenario large-build-test\n[bootstrap] heavy profile enabled\n[bootstrap] artifact dir prepared\n[bootstrap] summary writer ready\n\n$ ./scripts/queue-reserve.sh --profile large-build\nqueue slot reserved\nprimary lane=system-a (16 vCPU — pool fully reserved)\ninference routes=SambaNova,Ent.Inference SLM\n\n$ ./scripts/route-task.sh --scenario large-build-test\n[classifier] workload=heavy build/test\n[inference] primary=litellm/sambanova\n[inference] alternate=ent. inference SLM\n[executor] placement=system-a (full pool)\n\n$ ./scripts/run-large-build-test.sh --emit-artifacts\n[1/5] load build graph\n[2/5] reserve compile lane\n[3/5] run compile on system-a (full pool)\n[4/5] summarize via SambaNova; fall back to SLM where needed\n[5/5] assemble build/test package\nflow complete`,
+    commandLog: `$ openclaw demo run large-build-test --burst\nrequest accepted\nsession_id=demo-build-0420 profile=burst workload=heavy\n\n$ sed -n '1,40p' agents/scenarios/large-build-test/build-task.md\n# Large Build/Test Demo Task\nObjective: run a larger build/test workflow with explicit large-profile framing and concrete evidence.\n\n$ ./scripts/session-bootstrap.sh --scenario large-build-test\n[bootstrap] heavy profile enabled\n[bootstrap] artifact dir prepared\n[bootstrap] summary writer ready\n\n$ ./scripts/queue-reserve.sh --profile large-build\nqueue slot reserved\nprimary lane=system-a (512 vCPU — pool fully reserved)\ninference routes=SambaNova,Ent.Inference SLM\n\n$ ./scripts/route-task.sh --scenario large-build-test\n[classifier] workload=heavy build/test\n[inference] primary=litellm/sambanova\n[inference] alternate=ent. inference SLM\n[executor] placement=system-a (full pool)\n\n$ ./scripts/run-large-build-test.sh --emit-artifacts\n[1/5] load build graph\n[2/5] reserve compile lane\n[3/5] run compile on system-a (full pool)\n[4/5] summarize via SambaNova; fall back to SLM where needed\n[5/5] assemble build/test package\nflow complete`,
     timeline: [
-      ['Input accepted', 'OpenClaw accepts the heavy workload; System A reserves the full 16 vCPU pool.'],
+      ['Input accepted', 'OpenClaw accepts the heavy workload; System A reserves the full 512 vCPU pool.'],
       ['Orchestration', 'Build/test classified as large profile; Enterprise Inference SLM route lights up.'],
       ['Compile + test', 'Compile runs on System A (pool full); LiteLLM splits inference between SambaNova and SLM.'],
       ['Results assembled', 'Artifacts bundled and summary drafted.'],
       ['Result ready', 'Build/test status and route decision delivered; pool releases back to idle.']
     ],
-    result: `Large Build/Test\n\nSystem A spawns one agent that takes the entire 16 vCPU pool.\nLiteLLM lights the Enterprise Inference SLM route alongside SambaNova.\nNo subagent spawn — the heavy work fits on A.\n\nUser-visible outcome:\n- execution status\n- route decision\n- result summary`
+    result: `Large Build/Test\n\nSystem A spawns one agent that takes the entire 512 vCPU pool.\nLiteLLM lights the Enterprise Inference SLM route alongside SambaNova.\nNo subagent spawn — the heavy work fits on A.\n\nUser-visible outcome:\n- execution status\n- route decision\n- result summary`
   }
 };
 
@@ -128,7 +129,7 @@ const idleConsole = {
   'enterprise inference': 'available as alternate route',
   'model route': 'LiteLLM → SambaNova / Ent. Inference',
   'session scope': 'isolated per user',
-  'placement': 'System A pool idle (0/16)',
+  'placement': 'System A pool idle (0/512)',
   'artifact view': 'summary only'
 };
 
@@ -143,17 +144,32 @@ const sysAUsedEl = document.getElementById('sys-a-used');
 const sysATotalEl = document.getElementById('sys-a-total');
 const sysABarFillEl = document.getElementById('sys-a-bar-fill');
 const sysAAgentsEl = document.getElementById('sys-a-agents');
+const sysBUsedEl = document.getElementById('sys-b-used');
+const sysBTotalEl = document.getElementById('sys-b-total');
+const sysBBarFillEl = document.getElementById('sys-b-bar-fill');
 const sysBOffloadEl = document.getElementById('sys-b-offload');
 const crossArrowEl = document.getElementById('cross-system-arrow');
 const orchestrationNodes = document.querySelectorAll('.orchestration-band [data-node]');
 const serviceRows = document.querySelectorAll('.service-row[data-service]');
 const capacityBarContainer = sysABarFillEl.parentElement;
+const capacityBarBContainer = sysBBarFillEl.parentElement;
 
 let currentScenario = null;
 let runTimers = [];
 const originalRunLabel = runDemoBtn.textContent;
 
 sysATotalEl.textContent = SYSTEM_A_TOTAL_VCPU;
+sysBTotalEl.textContent = SYSTEM_B_TOTAL_VCPU;
+
+function setDataMode(text) {
+  if (text) {
+    dataModeEl.textContent = text;
+    dataModeEl.hidden = false;
+  } else {
+    dataModeEl.textContent = '';
+    dataModeEl.hidden = true;
+  }
+}
 
 function clearRunTimers() {
   runTimers.forEach((id) => clearTimeout(id));
@@ -203,6 +219,17 @@ function renderCapacity(usedVcpu) {
   }
 }
 
+function renderCapacityB(usedVcpu) {
+  const used = Math.max(0, Math.min(SYSTEM_B_TOTAL_VCPU, usedVcpu || 0));
+  const pct = (used / SYSTEM_B_TOTAL_VCPU) * 100;
+  sysBUsedEl.textContent = used;
+  sysBBarFillEl.style.width = pct + '%';
+  sysBBarFillEl.classList.toggle('full', used >= SYSTEM_B_TOTAL_VCPU);
+  if (capacityBarBContainer) {
+    capacityBarBContainer.setAttribute('aria-valuenow', String(used));
+  }
+}
+
 function agentRowHtml(name, vcpu, state) {
   const label = state === 'planned' ? 'planned' : 'running';
   return `
@@ -229,15 +256,18 @@ function renderSystemA(scenario, phase) {
 function renderOffload(scenario, phase, includeSubagent) {
   if (!scenario || !scenario.subagent || phase === 'idle') {
     sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no offloaded workers</div>';
+    renderCapacityB(0);
     return;
   }
   if (!includeSubagent) {
     sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no offloaded workers (yet)</div>';
+    renderCapacityB(0);
     return;
   }
   const { subagent } = scenario;
   const state = phase === 'running' ? 'running' : 'planned';
   sysBOffloadEl.innerHTML = agentRowHtml(subagent.name, subagent.vcpu, state);
+  renderCapacityB(state === 'running' ? subagent.vcpu : 0);
 }
 
 function setCrossArrow(visible) {
@@ -267,7 +297,7 @@ function renderMetrics(entries) {
 function applyIdle() {
   cancelRun();
   currentScenario = null;
-  dataModeEl.textContent = 'Static demo data';
+  setDataMode('');
   setOrchestrationActive([]);
   setServiceState({});
   renderSystemA(null, 'idle');
@@ -286,7 +316,7 @@ function applyPlanned(key) {
   const scenario = scenarios[key];
   if (!scenario) return;
   currentScenario = key;
-  dataModeEl.textContent = `Scenario: ${key}`;
+  setDataMode(`Scenario: ${key}`);
   setOrchestrationActive(scenario.orchestrationActive);
   setServiceState({});
   renderSystemA(scenario, 'planned');
@@ -328,7 +358,7 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
   cancelRun();
   currentScenario = null;
-  dataModeEl.textContent = 'Live status';
+  setDataMode('Live status');
   setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
   setServiceState({ erag: true, 'ent-inference': true });
   renderSystemA(null, 'idle');
