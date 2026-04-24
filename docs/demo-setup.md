@@ -68,27 +68,42 @@ control-plane stub — on one machine. No Telegram, no OpenClaw, no vLLM.
 
 ### Minimum bring-up (offload-worker + MinIO)
 
+The commands below use a user-defined Docker network so the containers
+resolve each other by name. This works identically on Linux, macOS
+(Docker Desktop), and Windows, and avoids the `--network host` gotcha on
+Docker Desktop.
+
 ```bash
-# MinIO
-docker run -d --name demo-minio \
+# one-time: shared network
+docker network create demo-net 2>/dev/null || true
+
+# MinIO (9000 S3 API, 9001 console published to the host)
+docker run -d --name demo-minio --network demo-net \
   -p 9000:9000 -p 9001:9001 \
   -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
   minio/minio server /data --console-address ":9001"
 
-# create the bucket
-docker run --rm --network host --entrypoint sh minio/mc -c '
-  mc alias set local http://localhost:9000 minioadmin minioadmin &&
+# create the bucket (runs on the same network, talks to MinIO by name)
+docker run --rm --network demo-net --entrypoint sh minio/mc -c '
+  mc alias set local http://demo-minio:9000 minioadmin minioadmin &&
   mc mb --ignore-existing local/demo-artifacts'
 
-# offload worker
+# offload worker (publishes 8080 to the host for curl; resolves MinIO by name)
 docker build -t offload-worker:local ./runtimes/offload-worker
-docker run --rm --network host \
-  -e MINIO_ENDPOINT=http://localhost:9000 \
+docker run --rm --name demo-offload --network demo-net \
+  -p 8080:8080 \
+  -e MINIO_ENDPOINT=http://demo-minio:9000 \
   -e MINIO_ACCESS_KEY=minioadmin \
   -e MINIO_SECRET_KEY=minioadmin \
   -e MINIO_BUCKET=demo-artifacts \
   offload-worker:local
 ```
+
+If you prefer host networking on Linux (simpler, but Linux-only), drop
+`--network demo-net` and the `-p` flags and use
+`MINIO_ENDPOINT=http://localhost:9000` with `--network host`. Do not use
+`--network host` on Docker Desktop — containers there run in a VM and
+`localhost` does not map to the host.
 
 Verification:
 ```bash
@@ -96,6 +111,12 @@ curl localhost:8080/health
 curl -X POST localhost:8080/run -H 'content-type: application/json' -d '{
   "task_type": "echo", "payload": {"hello": "world"}
 }'
+```
+
+Cleanup when done:
+```bash
+docker rm -f demo-minio demo-offload 2>/dev/null || true
+docker network rm demo-net 2>/dev/null || true
 ```
 
 Unit tests that run without extra deps:
