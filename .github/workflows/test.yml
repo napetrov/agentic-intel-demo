@@ -112,15 +112,6 @@ jobs:
     # that drives a full scenario route through every process in the
     # offload_system_b execution mode.
     runs-on: ubuntu-latest
-    services:
-      minio:
-        image: bitnami/minio:2024.5.28
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: demo-artifacts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -132,19 +123,27 @@ jobs:
             fastapi==0.115.12 \
             'uvicorn[standard]==0.34.2' \
             httpx==0.28.1 \
-            boto3==1.37.38 \
-            pandas==2.2.3 \
-            scikit-learn==1.6.1 \
-            numpy==2.2.5
-      - name: wait for MinIO
+            boto3==1.37.38
+      - name: start MinIO in docker and create bucket
+        # Mirror the proven tier2-offload-smoke pattern: explicit docker
+        # run + mc mb, no dependency on the bitnami-specific
+        # MINIO_DEFAULT_BUCKETS env var.
         run: |
-          for i in $(seq 1 30); do
+          docker network create tier1-net 2>/dev/null || true
+          docker run -d --name tier1-minio --network tier1-net \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for i in $(seq 1 60); do
             if curl -sf http://localhost:9000/minio/health/live >/dev/null; then
-              echo "minio ready"; exit 0
+              echo "minio ready"; break
             fi
-            sleep 2
+            sleep 1
           done
-          echo "minio never came up"; exit 1
+          docker run --rm --network tier1-net --entrypoint sh minio/mc -c '
+            mc alias set local http://tier1-minio:9000 minioadmin minioadmin &&
+            mc mb --ignore-existing local/demo-artifacts'
       - name: start offload-worker
         working-directory: runtimes/offload-worker
         env:
@@ -162,7 +161,7 @@ jobs:
             fi
             sleep 1
           done
-          cat /tmp/offload.log; exit 1
+          echo "offload-worker never became ready"; cat /tmp/offload.log; exit 1
       - name: start control-plane
         working-directory: runtimes/control-plane
         env:
@@ -181,14 +180,16 @@ jobs:
             fi
             sleep 1
           done
-          cat /tmp/cp.log; exit 1
+          echo "control-plane never became ready"; cat /tmp/cp.log; exit 1
       - name: drive a market_research-shaped scenario through /offload
         run: python3 scripts/ci-scenario-slice.py
-      - name: dump server logs on failure
+      - name: dump server + MinIO logs on failure
         if: failure()
         run: |
           echo "----- control-plane -----"; cat /tmp/cp.log || true
           echo "----- offload-worker ----"; cat /tmp/offload.log || true
+          echo "----- minio (docker) ----"; docker logs tier1-minio --tail 200 || true
+          echo "----- docker ps --------";   docker ps -a || true
       - name: stop servers
         if: always()
         run: |
@@ -197,6 +198,8 @@ jobs:
               kill "$(cat $pidfile)" 2>/dev/null || true
             fi
           done
+          docker rm -f tier1-minio 2>/dev/null || true
+          docker network rm tier1-net 2>/dev/null || true
 
   tier2-offload-smoke:
     runs-on: ubuntu-latest

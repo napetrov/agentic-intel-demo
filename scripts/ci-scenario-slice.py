@@ -79,29 +79,33 @@ def main() -> int:
             die("echo result should be inline, not a ref", status)
         print(f"OK  GET /offload/{job_id} -> result shape matches")
 
-        # 3. large-payload path (pandas_describe of >4KB JSON forces result_key)
-        big_rows = [{"a": i, "b": i * 2, "c": i * 3, "d": i * 4} for i in range(1500)]
+        # 3. large-payload path — echo a payload big enough that the
+        # serialized result exceeds the 4KB threshold in
+        # runtimes/offload-worker/app.py, forcing the MinIO-backed
+        # result_key path. pandas_describe produces tiny stats output
+        # regardless of input size, so it's not a good large-output probe.
+        big_payload = {"rows": [{"i": i, "s": f"row-{i:04d}-" + "x" * 16} for i in range(400)]}
         r = c.post(
             "/offload",
             json={
-                "task_type": "pandas_describe",
-                "payload": {"data": big_rows},
+                "task_type": "echo",
+                "payload": big_payload,
                 "session_id": "ci-sess-2",
             },
         )
         if r.status_code != 200:
-            die("POST /offload pandas_describe", r.text)
+            die("POST /offload large echo", r.text)
         big = r.json()
         if big["status"] != "completed":
-            die("pandas_describe should complete synchronously in the relay", big)
+            die("large echo should complete synchronously in the relay", big)
         big_id = big["job_id"]
-        print(f"OK  POST /offload pandas_describe -> {big_id}")
+        print(f"OK  POST /offload large echo -> {big_id}")
 
         # 4. assert a result_ref was produced
         r = c.get(f"/offload/{big_id}")
         big_status = r.json()
         if not big_status.get("result_ref"):
-            die("large pandas_describe should return a MinIO ref", big_status)
+            die("large echo should return a MinIO ref", big_status)
         ref = big_status["result_ref"]
         print(f"OK  GET /offload/{big_id} -> result_ref={ref}")
 
@@ -127,9 +131,11 @@ def main() -> int:
         if r.status_code != 200:
             die(f"presigned artifact fetch returned {r.status_code}", r.text[:200])
         body = r.json()
-        if "a" not in body or "mean" not in body["a"]:
-            die("artifact does not look like a pandas describe result", body)
-        print(f"OK  artifact fetched and parsed — a.mean={body['a']['mean']}")
+        if body.get("echo", {}).get("rows") is None:
+            die("artifact does not look like the echoed payload", str(body)[:200])
+        if len(body["echo"]["rows"]) != 400:
+            die("artifact row count did not round-trip", len(body["echo"]["rows"]))
+        print(f"OK  artifact fetched and parsed — rows={len(body['echo']['rows'])}")
 
     # 7. unknown job id -> 404
     with httpx.Client(base_url=CONTROL_PLANE, timeout=TIMEOUT) as c:
