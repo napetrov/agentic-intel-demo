@@ -92,6 +92,5 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 
 ## Repo curation notes
 - `config/` is the canonical location for current live demo/runtime config
-- `archive/` contains review bundles and historical review artifacts
-- `docs/archive/` contains historical planning and bring-up notes that are not the primary operator-first demo path
+- `runtimes/control-plane/` is the canonical control-plane implementation (offload relay, artifact relay)
 - The deprecated raw control-plane/session-pod path previously kept in `legacy/` and `scripts/legacy/` has been removed; the operator-first path is the only supported lifecycle

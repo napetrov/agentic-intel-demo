@@ -95,7 +95,19 @@ agentic-intel-demo/
 │   └── openclawinstance-intel-demo.yaml   # sample OpenClawInstance manifest
 │
 └── scripts/
-    └── ... operator/demo scripts ...
+    ├── install-openclaw-operator.sh
+    ├── apply-operator-chat-config.sh
+    ├── check-operator-prereqs.sh
+    ├── smoke-test-operator-instance.sh
+    ├── setup-system-b-vllm.sh
+    ├── check-system-b-vllm.sh
+    ├── cleanup-system-a.sh
+    ├── create-minio-bucket.sh
+    ├── ci-scenario-slice.py
+    ├── validate-demo-templates.py
+    ├── telegram-send-menu.py
+    ├── test-litellm-sambanova.sh
+    └── test-sambanova-direct.sh
 ```
 
 ---
