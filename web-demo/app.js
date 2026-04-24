@@ -153,6 +153,15 @@ const orchestrationNodes = document.querySelectorAll('.orchestration-band [data-
 const serviceRows = document.querySelectorAll('.service-row[data-service]');
 const capacityBarContainer = sysABarFillEl.parentElement;
 const capacityBarBContainer = sysBBarFillEl.parentElement;
+const healthDots = {
+  openclaw: document.querySelector('[data-health="openclaw"]'),
+  litellm: document.querySelector('[data-health="litellm"]'),
+  sambanova: document.querySelector('[data-health="sambanova"]'),
+  systemA: document.querySelector('[data-health="systemA"]'),
+  systemB: document.querySelector('[data-health="systemB"]')
+};
+const API_BASE = '/api';
+let liveBackendAvailable = false;
 
 let currentScenario = null;
 let runTimers = [];
@@ -432,18 +441,10 @@ function buildWalkthroughPhases(scenario) {
   });
 }
 
-runDemoBtn.addEventListener('click', () => {
-  const scenarioKey = currentScenario || 'terminal-agent';
-  if (!currentScenario) applyPlanned(scenarioKey);
+function runSimulatedWalkthrough(scenarioKey) {
   const scenario = scenarios[scenarioKey];
   if (!scenario) return;
-
-  clearRunTimers();
-  runDemoBtn.textContent = 'Running...';
-  runDemoBtn.disabled = true;
-
   applyRunning(scenarioKey, { includeSubagentNow: false });
-
   const phases = buildWalkthroughPhases(scenario);
   const phaseDurationMs = 1800;
   const route = scenario.metrics.Route || scenario.console.placement || '—';
@@ -483,6 +484,218 @@ runDemoBtn.addEventListener('click', () => {
     ]);
     restoreRunButton();
   }, totalDuration));
+}
+
+let liveRunId = 0;
+
+async function runLiveWalkthrough(scenarioKey) {
+  const scenario = scenarios[scenarioKey];
+  if (!scenario) return;
+  const myRunId = ++liveRunId;
+  const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const route = scenario.metrics.Route || (scenario.console && scenario.console.placement) || '—';
+  const model = scenario.metrics.Model || '—';
+
+  applyRunning(scenarioKey, { includeSubagentNow: false });
+
+  commandLogEl.textContent = `$ POST /api/offload {task_type:"shell", scenario:"${scenarioKey}"}\n`;
+  result.textContent = `Live run: ${scenarioKey}`;
+  result.className = 'result';
+  renderToolActivity([{ name: 'offload submit', status: 'active' }]);
+  renderMetrics({
+    Model: model,
+    Route: `${route} · submitting`,
+    Tools: 'offload submit',
+    Artifacts: '0'
+  });
+
+  const stillCurrent = () => myRunId === liveRunId;
+  const finish = () => { if (stillCurrent()) restoreRunButton(); };
+
+  let submit;
+  try {
+    submit = await fetchJson(`${API_BASE}/offload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_type: 'shell',
+        payload: { scenario: scenarioKey },
+        session_id: sessionId
+      })
+    });
+  } catch (err) {
+    if (!stillCurrent()) return;
+    commandLogEl.textContent += `\n[error] submit failed: ${err.message}`;
+    result.textContent = `Live run failed: ${err.message}`;
+    finish();
+    return;
+  }
+  if (!stillCurrent()) return;
+
+  commandLogEl.textContent += `job_id=${submit.job_id} status=${submit.status}\n`;
+  renderToolActivity([{ name: 'offload poll', status: 'active' }]);
+  renderMetrics({
+    Model: model,
+    Route: `${route} · ${submit.status}`,
+    Tools: 'offload poll',
+    Artifacts: '0'
+  });
+
+  // Poll until terminal. The control-plane forwards synchronously so the
+  // first GET typically already returns "completed" — the poll is here so we
+  // stay correct if the relay ever switches to async.
+  const deadline = Date.now() + 90_000;
+  let status = null;
+  while (Date.now() < deadline) {
+    try {
+      status = await fetchJson(`${API_BASE}/offload/${submit.job_id}`);
+    } catch (err) {
+      if (!stillCurrent()) return;
+      commandLogEl.textContent += `\n[error] poll failed: ${err.message}`;
+      finish();
+      return;
+    }
+    if (!stillCurrent()) return;
+    if (status.status === 'completed' || status.status === 'error') break;
+    await sleep(500);
+  }
+
+  if (!status || (status.status !== 'completed' && status.status !== 'error')) {
+    commandLogEl.textContent += `\n[error] job did not complete within 90s`;
+    finish();
+    return;
+  }
+
+  if (status.status === 'error') {
+    commandLogEl.textContent += `\n[worker error] ${status.error || 'unknown error'}`;
+    result.textContent = `Live run errored: ${status.error || 'see log'}`;
+    finish();
+    return;
+  }
+
+  const inline = status.result;
+  const stdout = (inline && typeof inline === 'object' && 'stdout' in inline)
+    ? inline.stdout
+    : (status.result_ref
+      ? `[result stored as artifact ${status.result_ref}]`
+      : JSON.stringify(inline, null, 2));
+  const exitCode = (inline && typeof inline === 'object' && 'exit_code' in inline)
+    ? inline.exit_code
+    : null;
+
+  // Treat null exit_code as success when the result was punted to MinIO
+  // (artifact-backed completion). Only an explicit non-zero exit_code is a
+  // failure. status==="completed" already implies the worker reported ok.
+  const shellSucceeded = exitCode === null || exitCode === 0;
+
+  commandLogEl.textContent += `\n--- worker stdout ---\n${stdout}`;
+  if (exitCode !== null) {
+    commandLogEl.textContent += `\n--- exit_code=${exitCode} ---`;
+  }
+  commandLogEl.scrollTop = commandLogEl.scrollHeight;
+
+  const elapsedMs = (status.completed_at && status.submitted_at)
+    ? Math.max(0, (status.completed_at - status.submitted_at) * 1000)
+    : null;
+  renderToolActivity([
+    { name: 'offload submit', status: 'done' },
+    { name: 'offload poll', status: 'done' },
+    { name: 'shell exec', status: shellSucceeded ? 'done' : 'error' }
+  ]);
+  renderMetrics({
+    Model: model,
+    Route: `${route} · live`,
+    Tools: 'shell',
+    Artifacts: status.result_ref ? '1' : '0',
+    Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
+    'Job ID': submit.job_id
+  });
+  result.textContent = shellSucceeded
+    ? `Live run complete (exit ${exitCode === null ? 'n/a' : '0'}). job_id=${submit.job_id}`
+    : `Live run finished with exit_code=${exitCode}. job_id=${submit.job_id}`;
+  finish();
+}
+
+runDemoBtn.addEventListener('click', () => {
+  const scenarioKey = currentScenario || 'terminal-agent';
+  if (!currentScenario) applyPlanned(scenarioKey);
+  const scenario = scenarios[scenarioKey];
+  if (!scenario) return;
+
+  clearRunTimers();
+  liveRunId += 1;
+  runDemoBtn.textContent = liveBackendAvailable ? 'Running (live)…' : 'Running...';
+  runDemoBtn.disabled = true;
+
+  if (liveBackendAvailable) {
+    runLiveWalkthrough(scenarioKey);
+  } else {
+    runSimulatedWalkthrough(scenarioKey);
+  }
 });
 
+function sleep(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+async function fetchJson(url, init) {
+  const opts = init || {};
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 60_000);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+    }
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function setHealthDot(el, state) {
+  if (!el) return;
+  el.classList.remove('ok', 'warn', 'down');
+  el.classList.add(state);
+  const labels = { ok: 'healthy', warn: 'degraded', down: 'unreachable' };
+  el.setAttribute('aria-label', labels[state] || state);
+}
+
+async function probeBackend() {
+  // /health says the relay is up; /ready says the worker is also reachable.
+  // ready=true means "live mode available". We distinguish a
+  // control-plane-up-but-worker-down state in the dots.
+  let cpHealthy = false;
+  let workerReady = false;
+  try {
+    await fetchJson(`${API_BASE}/health`, { timeoutMs: 2500 });
+    cpHealthy = true;
+  } catch (_) {
+    cpHealthy = false;
+  }
+  if (cpHealthy) {
+    try {
+      await fetchJson(`${API_BASE}/ready`, { timeoutMs: 2500 });
+      workerReady = true;
+    } catch (_) {
+      workerReady = false;
+    }
+  }
+  liveBackendAvailable = cpHealthy && workerReady;
+  setHealthDot(healthDots.systemA, cpHealthy ? 'ok' : 'down');
+  setHealthDot(healthDots.systemB, workerReady ? 'ok' : (cpHealthy ? 'warn' : 'down'));
+  // openclaw/litellm/sambanova aren't probed; warn when no backend is
+  // reachable so the dots aren't lying.
+  const fallback = cpHealthy ? 'ok' : 'warn';
+  setHealthDot(healthDots.openclaw, fallback);
+  setHealthDot(healthDots.litellm, fallback);
+  setHealthDot(healthDots.sambanova, fallback);
+  runDemoBtn.title = liveBackendAvailable
+    ? 'Live backend detected — runs a real shell scenario via /api/offload.'
+    : 'Backend not detected — runs scripted walkthrough only.';
+}
+
 applyIdle();
+probeBackend();
+setInterval(probeBackend, 15_000);

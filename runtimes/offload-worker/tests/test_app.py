@@ -12,12 +12,17 @@ from pathlib import Path
 os.environ.setdefault("MINIO_ENDPOINT", "http://localhost:9000")
 os.environ.setdefault("MINIO_ACCESS_KEY", "dummy")
 os.environ.setdefault("MINIO_SECRET_KEY", "dummy")
+# Point the shell-task allow-list at the repo's real scenario scripts so the
+# tests exercise the same paths compose mounts at /scenarios.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+os.environ.setdefault("SCENARIO_SCRIPTS_DIR", str(REPO_ROOT / "agents" / "scenarios"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from fastapi.testclient import TestClient
 
+import app as app_module
 from app import app
 
 client = TestClient(app)
@@ -99,3 +104,152 @@ def test_validation_error_for_bad_request():
     # missing required field "payload"
     r = client.post("/run", json={"task_type": "echo"})
     assert r.status_code == 422
+
+
+# ---- shell task type ----------------------------------------------------
+
+@pytest.mark.parametrize(
+    "scenario", ["terminal-agent", "market-research", "large-build-test"]
+)
+def test_shell_runs_known_scenario(scenario):
+    r = client.post(
+        "/run",
+        json={"task_type": "shell", "payload": {"scenario": scenario}},
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    # Small scenarios are returned inline — keeps the demo path simple.
+    assert body["result"]["scenario"] == scenario
+    assert body["result"]["exit_code"] == 0
+    assert body["result"]["timed_out"] is False
+    assert "stdout" in body["result"]
+    assert f"[scenario] {scenario}" in body["result"]["stdout"]
+
+
+def test_shell_rejects_unknown_scenario():
+    r = client.post(
+        "/run",
+        json={"task_type": "shell", "payload": {"scenario": "../etc/passwd"}},
+    )
+    body = r.json()
+    assert body["status"] == "error"
+    assert "unknown scenario" in body["error"] or "see worker logs" in body["error"]
+
+
+def test_shell_rejects_missing_scenario():
+    r = client.post("/run", json={"task_type": "shell", "payload": {}})
+    body = r.json()
+    assert body["status"] == "error"
+
+
+def test_shell_rejects_out_of_range_timeout():
+    r = client.post(
+        "/run",
+        json={
+            "task_type": "shell",
+            "payload": {"scenario": "terminal-agent", "timeout_seconds": -1},
+        },
+    )
+    assert r.json()["status"] == "error"
+
+
+def test_shell_timeout_reports_error_not_ok(monkeypatch, tmp_path):
+    """A scenario that exceeds its timeout must surface as status=error.
+
+    Otherwise the control-plane forwards "ok" → "completed" and a stuck
+    scenario looks like a successful demo run.
+    """
+    sleep_dir = tmp_path / "sleep-scenario"
+    sleep_dir.mkdir()
+    (sleep_dir / "run.sh").write_text("#!/usr/bin/env bash\nsleep 5\n")
+    monkeypatch.setattr(app_module, "SCENARIO_SCRIPTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        app_module, "ALLOWED_SCENARIOS", frozenset({"sleep-scenario"})
+    )
+    r = client.post(
+        "/run",
+        json={
+            "task_type": "shell",
+            "payload": {"scenario": "sleep-scenario", "timeout_seconds": 0.5},
+        },
+    )
+    body = r.json()
+    assert body["status"] == "error"
+    assert body["result"] is None
+
+
+# ---- agent_invoke task type --------------------------------------------
+
+class _FakeResp:
+    def __init__(self, status_code=200, json_body=None, text=""):
+        self.status_code = status_code
+        self._json = json_body
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import httpx
+            raise httpx.HTTPStatusError(
+                f"{self.status_code}", request=None, response=None
+            )
+
+    def json(self):
+        if self._json is None:
+            raise ValueError("no json")
+        return self._json
+
+
+def test_agent_invoke_unconfigured_returns_error(monkeypatch):
+    monkeypatch.setattr(app_module, "OPENCLAW_GATEWAY_URL", "")
+    r = client.post(
+        "/run",
+        json={
+            "task_type": "agent_invoke",
+            "payload": {"tool": "message", "args": {"text": "hi"}},
+        },
+    )
+    body = r.json()
+    assert body["status"] == "error"
+
+
+def test_agent_invoke_forwards_to_gateway(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return _FakeResp(200, {"ok": True, "echoed": json})
+
+    monkeypatch.setattr(
+        app_module, "OPENCLAW_GATEWAY_URL", "http://openclaw.test:18789"
+    )
+    monkeypatch.setattr(app_module, "OPENCLAW_GATEWAY_TOKEN", "tok-xyz")
+    monkeypatch.setattr(app_module.httpx, "post", fake_post)
+
+    r = client.post(
+        "/run",
+        json={
+            "task_type": "agent_invoke",
+            "payload": {"tool": "message", "args": {"text": "hi"}},
+        },
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    assert captured["url"] == "http://openclaw.test:18789/tools/invoke"
+    assert captured["json"] == {"tool": "message", "args": {"text": "hi"}}
+    assert captured["headers"]["Authorization"] == "Bearer tok-xyz"
+    assert body["result"]["tool"] == "message"
+    assert body["result"]["response"]["ok"] is True
+
+
+def test_agent_invoke_rejects_missing_tool(monkeypatch):
+    monkeypatch.setattr(
+        app_module, "OPENCLAW_GATEWAY_URL", "http://openclaw.test:18789"
+    )
+    r = client.post(
+        "/run",
+        json={"task_type": "agent_invoke", "payload": {"args": {}}},
+    )
+    assert r.json()["status"] == "error"

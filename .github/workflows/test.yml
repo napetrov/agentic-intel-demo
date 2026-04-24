@@ -18,16 +18,7 @@ jobs:
           python-version: "3.12"
       - name: install offload-worker deps + pytest
         working-directory: runtimes/offload-worker
-        run: |
-          pip install \
-            fastapi==0.115.12 \
-            'uvicorn[standard]==0.34.2' \
-            boto3==1.37.38 \
-            pandas==2.2.3 \
-            scikit-learn==1.6.1 \
-            numpy==2.2.5 \
-            httpx==0.28.1 \
-            pytest==8.3.5
+        run: pip install -r requirements.txt pytest==8.3.5
       - name: pytest
         working-directory: runtimes/offload-worker
         env:
@@ -118,12 +109,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: install runtime deps
-        run: |
-          pip install \
-            fastapi==0.115.12 \
-            'uvicorn[standard]==0.34.2' \
-            httpx==0.28.1 \
-            boto3==1.37.38
+        run: pip install -r runtimes/offload-worker/requirements.txt
       - name: start MinIO in docker and create bucket
         # Mirror the proven tier2-offload-smoke pattern: explicit docker
         # run + mc mb, no dependency on the bitnami-specific
