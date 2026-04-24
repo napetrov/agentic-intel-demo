@@ -1,0 +1,23 @@
+# Worked example — architecture variant: local-standard
+# Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
+# reference when using scenario-spec.template.yaml).
+#
+# NOTE: the `scenarios:` root key is shown here only so the example is a
+# valid YAML document on its own. When adding a new scenario to
+# `catalog/scenarios.yaml`, do NOT add a second `scenarios:` key; paste only
+# the `terminal_agent:` entry below under the existing `scenarios:` map.
+
+scenarios:
+
+  terminal_agent:
+    label: "Terminal Agent"
+    execution_mode: local_standard
+    task_family: software_engineering
+    initial_user_message: "Starting isolated engineering demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: null
+
+    architecture_variant: local-standard
+    artifact_output: false

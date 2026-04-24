@@ -1,0 +1,77 @@
+# Worked example — two-system architecture with multiple cloud providers.
+#
+# Identical topology to two-system but shows how multiple token providers
+# (local vLLM + Bedrock + SambaNova) can sit behind LiteLLM and be routed
+# to different model aliases. Matches the operator config shipped in
+# examples/openclawinstance-intel-demo.yaml.
+
+apiVersion: demo.architecture/v1
+kind: Architecture
+
+metadata:
+  name: cloud-provider-mix
+
+spec:
+
+  topology:
+    mode: two_system
+    clusters:
+      - name: system-a
+        role: orchestration
+        runtime: k3s
+      - name: system-b
+        role: execution
+        runtime: k3s
+
+  components:
+
+    orchestrator:
+      type: openclaw
+      location: system-a
+
+    model_router:
+      type: litellm
+      location: system-a
+
+    inference_providers:
+      - name: local_slm
+        type: vllm
+        location: system-b
+        model: Qwen/Qwen3-4B-Instruct-2507
+        context_length: 32768
+      - name: cloud_reasoning
+        type: bedrock
+        model: us.anthropic.claude-sonnet-4-6
+        auth: aws-sdk
+        region: us-east-2
+      - name: deepseek_sambanova
+        type: sambanova
+        model: DeepSeek-V3.1
+        auth: api-key
+        credential_ref: intel-demo-operator-secrets/SAMBANOVA_API_KEY
+
+    execution_backends:
+      - name: analytics
+        location: system-b
+        profile:
+          cpu: 32
+          memory: 64Gi
+
+    artifact_store:
+      type: minio
+      location: system-b
+      bucket: demo-artifacts
+
+    chat_adapters:
+      - telegram
+
+  model_aliases:
+    default: local_slm
+    fast: local_slm
+    reasoning: cloud_reasoning
+    code: deepseek_sambanova
+
+  supported_execution_modes:
+    - local_standard
+    - local_large
+    - offload_system_b

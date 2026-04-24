@@ -1,0 +1,23 @@
+# Worked example — architecture variant: local-large
+# Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
+# reference when using scenario-spec.template.yaml).
+#
+# NOTE: the `scenarios:` root key is shown here only so the example is a
+# valid YAML document on its own. When adding a new scenario to
+# `catalog/scenarios.yaml`, do NOT add a second `scenarios:` key; paste only
+# the `large_build_test:` entry below under the existing `scenarios:` map.
+
+scenarios:
+
+  large_build_test:
+    label: "Large Build/Test"
+    execution_mode: local_large
+    task_family: software_engineering
+    initial_user_message: "Starting large build/test demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent
+
+    architecture_variant: local-large
+    artifact_output: true

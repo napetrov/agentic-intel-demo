@@ -1,0 +1,24 @@
+# Worked example — architecture variant: offload
+# Source of truth: catalog/scenarios.yaml (this is a filled-in copy for
+# reference when using scenario-spec.template.yaml).
+#
+# NOTE: the `scenarios:` root key is shown here only so the example is a
+# valid YAML document on its own. When adding a new scenario to
+# `catalog/scenarios.yaml`, do NOT add a second `scenarios:` key; paste only
+# the `market_research:` entry below under the existing `scenarios:` map.
+
+scenarios:
+
+  market_research:
+    label: "Market Research"
+    execution_mode: offload_system_b
+    task_family: data_processing
+    initial_user_message: "Starting market research demo"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent
+
+    architecture_variant: offload
+    artifact_output: true
+    offload_task_type: analytics

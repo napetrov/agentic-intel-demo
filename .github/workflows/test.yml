@@ -71,3 +71,105 @@ jobs:
           if [ -f /tmp/demo-server.pid ]; then
             kill "$(cat /tmp/demo-server.pid)" || true
           fi
+
+  validate-templates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install PyYAML
+        run: pip install pyyaml==6.0.2
+      - name: validate scenarios + architecture templates
+        run: python3 scripts/validate-demo-templates.py
+
+  tier2-offload-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install k3d
+        run: |
+          curl -sfL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \
+            | TAG=v5.7.4 bash
+          k3d version
+      - name: create k3d cluster with NodePort 30900 / 30800 published
+        run: |
+          k3d cluster create demo \
+            --agents 0 \
+            -p "30900:30900@server:0" \
+            -p "30800:30800@server:0" \
+            --wait --timeout 180s
+          kubectl cluster-info
+      - name: build offload-worker image
+        run: docker build -t demo-offload-worker:latest ./runtimes/offload-worker
+      - name: import image into k3d
+        run: k3d image import demo-offload-worker:latest -c demo
+      - name: apply MinIO manifests with test creds
+        run: |
+          # CI node is 2 vCPU / 7 GiB; the production manifest requests
+          # too much. Patch creds + trim resources for the smoke.
+          sed -e 's|CHANGE_ME_MINIO_USER|minioadmin|' \
+              -e 's|CHANGE_ME_MINIO_PASSWORD|minioadmin|' \
+              -e 's|storage: 20Gi|storage: 1Gi|' \
+              -e 's|cpu: "500m"|cpu: "50m"|' \
+              -e 's|memory: "512Mi"|memory: "128Mi"|' \
+              -e 's|cpu: "2"|cpu: "500m"|' \
+              -e 's|memory: "2Gi"|memory: "512Mi"|' \
+              k8s/system-b/minio.yaml | kubectl apply -f -
+          kubectl -n system-b wait --for=condition=available deploy/minio --timeout=180s
+      - name: create demo-artifacts bucket via mc
+        run: |
+          # bucket is only needed for large-payload results; echo doesn't
+          # write to MinIO, so best-effort is fine for the smoke test.
+          kubectl -n system-b run mc --image=minio/mc --restart=Never --command -- \
+            sh -c 'mc alias set local http://minio.system-b.svc.cluster.local:9000 minioadmin minioadmin && mc mb --ignore-existing local/demo-artifacts' \
+            || true
+          # Pod exits quickly; wait for terminal phase, then show logs.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            phase=$(kubectl -n system-b get pod mc -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            case "$phase" in
+              Succeeded|Failed) break ;;
+            esac
+            sleep 2
+          done
+          kubectl -n system-b logs pod/mc || true
+      - name: apply offload-worker manifest
+        run: |
+          # Trim the production cpu: "2" / 4 / memory: 2Gi / 4Gi requests down
+          # so the pod fits alongside MinIO on a 2-vCPU GitHub runner.
+          sed -e 's|cpu: "2"|cpu: "200m"|' \
+              -e 's|cpu: "4"|cpu: "1"|' \
+              -e 's|memory: "2Gi"|memory: "256Mi"|' \
+              -e 's|memory: "4Gi"|memory: "1Gi"|' \
+              k8s/system-b/offload-worker.yaml | kubectl apply -f -
+          kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
+      - name: curl /health via NodePort 30800
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -sf http://localhost:30800/health; then
+              echo; echo "health OK"; exit 0
+            fi
+            sleep 3
+          done
+          kubectl -n system-b get pods
+          kubectl -n system-b logs deploy/offload-worker --tail=100 || true
+          exit 1
+      - name: POST /run echo
+        run: |
+          body=$(curl -sf -X POST http://localhost:30800/run \
+            -H 'content-type: application/json' \
+            -d '{"task_type":"echo","payload":{"hello":"ci"}}')
+          echo "$body"
+          echo "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["status"]=="ok", d; assert d["result"]["echo"]["hello"]=="ci", d'
+      - name: dump debug info on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide
+          kubectl get all -A
+          kubectl -n system-b describe pods
+          kubectl -n system-b logs deploy/offload-worker --tail=200 || true
+          kubectl -n system-b logs deploy/minio --tail=200 || true
+      - name: teardown
+        if: always()
+        run: k3d cluster delete demo || true
