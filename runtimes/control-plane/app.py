@@ -14,6 +14,7 @@ demo scope that is intentional — a real deployment would persist state.
 """
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -27,33 +28,57 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="demo-control-plane", version="0.1.0")
+logger = logging.getLogger("control-plane")
+
+
+def _parse_env_number(name: str, default: str, caster):
+    raw = os.environ.get(name, default)
+    try:
+        return caster(raw)
+    except ValueError:
+        logger.warning(
+            "invalid value for %s=%r (expected %s); falling back to default %s",
+            name, raw, caster.__name__, default,
+        )
+        return caster(default)
+
 
 OFFLOAD_WORKER_URL = os.environ.get(
     "OFFLOAD_WORKER_URL", "http://offload-worker.system-b.svc.cluster.local:8080"
 ).rstrip("/")
-OFFLOAD_TIMEOUT_SECONDS = float(os.environ.get("OFFLOAD_TIMEOUT_SECONDS", "60"))
+OFFLOAD_TIMEOUT_SECONDS = _parse_env_number("OFFLOAD_TIMEOUT_SECONDS", "60", float)
 MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "")
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "")
 MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "demo-artifacts")
-PRESIGN_EXPIRES_SECONDS = int(os.environ.get("PRESIGN_EXPIRES_SECONDS", "900"))
+PRESIGN_EXPIRES_SECONDS = _parse_env_number("PRESIGN_EXPIRES_SECONDS", "900", int)
 
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 
+# Lazily-initialised S3/MinIO client, shared across /artifacts calls.
+# boto3.client() is not cheap — several hundred ms on cold import under load.
+_s3: Optional[Any] = None
+_s3_lock = threading.Lock()
+
 
 def _s3_client():
     if not MINIO_ENDPOINT:
         raise HTTPException(status_code=503, detail="MINIO_ENDPOINT not configured")
-    return boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-        region_name="us-east-1",
-        config=BotoConfig(signature_version="s3v4"),
-    )
+    global _s3
+    if _s3 is None:
+        with _s3_lock:
+            if _s3 is None:
+                _s3 = boto3.client(
+                    "s3",
+                    endpoint_url=MINIO_ENDPOINT,
+                    aws_access_key_id=MINIO_ACCESS_KEY,
+                    aws_secret_access_key=MINIO_SECRET_KEY,
+                    region_name="us-east-1",
+                    config=BotoConfig(signature_version="s3v4"),
+                )
+    return _s3
 
 
 class OffloadRequest(BaseModel):
@@ -181,10 +206,11 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
         else:
             entry["status"] = "error"
             entry["error"] = body.get("error") or "offload-worker returned error"
+        final_status = entry["status"]
 
     return OffloadSubmitted(
         job_id=job_id,
-        status=_jobs[job_id]["status"],
+        status=final_status,
         session_id=req.session_id,
     )
 
