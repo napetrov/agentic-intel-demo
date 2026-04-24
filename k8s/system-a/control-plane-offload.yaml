@@ -1,0 +1,106 @@
+# Minimal offload-relay control-plane for System A.
+#
+# Implements docs/contracts/offload-result-contract.md:
+#   POST /offload, GET /offload/{job_id}, GET /artifacts/{ref}.
+#
+# This is the shape exercised by the `tier1-scenario-slice` CI job and by
+# Tier 1 local docker bring-up. For Tier 2 session management we still
+# rely on the OpenClaw operator — this manifest deliberately does NOT
+# recreate the legacy k8s-backed sessions API in `control-plane.yaml`.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-plane-offload
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane-offload
+  template:
+    metadata:
+      labels:
+        app: control-plane-offload
+    spec:
+      containers:
+        - name: control-plane-offload
+          image: docker.io/library/demo-control-plane:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: OFFLOAD_WORKER_URL
+              value: "http://offload-worker.system-b.svc.cluster.local:8080"
+            - name: OFFLOAD_TIMEOUT_SECONDS
+              value: "60"
+            - name: MINIO_ENDPOINT
+              value: "http://minio.system-b.svc.cluster.local:9000"
+            - name: MINIO_BUCKET
+              value: "demo-artifacts"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-creds
+                  key: MINIO_ROOT_PASSWORD
+            - name: PRESIGN_EXPIRES_SECONDS
+              value: "900"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane-offload
+  namespace: platform
+spec:
+  selector:
+    app: control-plane-offload
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-plane-offload-nodeport
+  namespace: platform
+spec:
+  selector:
+    app: control-plane-offload
+  type: NodePort
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 31001

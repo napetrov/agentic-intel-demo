@@ -84,6 +84,120 @@ jobs:
       - name: validate scenarios + architecture templates
         run: python3 scripts/validate-demo-templates.py
 
+  control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install control-plane deps + pytest
+        working-directory: runtimes/control-plane
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            boto3==1.37.38 \
+            pytest==8.3.5
+      - name: pytest
+        working-directory: runtimes/control-plane
+        run: pytest -v
+
+  tier1-scenario-slice:
+    # End-to-end Tier 1 slice on a single runner (no k8s): exercises the
+    # market_research scenario contract — control-plane POST /offload ->
+    # offload-worker POST /run -> MinIO put_object -> control-plane
+    # GET /offload/{job_id} + GET /artifacts/{ref}. This is the first job
+    # that drives a full scenario route through every process in the
+    # offload_system_b execution mode.
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: bitnami/minio:2024.5.28
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: demo-artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install runtime deps
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            boto3==1.37.38 \
+            pandas==2.2.3 \
+            scikit-learn==1.6.1 \
+            numpy==2.2.5
+      - name: wait for MinIO
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live >/dev/null; then
+              echo "minio ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "minio never came up"; exit 1
+      - name: start offload-worker
+        working-directory: runtimes/offload-worker
+        env:
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: demo-artifacts
+        run: |
+          nohup python -m uvicorn app:app --host 127.0.0.1 --port 8091 \
+            >/tmp/offload.log 2>&1 &
+          echo $! > /tmp/offload.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8091/health >/dev/null; then
+              echo "offload-worker ready"; exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/offload.log; exit 1
+      - name: start control-plane
+        working-directory: runtimes/control-plane
+        env:
+          OFFLOAD_WORKER_URL: http://127.0.0.1:8091
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: demo-artifacts
+        run: |
+          nohup python -m uvicorn app:app --host 127.0.0.1 --port 8090 \
+            >/tmp/cp.log 2>&1 &
+          echo $! > /tmp/cp.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8090/health >/dev/null; then
+              echo "control-plane ready"; exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/cp.log; exit 1
+      - name: drive a market_research-shaped scenario through /offload
+        run: python3 scripts/ci-scenario-slice.py
+      - name: dump server logs on failure
+        if: failure()
+        run: |
+          echo "----- control-plane -----"; cat /tmp/cp.log || true
+          echo "----- offload-worker ----"; cat /tmp/offload.log || true
+      - name: stop servers
+        if: always()
+        run: |
+          for pidfile in /tmp/cp.pid /tmp/offload.pid; do
+            if [ -f "$pidfile" ]; then
+              kill "$(cat $pidfile)" 2>/dev/null || true
+            fi
+          done
+
   tier2-offload-smoke:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,180 @@
+"""Unit tests for the control-plane offload relay.
+
+No real network/MinIO — the offload-worker is replaced with a stubbed
+httpx transport, and boto3 is only exercised via the artifact path with
+a fake endpoint (we only assert the presigned URL shape, not that it
+resolves).
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("OFFLOAD_WORKER_URL", "http://offload-worker.test")
+os.environ.setdefault("MINIO_ENDPOINT", "http://minio.test:9000")
+os.environ.setdefault("MINIO_ACCESS_KEY", "minioadmin")
+os.environ.setdefault("MINIO_SECRET_KEY", "minioadmin")
+os.environ.setdefault("MINIO_BUCKET", "demo-artifacts")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+import app as cp_app
+
+
+@pytest.fixture
+def client(monkeypatch):
+    # Replace httpx.post with one driven by a MockTransport so no real
+    # network is touched. We rebuild a client per-call to mirror app.py.
+    def _factory(handler):
+        transport = httpx.MockTransport(handler)
+
+        def fake_post(url, *, json=None, timeout=None):
+            with httpx.Client(transport=transport) as c:
+                return c.post(url, json=json, timeout=timeout)
+
+        monkeypatch.setattr(cp_app.httpx, "post", fake_post)
+        return TestClient(cp_app.app)
+
+    return _factory
+
+
+def test_health():
+    tc = TestClient(cp_app.app)
+    r = tc.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_offload_echo_roundtrip(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/run"
+        return httpx.Response(
+            200,
+            json={
+                "task_id": "task-abc123",
+                "status": "ok",
+                "result": {"echo": {"hello": "world"}},
+                "result_key": None,
+            },
+        )
+
+    tc = client(handler)
+    r = tc.post(
+        "/offload",
+        json={
+            "task_type": "echo",
+            "payload": {"hello": "world"},
+            "session_id": "sess-1",
+        },
+    )
+    assert r.status_code == 200
+    submitted = r.json()
+    assert submitted["status"] == "completed"
+    assert submitted["session_id"] == "sess-1"
+    job_id = submitted["job_id"]
+
+    r2 = tc.get(f"/offload/{job_id}")
+    assert r2.status_code == 200
+    status = r2.json()
+    assert status["status"] == "completed"
+    assert status["task_id"] == "task-abc123"
+    assert status["result"] == {"echo": {"hello": "world"}}
+    assert status["result_ref"] is None
+    assert status["error"] is None
+
+
+def test_offload_returns_result_key_for_large_result(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "task_id": "task-def456",
+                "status": "ok",
+                "result": None,
+                "result_key": "offload/sess-2/task-def456.json",
+            },
+        )
+
+    tc = client(handler)
+    r = tc.post(
+        "/offload",
+        json={"task_type": "pandas_describe", "payload": {"data": []}, "session_id": "sess-2"},
+    )
+    job_id = r.json()["job_id"]
+    status = tc.get(f"/offload/{job_id}").json()
+    assert status["status"] == "completed"
+    assert status["result_ref"] == "offload/sess-2/task-def456.json"
+    assert status["result"] is None
+
+
+def test_offload_worker_error_bubbles_up_as_job_error(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "task_id": "task-xyz",
+                "status": "error",
+                "error": "Traceback: ValueError: boom",
+            },
+        )
+
+    tc = client(handler)
+    r = tc.post("/offload", json={"task_type": "echo", "payload": {}})
+    assert r.status_code == 200
+    assert r.json()["status"] == "error"
+    status = tc.get(f"/offload/{r.json()['job_id']}").json()
+    assert status["status"] == "error"
+    assert "boom" in status["error"]
+
+
+def test_offload_worker_unreachable_returns_502(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("nope", request=request)
+
+    tc = client(handler)
+    r = tc.post("/offload", json={"task_type": "echo", "payload": {}})
+    assert r.status_code == 502
+    # Job was created before the call failed; status should reflect error.
+    # We can't get the job_id from the 502 body, but we can verify the
+    # registry accepts a GET (even without id) returns 404 shape.
+    r404 = tc.get("/offload/does-not-exist")
+    assert r404.status_code == 404
+
+
+def test_unknown_job_id_returns_404():
+    tc = TestClient(cp_app.app)
+    r = tc.get("/offload/job-does-not-exist")
+    assert r.status_code == 404
+
+
+def test_artifact_presign_returns_url():
+    tc = TestClient(cp_app.app)
+    r = tc.get("/artifacts/offload/sess-1/task-abc.json")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ref"] == "offload/sess-1/task-abc.json"
+    assert body["url"].startswith("http://minio.test:9000/demo-artifacts/")
+    assert body["expires_in"] > 0
+
+
+def test_artifact_ref_rejects_path_traversal():
+    # HTTP clients normalize `/artifacts/../x` to `/x` before the request
+    # is issued, so the traversal can only arrive via a handler call that
+    # bypasses URL normalization. Exercise the check directly.
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        cp_app.get_artifact("foo/../bar")
+    assert exc.value.status_code == 400
+
+
+def test_artifact_ref_rejects_leading_slash():
+    tc = TestClient(cp_app.app)
+    # FastAPI collapses repeated leading slashes; test via absolute ref.
+    r = tc.get("/artifacts//absolute/key")
+    assert r.status_code == 400

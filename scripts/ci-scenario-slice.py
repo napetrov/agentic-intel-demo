@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Tier 1 scenario-slice driver used by CI.
+
+Drives the `market_research` scenario contract end-to-end against a running
+control-plane + offload-worker + MinIO stack:
+
+  1. POST /offload {task_type: echo}          -> small-payload path (inline result)
+  2. GET  /offload/{job_id}                   -> assert completed + result shape
+  3. POST /offload {task_type: pandas_describe, payload: LARGE}
+                                              -> forces MinIO-backed result_key
+  4. GET  /offload/{job_id}                   -> assert result_ref set
+  5. GET  /artifacts/{ref}                    -> presigned URL
+  6. HEAD/GET presigned URL                   -> artifact actually readable
+
+Asserts the returned shape matches `docs/contracts/offload-result-contract.md`.
+
+Run via the `tier1-scenario-slice` CI job; fails the job on any mismatch.
+"""
+from __future__ import annotations
+
+import os
+import sys
+import time
+from urllib.parse import urlparse
+
+import httpx
+
+
+CONTROL_PLANE = os.environ.get("CONTROL_PLANE_URL", "http://127.0.0.1:8090")
+TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+
+
+def die(msg: str, extra: object = None) -> None:
+    print(f"FAIL: {msg}", file=sys.stderr)
+    if extra is not None:
+        print(f"  detail: {extra!r}", file=sys.stderr)
+    sys.exit(1)
+
+
+def main() -> int:
+    with httpx.Client(base_url=CONTROL_PLANE, timeout=TIMEOUT) as c:
+        # 0. health
+        h = c.get("/health")
+        if h.status_code != 200:
+            die("control-plane /health not 200", h.text)
+        print(f"OK  /health -> {h.json()}")
+
+        # 1. small-payload path
+        r = c.post(
+            "/offload",
+            json={
+                "task_type": "echo",
+                "payload": {"scenario": "market_research", "q": "tea market 2024"},
+                "session_id": "ci-sess-1",
+            },
+        )
+        if r.status_code != 200:
+            die(f"POST /offload returned {r.status_code}", r.text)
+        small = r.json()
+        required = {"job_id", "status", "session_id"}
+        if not required.issubset(small):
+            die("submit response missing required fields", small)
+        if small["status"] != "completed":
+            die("expected immediate status=completed for echo", small)
+        job_id = small["job_id"]
+        print(f"OK  POST /offload echo -> {job_id}")
+
+        # 2. GET /offload/{job_id}
+        r = c.get(f"/offload/{job_id}")
+        if r.status_code != 200:
+            die("GET /offload/{id} for echo job", r.text)
+        status = r.json()
+        for required_field in ("job_id", "status", "task_id", "submitted_at"):
+            if required_field not in status:
+                die(f"status response missing `{required_field}`", status)
+        if status["result"] != {"echo": {"scenario": "market_research", "q": "tea market 2024"}}:
+            die("echo result did not round-trip", status)
+        if status["result_ref"] is not None:
+            die("echo result should be inline, not a ref", status)
+        print(f"OK  GET /offload/{job_id} -> result shape matches")
+
+        # 3. large-payload path (pandas_describe of >4KB JSON forces result_key)
+        big_rows = [{"a": i, "b": i * 2, "c": i * 3, "d": i * 4} for i in range(1500)]
+        r = c.post(
+            "/offload",
+            json={
+                "task_type": "pandas_describe",
+                "payload": {"data": big_rows},
+                "session_id": "ci-sess-2",
+            },
+        )
+        if r.status_code != 200:
+            die("POST /offload pandas_describe", r.text)
+        big = r.json()
+        if big["status"] != "completed":
+            die("pandas_describe should complete synchronously in the relay", big)
+        big_id = big["job_id"]
+        print(f"OK  POST /offload pandas_describe -> {big_id}")
+
+        # 4. assert a result_ref was produced
+        r = c.get(f"/offload/{big_id}")
+        big_status = r.json()
+        if not big_status.get("result_ref"):
+            die("large pandas_describe should return a MinIO ref", big_status)
+        ref = big_status["result_ref"]
+        print(f"OK  GET /offload/{big_id} -> result_ref={ref}")
+
+        # 5. presign it
+        r = c.get(f"/artifacts/{ref}")
+        if r.status_code != 200:
+            die("GET /artifacts/{ref} presign", r.text)
+        art = r.json()
+        if art["ref"] != ref or not art["url"].startswith("http"):
+            die("artifact presign shape mismatch", art)
+        print(f"OK  /artifacts/{ref} -> presigned URL")
+
+    # 6. fetch the artifact via the presigned URL (outside the control plane).
+    # Rewrite the host if MinIO advertised an in-cluster hostname (it won't
+    # here — we configured http://localhost:9000 — but this keeps the
+    # driver portable).
+    url = art["url"]
+    parsed = urlparse(url)
+    if parsed.hostname and parsed.hostname not in {"localhost", "127.0.0.1"}:
+        url = url.replace(f"{parsed.scheme}://{parsed.hostname}", "http://localhost")
+    with httpx.Client(timeout=TIMEOUT) as c:
+        r = c.get(url)
+        if r.status_code != 200:
+            die(f"presigned artifact fetch returned {r.status_code}", r.text[:200])
+        body = r.json()
+        if "a" not in body or "mean" not in body["a"]:
+            die("artifact does not look like a pandas describe result", body)
+        print(f"OK  artifact fetched and parsed — a.mean={body['a']['mean']}")
+
+    # 7. unknown job id -> 404
+    with httpx.Client(base_url=CONTROL_PLANE, timeout=TIMEOUT) as c:
+        r = c.get("/offload/job-does-not-exist")
+        if r.status_code != 404:
+            die("unknown job id should 404", r.text)
+        print("OK  unknown job_id returns 404")
+
+    print("\nAll scenario-slice checks passed.")
+    # Small sleep so CI captures trailing logs cleanly.
+    time.sleep(0.2)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

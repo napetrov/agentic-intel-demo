@@ -55,6 +55,11 @@ The current validated direction is:
   - model: `Qwen/Qwen3-4B-Instruct-2507`
   - context length: `32768`
   - CPU profile: `16 CPU / 32Gi`
+- The offload relay (`POST /offload`, `GET /offload/{job_id}`,
+  `GET /artifacts/{ref}`) is implemented in `runtimes/control-plane/`
+  and exercised end-to-end by the `tier1-scenario-slice` CI job
+  (full scenario path: scenario → control-plane → offload-worker →
+  MinIO artifact)
 
 Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
