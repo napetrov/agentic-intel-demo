@@ -1,5 +1,19 @@
 # MVP Plan — Minimal End-to-End Path
 
+> **Deprecated path.** Phases 3–4 of this plan describe building a raw
+> control plane at `legacy/services/control-plane/` and a bespoke
+> session-pod at `legacy/runtimes/session-pod/`. Those directories have
+> been removed from the repo; the `openclaw-operator` path is the only
+> supported instance-management approach.
+>
+> For the current minimum end-to-end path use:
+> - `README.md` → "Recommended first slice"
+> - `docs/operator-runbook.md` (install + apply `OpenClawInstance`)
+> - `docs/operator-gap-analysis.md` (remaining work)
+>
+> This file is kept only as historical context and will be rewritten or
+> removed in a follow-up.
+
 ## Goal
 Working demo of Task 1 (terminal agent) as fast as possible.
 Everything else is layered on top of a verified first slice.

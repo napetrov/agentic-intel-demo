@@ -26,7 +26,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers, Kubernetes-first)
 - `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload) within the two-system reference
 - `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
-- `docs/mvp-plan.md` — minimal MVP path and implementation order
+- `docs/mvp-plan.md` — (deprecated; describes the removed raw control-plane/session-pod path)
 - `docs/reusable-components.md` — what to reuse vs what to build
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
