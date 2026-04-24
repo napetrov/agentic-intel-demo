@@ -127,6 +127,16 @@ const nodeEls = document.querySelectorAll('[data-node]');
 let fleetState = { total: 3, systemA: 2, systemB: 1 };
 let currentScenario = 'terminal-agent';
 let fleetToastTimer = null;
+let walkthroughRunId = 0;
+const RUN_DEMO_LABEL = 'Run walkthrough';
+
+function cancelWalkthrough() {
+  walkthroughRunId += 1;
+  if (runDemoBtn.disabled) {
+    runDemoBtn.textContent = RUN_DEMO_LABEL;
+    runDemoBtn.disabled = false;
+  }
+}
 
 function resetArchitecture() {
   nodeEls.forEach((el) => el.classList.remove('active'));
@@ -202,12 +212,14 @@ function renderScenario(key) {
 
 document.querySelectorAll('[data-scenario]').forEach((el) => {
   el.addEventListener('click', () => {
+    cancelWalkthrough();
     currentScenario = el.dataset.scenario;
     renderScenario(currentScenario);
   });
 });
 
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
+  cancelWalkthrough();
   resetArchitecture();
   ['openclaw', 'litellm', 'sambanova', 'slm', 'systemA', 'systemB'].forEach((id) => {
     const el = document.querySelector(`[data-node="${id}"]`);
@@ -244,6 +256,7 @@ document.querySelector('[data-action="status"]').addEventListener('click', () =>
 });
 
 document.querySelector('[data-action="reset"]').addEventListener('click', () => {
+  cancelWalkthrough();
   resetArchitecture();
   renderToolActivity([{ empty: true, label: 'Select a scenario to view expected tool usage.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
@@ -310,8 +323,10 @@ function buildWalkthroughPhases(scenario) {
     .split(',')
     .map((t) => t.trim())
     .filter(Boolean);
-  const timeline = scenario.timeline || [];
-  const phaseCount = Math.max(1, timeline.length);
+  const timeline = (scenario.timeline && scenario.timeline.length)
+    ? scenario.timeline
+    : [['Walkthrough', 'Scenario replay']];
+  const phaseCount = timeline.length;
   const chunkSize = Math.ceil(lines.length / phaseCount);
   const parsedArtifacts = Number(scenario.metrics.Artifacts);
   const artifactTotal = Number.isFinite(parsedArtifacts) ? parsedArtifacts : phaseCount;
@@ -340,6 +355,7 @@ function buildWalkthroughPhases(scenario) {
 runDemoBtn.addEventListener('click', () => {
   const scenario = scenarios[currentScenario];
   if (!scenario) return;
+  const runId = ++walkthroughRunId;
   const restoreLabel = runDemoBtn.textContent;
   runDemoBtn.textContent = 'Running...';
   runDemoBtn.disabled = true;
@@ -362,6 +378,7 @@ runDemoBtn.addEventListener('click', () => {
 
   phases.forEach((phase, idx) => {
     setTimeout(() => {
+      if (runId !== walkthroughRunId) return;
       commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + phase.chunk;
       commandLogEl.scrollTop = commandLogEl.scrollHeight;
       renderToolActivity(phase.tools.length ? phase.tools : [{ empty: true, label: phase.detail }]);
@@ -376,6 +393,7 @@ runDemoBtn.addEventListener('click', () => {
 
   const totalDuration = phases.length * phaseDurationMs;
   setTimeout(() => {
+    if (runId !== walkthroughRunId) return;
     renderScenario(currentScenario);
     runDemoBtn.textContent = restoreLabel;
     runDemoBtn.disabled = false;

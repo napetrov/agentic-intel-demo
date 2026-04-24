@@ -43,7 +43,7 @@ Service on port 80. Expose it with the ingress of your choice.
 ## Smoke tests
 
 A small Playwright suite validates that the page loads, each scenario card
-populates the timeline with ≥3 items, and the walkthrough completes
+populates the tool activity panel with ≥3 rows, and the walkthrough completes
 end-to-end.
 
 ```bash
