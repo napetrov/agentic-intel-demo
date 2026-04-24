@@ -40,84 +40,104 @@
           </div>
         </section>
 
-        <section class="architecture panel">
+        <section class="architecture panel mock-b">
           <div class="panel-head panel-head-wrap">
             <div>
-              <div class="section-title">Architecture</div>
-              <div class="section-subtitle">The route is part of the story</div>
+              <div class="section-title">Architecture — Mock B</div>
+              <div class="section-subtitle">Placement-first: shared orchestration row, then System A / System B split</div>
             </div>
             <div class="panel-actions">
-              <button class="ghost small" id="add-agent">Add agent</button>
+              <div id="data-mode" class="data-mode-badge">Static demo data</div>
             </div>
           </div>
-          <div class="arch-row orchestration-row">
-            <div class="arch-node" data-node="ui">
-              <span class="arch-label">Web Demo UI</span>
-              <span class="arch-sub">entrypoint</span>
-              <span class="arch-badge">sessions: 2</span>
-            </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-lane-split">
-              <div class="arch-node" data-node="openclaw">
-                <span class="arch-label">OpenClaw</span>
-                <span class="arch-sub">primary orchestration</span>
-                <span class="arch-badge">agents: <span id="agents-total">3</span></span>
+
+          <div class="arch-band orchestration-band" aria-label="Orchestration and routing (shared)">
+            <div class="band-title">Orchestration + Routing (shared)</div>
+            <div class="band-row">
+              <div class="arch-lane-split">
+                <div class="arch-node" data-node="openclaw">
+                  <span class="arch-label">OpenClaw</span>
+                  <span class="arch-sub">primary orchestration</span>
+                </div>
+                <div class="arch-node arch-node-alt" data-node="flowise">
+                  <span class="arch-label">Flowise</span>
+                  <span class="arch-sub">optional alt orchestrator</span>
+                </div>
               </div>
-              <div class="arch-node arch-node-alt" data-node="flowise">
-                <span class="arch-label">Flowise</span>
-                <span class="arch-sub">optional alternative orchestrator</span>
-                <span class="arch-badge">inactive lane</span>
+              <div class="arch-arrow">→</div>
+              <div class="arch-node" data-node="litellm">
+                <span class="arch-label">LiteLLM</span>
+                <span class="arch-sub">model gateway / router</span>
+                <span class="arch-badge">2 backends</span>
+              </div>
+              <div class="arch-router-fanout" aria-hidden="true">
+                <span class="fanout-arrow fanout-arrow-up">⇢</span>
+                <span class="fanout-arrow fanout-arrow-down">⇣</span>
+              </div>
+              <div class="arch-router-targets">
+                <div class="arch-node arch-router-target" data-node="sambanova">
+                  <span class="arch-label">SambaNova</span>
+                  <span class="arch-sub">external inference</span>
+                </div>
+                <div class="arch-node arch-router-target" data-node="ent-inference-route">
+                  <span class="arch-label">Enterprise Inference</span>
+                  <span class="arch-sub">route into System B</span>
+                </div>
               </div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-node" data-node="litellm">
-              <span class="arch-label">LiteLLM</span>
-              <span class="arch-sub">gateway to SambaNova / GNR SLM Inference</span>
-              <span class="arch-badge">routes: 2 active backends</span>
-            </div>
           </div>
-          <div class="arch-split inference-split">
-            <div class="arch-branch" data-node="sambanova">
-              <span class="arch-label">SambaNova</span>
-              <span class="arch-sub">primary inference backend</span>
-              <span class="arch-badge">tokens today: 24.8k</span>
-            </div>
-            <div class="arch-branch" data-node="slm">
-              <span class="arch-label">SLM on GNR</span>
-              <span class="arch-sub">alternate inference backend</span>
-              <span class="arch-badge">tokens today: 8.1k</span>
-            </div>
-          </div>
-          <div class="arch-split">
-            <div class="arch-branch" data-node="systemA">
-              <span class="arch-label">System A (CWF)</span>
-              <span class="arch-sub">primary operator path</span>
-              <span class="arch-badge">agents: <span id="agents-a">2</span></span>
-            </div>
-            <div class="arch-branch" data-node="systemB">
-              <span class="arch-label">System B (GNR)</span>
-              <span class="arch-sub">offload / alternate path</span>
-              <span class="arch-badge">agents: <span id="agents-b">1</span></span>
-            </div>
-          </div>
-          <div class="scaling-panel">
-            <div class="scaling-head">
-              <div>
-                <div class="section-title">Scaling controls</div>
-                <div class="section-subtitle">Demo-only capacity model for the selected scenario</div>
+
+          <div class="arch-systems-split">
+            <div class="arch-system system-a" data-system="a">
+              <div class="system-head">
+                <div>
+                  <div class="system-title">System A</div>
+                  <div class="system-subtitle">primary — agents spawn here</div>
+                </div>
+                <div class="system-capacity">
+                  <span class="capacity-label">capacity</span>
+                  <span class="capacity-value"><span id="sys-a-used">0</span>/<span id="sys-a-total">16</span> vCPU</span>
+                </div>
               </div>
-              <div id="data-mode" class="data-mode-badge">Scenario: terminal-agent</div>
+              <div class="capacity-bar" role="progressbar" aria-label="System A vCPU utilization" aria-valuemin="0" aria-valuemax="16" aria-valuenow="0">
+                <div id="sys-a-bar-fill" class="capacity-bar-fill" style="width: 0%"></div>
+              </div>
+              <div class="agent-list" id="sys-a-agents" aria-live="polite">
+                <div class="agent-row-empty">agents: (idle — select a scenario)</div>
+              </div>
             </div>
-            <div class="scaling-grid">
-              <div class="metric-card"><span class="metric-label">Allocated vCPU</span><span id="allocated-vcpu" class="metric-value">2</span></div>
-              <div class="metric-card"><span class="metric-label">Headroom</span><span id="headroom-vcpu" class="metric-value">+6</span></div>
-              <div class="metric-card"><span class="metric-label">Scenario max</span><span id="scenario-max" class="metric-value">8</span></div>
-              <div class="metric-card"><span class="metric-label">Cluster free</span><span id="cluster-free" class="metric-value">6</span></div>
+
+            <div class="arch-cross-arrow" id="cross-system-arrow" aria-hidden="true">
+              <span class="cross-arrow-line"></span>
+              <span class="cross-arrow-head">▶</span>
+              <span class="cross-arrow-label">subagent</span>
             </div>
-            <div class="scaling-controls-row">
-              <label class="scaling-label" for="vcpu-slider">vCPU allocation</label>
-              <input id="vcpu-slider" class="slider" type="range" min="1" max="8" step="1" value="2" />
-              <div class="scaling-hint">Headroom = min(scenario max, allocated + cluster free) − allocated</div>
+
+            <div class="arch-system system-b" data-system="b">
+              <div class="system-head">
+                <div>
+                  <div class="system-title">System B</div>
+                  <div class="system-subtitle">heavy + services</div>
+                </div>
+              </div>
+              <div class="service-list">
+                <div class="service-row" data-service="ent-inference">
+                  <span class="service-name">Enterprise Inference</span>
+                  <span class="service-meta">SLM route</span>
+                  <span class="service-status" data-status="idle">idle</span>
+                </div>
+                <div class="service-row" data-service="erag">
+                  <span class="service-name">eRAG</span>
+                  <span class="service-meta">retrieval service</span>
+                  <span class="service-status" data-status="idle">idle</span>
+                </div>
+              </div>
+              <div class="offload-landing">
+                <div class="offload-label">Offload landing</div>
+                <div class="offload-list" id="sys-b-offload" aria-live="polite">
+                  <div class="agent-row-empty">no offloaded workers</div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -198,7 +218,6 @@
                   <div class="section-subtitle">What runs where, for the current run</div>
                 </div>
               </div>
-              <div id="fleet-toast" class="fleet-toast hidden" role="status" aria-live="polite">Agent added to fleet.</div>
               <div id="console" class="console console-scroll">
                 <div class="console-line"><span class="console-key">mode</span><span class="console-val">demo portal</span></div>
                 <div class="console-line"><span class="console-key">openclaw version</span><span class="console-val">2026.4.15</span></div>
