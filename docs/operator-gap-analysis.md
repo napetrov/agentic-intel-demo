@@ -120,6 +120,6 @@ Consequences:
 4. rewrite main docs to make operator the default path
 
 ### Second priority
-1. move legacy control-plane path into `docs/legacy/` or mark clearly as non-canonical
+1. ~~move legacy control-plane path into `docs/legacy/` or mark clearly as non-canonical~~ — done (legacy/ and scripts/legacy/ removed)
 2. pin exact operator source ref
 3. document exact Ready verification output from a successful cluster

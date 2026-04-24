@@ -77,32 +77,33 @@ Used by: `terminal_agent` (built-in example).
 Used by: `large_build_test` (built-in example).
 
 ### What runs where
-- Session pod on System A stays at `small` (it stays alive as orchestrator).
-- Control Plane launches a sibling **execution Job** with the `large` profile
-  on System A.
-- The Job writes outputs to MinIO (via Control Plane relay) or returns via
-  Job status.
-- No System B compute involvement.
+- Session pod on System A is created from the `large` pod profile at
+  `OpenClawInstance` creation time — profile selection is static, not
+  dynamic.
+- Agent runs the build/test directly in the `large` session pod.
+- Outputs written to MinIO (System B) via Control Plane relay or returned
+  via tool output.
+- No System B compute involvement beyond artifact storage.
 
 ### Architectural layers that matter
-- Layer 1 (Session Pod) — orchestrator only.
-- Layer 2 (Control Plane) — owns the scale-up path (`POST /sessions/{id}/scale-up`).
+- Layer 1 (Session Pod) — the large session pod is the execution surface.
+- Layer 2 (Control Plane) — no dynamic scale-up contract; used only for
+  artifact relay if the scenario writes to MinIO.
 - Layer 3 (Model routing) — unchanged.
-- Layer 5 (Artifacts) — in use. MinIO on System B is still the artifact
-  store, accessed only through Control Plane relay.
+- Layer 5 (Artifacts) — in use when the scenario emits artifacts. MinIO on
+  System B is still the artifact store, accessed only through Control Plane
+  relay.
 - Layer 6 (Chat integration) — unchanged.
 
 ### Pod profile
-- Session pod: `small`.
-- Execution Job: `large`.
+- Session pod: `large`.
 
 ### Required contracts
 - `docs/contracts/session-lifecycle.md`
 - `docs/contracts/task-routing.md`
 
 ### Required evidence in the final result
-- Explicit profile selection line ("selecting large execution profile").
-- Execution Job id / status.
+- Explicit profile selection line ("running on large session pod").
 - Build or test command evidence (exit code, test counts, logs).
 
 ### When NOT to pick this variant
@@ -152,12 +153,12 @@ Used by: `market_research` (built-in example).
 
 | Dimension | local-standard | local-large | offload |
 |-----------|----------------|-------------|---------|
-| Session pod profile | medium | small | small |
-| Second workload | none | execution Job on System A (large) | Worker Job on System B |
+| Session pod profile | medium | large | small |
+| Second workload | none | none (session pod is sized for the task) | Worker Job on System B |
 | Cross-system compute | no | no | yes (System B) |
-| Uses MinIO artifact relay | optional | typical | required |
+| Uses MinIO artifact relay | optional | optional | required |
 | Offload contract required | no | no | yes |
-| Scale-up contract required | no | yes | no |
+| Scale-up contract required | no | no (profile selected statically) | no |
 | Built-in example | `terminal_agent` | `large_build_test` | `market_research` |
 
 ## How architecture choice flows from the scenario spec

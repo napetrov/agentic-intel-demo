@@ -4,9 +4,9 @@
 #   POST /offload, GET /offload/{job_id}, GET /artifacts/{ref}.
 #
 # This is the shape exercised by the `tier1-scenario-slice` CI job and by
-# Tier 1 local docker bring-up. For Tier 2 session management we still
-# rely on the OpenClaw operator — this manifest deliberately does NOT
-# recreate the legacy k8s-backed sessions API in `control-plane.yaml`.
+# Tier 1 local docker bring-up. For Tier 2 session management we rely on
+# the OpenClaw operator — this manifest deliberately does NOT recreate the
+# old k8s-backed sessions API.
 #
 # Required substitutions (envsubst or equivalent) before `kubectl apply`:
 #   CONTROL_OFFLOAD_IMAGE — versioned tag or digest of the

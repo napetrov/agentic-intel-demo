@@ -90,13 +90,17 @@ curl http://localhost:31000/health
 
 ---
 
-## Step 4 — Build and load session pod image
+## Step 4 — Install `openclaw-operator` and apply an `OpenClawInstance`
+
+The session-pod image is built and loaded by `openclaw-operator` (external
+upstream project — see `docs/operator-install.md`). Single-node validation
+uses the same path as a real cluster.
 
 ```bash
-cd legacy/runtimes/session-pod
-docker build -t demo-session-pod:latest .
-# Import into System A k3s (no registry needed for single-node):
-docker save demo-session-pod:latest | k3s-a ctr images import -
+./scripts/install-openclaw-operator.sh
+./scripts/check-operator-prereqs.sh
+kubectl apply -f agents/scenarios/terminal-agent/OpenClawInstance.yaml
+kubectl rollout status statefulset/<instance-name> -n agents
 ```
 
 ---
@@ -104,10 +108,11 @@ docker save demo-session-pod:latest | k3s-a ctr images import -
 ## Step 5 — End-to-end smoke test
 
 ```bash
-./scripts/legacy/smoke-test-session.sh
+./scripts/smoke-test-operator-instance.sh
 ```
 
-This creates a session, sends a test message, and verifies a response.
+This creates an `OpenClawInstance`, sends a test message, and verifies a
+response.
 
 ---
 

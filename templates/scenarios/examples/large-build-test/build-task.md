@@ -19,17 +19,15 @@ orchestrator.
 ## Steps
 
 1. inspect target repo and identify the build/test invocation
-2. state "selecting large execution profile"
-3. request scale-up through Control Plane (planned surface:
-   `POST /sessions/{id}/scale-up`, per `docs/architecture.md`)
-4. wait for the execution Job to reach `running`
-5. stream or poll logs
-6. collect the exit code and test counts
-7. emit the structured result summary
+2. state "selecting large execution profile" (profile is already applied to
+   the session pod at instance creation; no runtime scale-up step)
+3. run the build/test directly in the session pod
+4. collect the exit code and test counts
+5. emit the structured result summary
 
-The scale-up and artifact-relay endpoints are the planned contract per
-`docs/architecture.md` and `docs/mvp-plan.md` Phase 6; they are not yet
-implemented in `legacy/services/control-plane`.
+The original dynamic scale-up path (`POST /sessions/{id}/scale-up`) has
+been dropped in favour of static `large` profile selection at
+`OpenClawInstance` creation time.
 
 ## Success criteria
 
@@ -44,7 +42,7 @@ implemented in `legacy/services/control-plane`.
 - `git`
 - `python`
 - `build_tools`
-- Control Plane API (scale-up + artifact relay)
+- Control Plane API (artifact relay only)
 
 ## Out of scope
 

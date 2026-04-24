@@ -26,7 +26,7 @@ binds those modes to concrete clusters and components.
 | orchestrator | session lifecycle, routing, user-visible status | `openclaw` managed by `openclaw-operator` |
 | model_router | single endpoint for all agent model calls | `litellm` |
 | inference_providers (1..N) | backends the router dispatches to (local + cloud) | `vllm` (local), `bedrock`, `sambanova` |
-| execution_backends (0..N) | where offload / scale-up jobs run | System B worker job |
+| execution_backends (0..N) | where offload jobs run | System B worker job |
 | artifact_store | shared object store for inputs/outputs/logs | `minio` |
 | chat_adapters (1..N) | user-facing ingress | `telegram` |
 

@@ -2,7 +2,7 @@
 
 ## Objective
 
-Run a more substantial engineering workflow than the terminal-agent scenario and make the scale-up path visible.
+Run a more substantial engineering workflow than the terminal-agent scenario on a `large`-profile session pod (statically sized, no runtime scale-up step).
 
 ## Required step sequence
 
@@ -23,6 +23,6 @@ Use real commands such as:
 
 ## Not acceptable
 
-- only saying that scale-up happened
+- only saying that the large profile was selected
 - returning a generic build summary with no command evidence
 - skipping failure detail when the task fails

@@ -41,7 +41,7 @@ One pod per active user session.
 - **Tools layer**
   - terminal / shell execution
   - file read/write
-  - control client (scale-up + offload requests)
+  - control client (offload requests)
   - artifact client
 - **Workspace volume** — per-session ephemeral scratch space
 - **Session state** — task context, intermediate outputs
@@ -223,17 +223,16 @@ User → Chat Gateway → Control Plane → Session Pod (System A)
 Orchestration on System A. Heavy compute on System B.
 Session pod never calls System B directly.
 
-### Task 3 — Build/test with scale-up
+### Task 3 — Build/test on a statically-sized large session pod
 ```
-User → Chat Gateway → Control Plane → Session Pod small (System A)
-  → agent detects need for larger execution profile
-  → POST /sessions/{id}/scale-up (Control Plane)
-  → Control Plane launches sibling execution Job (large profile, System A)
-  → session pod REMAINS running as orchestrator
-  → agent polls GET /offload/{job_id} for job completion
-  → execution Job writes results to MinIO or returns via job status
-  → Control Plane relays artifact to session pod
+User → Chat Gateway → OpenClaw operator (System A)
+  → Session Pod created from the `large` pod profile at OpenClawInstance
+    creation time (no runtime scale-up step)
+  → agent runs build/test directly in the large session pod
+  → results surfaced via MinIO artifact or direct tool output
   → result returned to user via Telegram
 ```
-All execution on System A. Session pod is never replaced — it stays as orchestrator.
-No System B involvement except optional model backend.
+All execution on System A. Profile is selected statically per scenario in
+`config/pod-profiles/profiles.yaml`; the old dynamic
+`POST /sessions/{id}/scale-up` contract has been dropped. No System B
+involvement except optional model backend.

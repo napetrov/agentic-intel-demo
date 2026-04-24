@@ -2,7 +2,7 @@
 
 ## Demo intent
 
-Show a larger System A engineering workload with explicit scale-up framing, visible build/test steps, and concrete completion evidence.
+Show a larger System A engineering workload on a statically-sized `large` session pod, with visible build/test steps and concrete completion evidence.
 
 ## Required opening
 

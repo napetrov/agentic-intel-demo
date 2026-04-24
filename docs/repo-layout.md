@@ -88,14 +88,12 @@ agentic-intel-demo/
 │   │   ├── README.md
 │   │   ├── task.yaml
 │   │   └── sample-data/
-│   └── task3-scale-up-build-test/
+│   └── task3-large-build-test/
 │       ├── README.md
 │       └── task.yaml
 │
 └── scripts/
-    ├── ... current operator/demo scripts ...
-    └── legacy/
-        └── smoke-test-session.sh
+    └── ... operator/demo scripts ...
 ```
 
 ---

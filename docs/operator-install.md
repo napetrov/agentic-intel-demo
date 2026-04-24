@@ -2,6 +2,19 @@
 
 This guide treats `openclaw-operator` as the only supported path for instance lifecycle.
 
+`openclaw-operator` is an **external upstream project** — we consume it as-is,
+we do not fork it. The exact upstream source ref (repository URL + release
+tag or commit) is not yet pinned in this repo; record it here once
+confirmed so bring-up is reproducible:
+
+- **Upstream source**: `TBD` (fill in `git URL` + tag or commit SHA)
+- **Install source**: `TBD` (e.g. a release tarball, manifests path, or
+  `kustomize` URL used by `scripts/install-openclaw-operator.sh`)
+
+Until the above is filled in, treat `scripts/install-openclaw-operator.sh`
+as the canonical description of where the operator is pulled from — if you
+change the source there, update this file too.
+
 ## Safe install order
 
 1. apply the CRD separately

@@ -30,8 +30,8 @@ Then briefly state the flow:
 <Concrete description of what the agent should actually do. Examples:
 - "run a bounded terminal task in a Terminal Bench style"
 - "offload the heavy step via POST /offload and poll for the artifact"
-- "request scale-up and wait for the execution Job to finish before
-  returning results">
+- "run build/test directly in the statically-sized large session pod and
+  return exit code, logs, and test counts">
 
 ## Minimum evidence to show
 
@@ -40,7 +40,7 @@ Include evidence for:
 - <tool transcripts, e.g., "at least one real shell command sequence">
 - <check/validation, e.g., "explicit success/failure checkpoint">
 - <for offload: "offload job id and artifact ref returned via Control Plane">
-- <for local-large: "profile selection line and execution Job id">
+- <for local-large: "profile selection line and build/test exit code">
 
 ## Failure handling
 
