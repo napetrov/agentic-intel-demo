@@ -309,7 +309,11 @@ function applyRunning(key, options) {
   if (!scenario) return;
   const includeSubagentNow = options && options.includeSubagentNow;
   setOrchestrationActive(scenario.orchestrationActive);
-  setServiceState(scenario.services);
+  const activeServices = { ...scenario.services };
+  if (scenario.subagent && !includeSubagentNow) {
+    activeServices.erag = false;
+  }
+  setServiceState(activeServices);
   renderSystemA(scenario, 'running');
   renderOffload(scenario, 'running', Boolean(includeSubagentNow));
   setCrossArrow(scenario.crossSystemArrow && includeSubagentNow);
@@ -323,6 +327,7 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
   cancelRun();
+  currentScenario = null;
   dataModeEl.textContent = 'Live status';
   setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
   setServiceState({ erag: true, 'ent-inference': true });
