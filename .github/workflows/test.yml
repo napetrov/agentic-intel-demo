@@ -107,20 +107,42 @@ jobs:
         run: k3d image import demo-offload-worker:latest -c demo
       - name: apply MinIO manifests with test creds
         run: |
-          # override stringData so the manifest works without editing
+          # CI node is 2 vCPU / 7 GiB; the production manifest requests
+          # too much. Patch creds + trim resources for the smoke.
           sed -e 's|CHANGE_ME_MINIO_USER|minioadmin|' \
               -e 's|CHANGE_ME_MINIO_PASSWORD|minioadmin|' \
+              -e 's|storage: 20Gi|storage: 1Gi|' \
+              -e 's|cpu: "500m"|cpu: "50m"|' \
+              -e 's|memory: "512Mi"|memory: "128Mi"|' \
+              -e 's|cpu: "2"|cpu: "500m"|' \
+              -e 's|memory: "2Gi"|memory: "512Mi"|' \
               k8s/system-b/minio.yaml | kubectl apply -f -
           kubectl -n system-b wait --for=condition=available deploy/minio --timeout=180s
       - name: create demo-artifacts bucket via mc
         run: |
+          # bucket is only needed for large-payload results; echo doesn't
+          # write to MinIO, so best-effort is fine for the smoke test.
           kubectl -n system-b run mc --image=minio/mc --restart=Never --command -- \
-            sh -c 'mc alias set local http://minio.system-b.svc.cluster.local:9000 minioadmin minioadmin && mc mb --ignore-existing local/demo-artifacts'
-          kubectl -n system-b wait --for=condition=Ready pod/mc --timeout=60s || true
-          kubectl -n system-b logs pod/mc
+            sh -c 'mc alias set local http://minio.system-b.svc.cluster.local:9000 minioadmin minioadmin && mc mb --ignore-existing local/demo-artifacts' \
+            || true
+          # Pod exits quickly; wait for terminal phase, then show logs.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            phase=$(kubectl -n system-b get pod mc -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            case "$phase" in
+              Succeeded|Failed) break ;;
+            esac
+            sleep 2
+          done
+          kubectl -n system-b logs pod/mc || true
       - name: apply offload-worker manifest
         run: |
-          kubectl apply -f k8s/system-b/offload-worker.yaml
+          # Trim the production cpu: "2" / 4 / memory: 2Gi / 4Gi requests down
+          # so the pod fits alongside MinIO on a 2-vCPU GitHub runner.
+          sed -e 's|cpu: "2"|cpu: "200m"|' \
+              -e 's|cpu: "4"|cpu: "1"|' \
+              -e 's|memory: "2Gi"|memory: "256Mi"|' \
+              -e 's|memory: "4Gi"|memory: "1Gi"|' \
+              k8s/system-b/offload-worker.yaml | kubectl apply -f -
           kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
       - name: curl /health via NodePort 30800
         run: |
