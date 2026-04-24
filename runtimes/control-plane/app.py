@@ -90,7 +90,26 @@ class ArtifactRef(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Liveness probe. Returns 200 as long as the process is up."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    """Readiness probe. Returns 503 until the offload-worker is reachable.
+
+    Used by the Deployment's readinessProbe so k8s won't route traffic
+    until the relay can actually forward to its upstream. Kept cheap — a
+    short-timeout GET on the worker's /health.
+    """
+    try:
+        r = httpx.get(f"{OFFLOAD_WORKER_URL}/health", timeout=2.0)
+        r.raise_for_status()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503, detail=f"offload-worker not ready: {exc}"
+        ) from exc
+    return {"status": "ready"}
 
 
 @app.post("/offload", response_model=OffloadSubmitted)

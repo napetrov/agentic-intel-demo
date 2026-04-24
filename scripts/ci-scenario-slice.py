@@ -116,6 +116,8 @@ def main() -> int:
 
         # 4. assert a result_ref was produced
         r = c.get(f"/offload/{big_id}")
+        if r.status_code != 200:
+            die(f"GET /offload/{{id}} for large echo returned {r.status_code}", r.text)
         big_status = r.json()
         if not big_status.get("result_ref"):
             die("large echo should return a MinIO ref", big_status)

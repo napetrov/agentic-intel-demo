@@ -9,6 +9,11 @@
 # recreate the legacy k8s-backed sessions API in `control-plane.yaml`.
 #
 # Required substitutions (envsubst or equivalent) before `kubectl apply`:
+#   CONTROL_OFFLOAD_IMAGE — versioned tag or digest of the
+#                           control-plane offload image, e.g.
+#                           docker.io/myorg/demo-control-plane:v0.1.0 or
+#                           myregistry/demo-control-plane@sha256:...
+#                           Avoid ":latest" for reproducibility.
 #   OFFLOAD_WORKER_URL    — reachable URL of the offload-worker HTTP API.
 #                           In a single-cluster setup this can be
 #                           http://offload-worker.system-b.svc.cluster.local:8080;
@@ -62,7 +67,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: control-plane-offload
-          image: docker.io/library/demo-control-plane:latest
+          image: ${CONTROL_OFFLOAD_IMAGE}
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -94,12 +99,16 @@ spec:
                   key: MINIO_ROOT_PASSWORD
             - name: PRESIGN_EXPIRES_SECONDS
               value: "900"
+          # /ready pings the offload-worker upstream; k8s won't route
+          # traffic to this pod until the relay can actually forward.
+          # /health is a plain process-up probe used for liveness only.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health

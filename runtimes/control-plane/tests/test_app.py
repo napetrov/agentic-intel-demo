@@ -7,6 +7,7 @@ resolves).
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -17,13 +18,22 @@ os.environ.setdefault("MINIO_ACCESS_KEY", "minioadmin")
 os.environ.setdefault("MINIO_SECRET_KEY", "minioadmin")
 os.environ.setdefault("MINIO_BUCKET", "demo-artifacts")
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-import app as cp_app
+# Load this module under a unique name so `sys.modules["app"]` can't be
+# polluted by runtimes/offload-worker/app.py if the two test suites ever
+# share a process (e.g. via `pytest runtimes/` from the repo root).
+# The module must be registered in sys.modules BEFORE exec_module so
+# pydantic/FastAPI can resolve forward refs on the request/response
+# models during `TypeAdapter` build.
+_APP_PATH = Path(__file__).resolve().parent.parent / "app.py"
+_spec = importlib.util.spec_from_file_location("control_plane_app", _APP_PATH)
+assert _spec is not None and _spec.loader is not None
+cp_app = importlib.util.module_from_spec(_spec)
+sys.modules["control_plane_app"] = cp_app
+_spec.loader.exec_module(cp_app)
 
 
 @pytest.fixture
@@ -48,6 +58,40 @@ def test_health():
     r = tc.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+def test_ready_returns_200_when_upstream_healthy(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url, *, timeout=None):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, timeout=timeout)
+
+    monkeypatch.setattr(cp_app.httpx, "get", fake_get)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/ready")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ready"}
+
+
+def test_ready_returns_503_when_upstream_unreachable(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("nope", request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url, *, timeout=None):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, timeout=timeout)
+
+    monkeypatch.setattr(cp_app.httpx, "get", fake_get)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/ready")
+    assert r.status_code == 503
 
 
 def test_offload_echo_roundtrip(client):
