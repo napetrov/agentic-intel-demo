@@ -332,8 +332,15 @@ curl http://<SYSTEM_A_IP>:31000/health
 ## Phase 4 — smoke test
 
 ### Session path
+`./scripts/smoke-test-operator-instance.sh` only prints a suggested
+checklist — it does not run assertions. Run it to get the commands, then
+execute them manually and confirm the instance is healthy:
+
 ```bash
 ./scripts/smoke-test-operator-instance.sh
+kubectl get crd openclawinstances.openclaw.rocks
+kubectl get openclawinstance intel-demo-operator -n default -o yaml
+kubectl get pods -A | grep -E 'openclaw|operator|intel-demo-operator'
 ```
 
 ### System B model path

@@ -99,20 +99,28 @@ uses the same path as a real cluster.
 ```bash
 ./scripts/install-openclaw-operator.sh
 ./scripts/check-operator-prereqs.sh
-kubectl apply -f agents/scenarios/terminal-agent/OpenClawInstance.yaml
-kubectl rollout status statefulset/<instance-name> -n agents
+kubectl apply -f examples/openclawinstance-intel-demo.yaml
+kubectl rollout status statefulset/<instance-name> -n default
 ```
 
 ---
 
 ## Step 5 — End-to-end smoke test
 
+`./scripts/smoke-test-operator-instance.sh` is a checklist printer — it
+emits the `kubectl` commands you should run to verify the instance
+reached a healthy state, it does not execute assertions or gate on
+readiness. Run the suggested commands manually and confirm each one:
+
 ```bash
-./scripts/smoke-test-operator-instance.sh
+./scripts/smoke-test-operator-instance.sh   # prints the checklist
+kubectl get crd openclawinstances.openclaw.rocks
+kubectl get openclawinstance intel-demo-operator -n default -o yaml
+kubectl get pods -A | grep -E 'openclaw|operator|intel-demo-operator'
 ```
 
-This creates an `OpenClawInstance`, sends a test message, and verifies a
-response.
+Then send a test message through Telegram and verify a response comes
+back.
 
 ---
 
