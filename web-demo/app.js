@@ -446,6 +446,11 @@ runDemoBtn.addEventListener('click', () => {
   const totalDuration = phases.length * phaseDurationMs;
   runTimers.push(setTimeout(() => {
     result.textContent = scenario.result;
+    renderToolActivity([
+      { name: 'read', status: 'done' },
+      { name: scenarioKey === 'market-research' ? 'pandas (subagent on B)' : 'exec', status: 'done' },
+      { name: 'summarize', status: 'done' }
+    ]);
     restoreRunButton();
   }, totalDuration));
 });
