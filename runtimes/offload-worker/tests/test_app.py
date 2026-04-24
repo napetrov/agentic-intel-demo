@@ -178,6 +178,26 @@ def test_shell_timeout_reports_error_not_ok(monkeypatch, tmp_path):
     assert body["result"] is None
 
 
+def test_shell_nonzero_exit_reports_error(monkeypatch, tmp_path):
+    """A scenario that exits non-zero must be surfaced as status=error."""
+    fail_dir = tmp_path / "fail-scenario"
+    fail_dir.mkdir()
+    (fail_dir / "run.sh").write_text(
+        "#!/usr/bin/env bash\necho on stdout\n>&2 echo on stderr\nexit 7\n"
+    )
+    monkeypatch.setattr(app_module, "SCENARIO_SCRIPTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        app_module, "ALLOWED_SCENARIOS", frozenset({"fail-scenario"})
+    )
+    r = client.post(
+        "/run",
+        json={"task_type": "shell", "payload": {"scenario": "fail-scenario"}},
+    )
+    body = r.json()
+    assert body["status"] == "error"
+    assert body["result"] is None
+
+
 # ---- agent_invoke task type --------------------------------------------
 
 class _FakeResp:

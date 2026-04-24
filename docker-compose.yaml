@@ -47,12 +47,13 @@ services:
       - -c
       - |
         set -eu
-        # Wait for MinIO to actually serve before creating the bucket. mc ready
-        # polls the cluster directly, so we don't depend on curl being in the
-        # server image.
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        # Wait for MinIO to serve, then create the bucket. `mc alias set`
+        # validates network reachability at alias time, so it must be inside
+        # the retry loop — on a cold start MinIO isn't listening yet and a
+        # single pre-loop `mc alias set` would hard-fail the container.
         for i in $$(seq 1 60); do
-          if mc ready local >/dev/null 2>&1; then
+          if mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1 \
+             && mc ready local >/dev/null 2>&1; then
             break
           fi
           echo "[minio-init] waiting for minio (attempt $$i)..."

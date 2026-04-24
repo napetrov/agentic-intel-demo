@@ -62,7 +62,10 @@ cleanup() {
 trap cleanup EXIT
 
 run git clone "$OPENCLAW_OPERATOR_REPO" "$WORKDIR/src"
-run git -C "$WORKDIR/src" fetch origin "$OPENCLAW_OPERATOR_REF"
+# `git clone` without --depth fetches all refs, so any tag/branch/commit
+# reachable from a branch is already present. No extra `git fetch` needed;
+# that also avoids the portability issue of fetching a bare commit SHA
+# against servers that don't allow uploadpack.allowReachableSHA1InWant.
 run git -C "$WORKDIR/src" checkout "$OPENCLAW_OPERATOR_REF"
 
 CRD_FULL="$WORKDIR/src/$OPERATOR_CRD_PATH"
@@ -88,6 +91,21 @@ case "$MODE" in
     fi
     ;;
 esac
+
+# The documented safe install order applies the CRD separately with
+# --server-side (above) to avoid the "metadata.annotations: Too long"
+# failure caused by a client-side last-applied annotation on the CRD. If
+# $MANIFESTS_FULL still references ../crd, the next `kubectl apply -k` will
+# re-apply the CRD via client-side apply and reintroduce that failure.
+# Fail fast with a pointer to choose an overlay that excludes the CRD.
+if [ "$APPLY" = "1" ] && [ -f "$MANIFESTS_FULL/kustomization.yaml" ] \
+    && grep -Eq '(^|[[:space:]-])\.\./crd([/[:space:]]|$)' "$MANIFESTS_FULL/kustomization.yaml"; then
+  echo "[install-openclaw-operator] manifests path still includes ../crd: $MANIFESTS_FULL" >&2
+  echo "                            the CRD would be re-applied client-side and likely" >&2
+  echo "                            hit the last-applied annotation size limit." >&2
+  echo "                            Point OPERATOR_MANIFESTS_PATH at an overlay without the CRD." >&2
+  exit 3
+fi
 
 run "$KUBECTL" apply -k "$MANIFESTS_FULL"
 run "$KUBECTL" get crd openclawinstances.openclaw.rocks

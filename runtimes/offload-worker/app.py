@@ -206,6 +206,16 @@ def _dispatch_shell(payload: dict) -> dict:
             f"partial stdout tail={partial!r}"
         ) from exc
 
+    if proc.returncode != 0:
+        # Same rationale as the timeout path: a non-zero exit means the
+        # scenario failed, so run_task must surface status="error" instead
+        # of reporting a "completed" job with a failure payload. Include the
+        # stderr tail in the message so DEBUG_TASK_ERRORS=1 still shows it.
+        raise RuntimeError(
+            f"shell scenario {scenario!r} exited with code {proc.returncode}; "
+            f"stderr tail={(proc.stderr or '')[-512:]!r}"
+        )
+
     return {
         "scenario": scenario,
         "exit_code": proc.returncode,
