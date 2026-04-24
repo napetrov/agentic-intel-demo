@@ -215,7 +215,12 @@ See `docs/operator-gap-analysis.md` for the active gap list.
 
 - New scenario author: `docs/scenario-spec.md`, `templates/scenarios/`,
   `docs/architecture-variants.md`.
+- Deploying on a different topology (single-node, multi-system, alternative
+  token providers): `docs/architecture-spec.md`, `templates/architecture/`.
 - Operator bring-up issues: `docs/operator-runbook.md`,
   `docs/operator-gap-analysis.md`.
 - Component-by-component reuse/build decisions:
   `docs/reusable-components.md`.
+- Validate scenarios + architecture files for consistency with the specs:
+  `python3 scripts/validate-demo-templates.py` (also runs in CI as the
+  `validate-templates` job).

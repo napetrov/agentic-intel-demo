@@ -1,5 +1,15 @@
 # Architecture Variants by Scenario
 
+This document is scoped to the shipped **two-system** architecture
+(`templates/architecture/examples/two-system/`). It explains how the three
+`execution_mode` values reshape load within that topology.
+
+For a different topology (single-node, multi-system, different token
+providers), start from `docs/architecture-spec.md` and
+`templates/architecture/` — those document the pluggable slots. An
+architecture's `spec.supported_execution_modes` controls which of the
+modes below are even legal in that deployment.
+
 Three execution modes are supported in this demo. The overall architecture in
 `docs/architecture.md` is shared across all three, but different layers carry
 load in different variants. This document is the single place that calls out

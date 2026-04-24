@@ -1,0 +1,79 @@
+# Worked example — multi-system architecture.
+#
+# One orchestration cluster plus two execution clusters specialized by
+# workload. Useful when analytics and build/test need different hardware
+# profiles or live in different physical locations.
+
+apiVersion: demo.architecture/v1
+kind: Architecture
+
+metadata:
+  name: multi-system
+
+spec:
+
+  topology:
+    mode: multi_system
+    clusters:
+      - name: orchestration
+        role: orchestration
+        runtime: k3s
+      - name: analytics-cluster
+        role: execution
+        runtime: k3s
+      - name: build-cluster
+        role: execution
+        runtime: k3s
+
+  components:
+
+    orchestrator:
+      type: openclaw
+      location: orchestration
+
+    model_router:
+      type: litellm
+      location: orchestration
+
+    inference_providers:
+      - name: local_slm
+        type: vllm
+        location: analytics-cluster
+        model: Qwen/Qwen3-4B-Instruct-2507
+        context_length: 32768
+      - name: cloud_reasoning
+        type: bedrock
+        model: us.anthropic.claude-sonnet-4-6
+        auth: aws-sdk
+        region: us-east-2
+
+    execution_backends:
+      - name: analytics
+        location: analytics-cluster
+        profile:
+          cpu: 32
+          memory: 64Gi
+      - name: build_test
+        location: build-cluster
+        profile:
+          cpu: 16
+          memory: 32Gi
+
+    artifact_store:
+      type: minio
+      location: analytics-cluster
+      bucket: demo-artifacts
+
+    chat_adapters:
+      - telegram
+
+  model_aliases:
+    default: local_slm
+    fast: local_slm
+    reasoning: cloud_reasoning
+    code: local_slm
+
+  supported_execution_modes:
+    - local_standard
+    - local_large
+    - offload_system_b

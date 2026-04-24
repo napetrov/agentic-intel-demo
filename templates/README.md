@@ -12,3 +12,13 @@ Reusable starting files for demo authors.
   `offload`). Start here when adding a new demo scenario. See
   `docs/scenario-spec.md` for the requirements and acceptance checklist and
   `docs/architecture-variants.md` for how to pick the variant.
+- `architecture/` — architecture authoring kit: copy-and-fill architecture
+  template and worked examples for `single-node`, `two-system`,
+  `multi-system`, and `cloud-provider-mix` topologies. Start here when
+  deploying on a topology other than the shipped two-system reference or
+  with a different mix of token providers. See `docs/architecture-spec.md`
+  for the requirements.
+
+Run `python3 scripts/validate-demo-templates.py` to check scenarios, tasks,
+and architecture files for consistency. This script runs in CI as the
+`validate-templates` job.

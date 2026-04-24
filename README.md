@@ -23,7 +23,8 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
 - `docs/implementation-guide.md` — implementation notes and migration context for the current demo
 - `docs/architecture.md` — architecture breakdown and execution model
-- `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload)
+- `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers, Kubernetes-first)
+- `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload) within the two-system reference
 - `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
 - `docs/mvp-plan.md` — minimal MVP path and implementation order
 - `docs/reusable-components.md` — what to reuse vs what to build
@@ -36,6 +37,16 @@ External authors adding a new guided scenario should start here:
 - `docs/scenario-spec.md` — required fields and acceptance checklist
 - `docs/architecture-variants.md` — picking the execution mode / architecture variant
 - `templates/scenarios/` — copy-and-fill templates (`scenario-spec.template.yaml`, `flow.template.md`, `task-brief.template.md`) plus one worked example per variant under `templates/scenarios/examples/`
+
+## Authoring a new architecture
+External authors deploying the demo on a different topology (single-node,
+multi-system, alternative token providers) should start here:
+- `docs/architecture-spec.md` — pluggable architecture requirements
+- `templates/architecture/` — copy-and-fill architecture template plus
+  worked examples: `single-node/`, `two-system/`, `multi-system/`,
+  `cloud-provider-mix/`
+- `scripts/validate-demo-templates.py` — validates both scenarios and
+  architectures against the specs; runs in CI as job `validate-templates`
 
 ## Current validated direction
 The current validated direction is:

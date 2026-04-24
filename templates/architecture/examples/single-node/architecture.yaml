@@ -1,0 +1,55 @@
+# Worked example — single-node architecture.
+#
+# All roles co-located on one Kubernetes cluster. Smallest viable
+# deployment; suited to laptops, CI, and demos that do not exercise the
+# offload path. Does not support offload_system_b because there is no
+# separate execution cluster.
+
+apiVersion: demo.architecture/v1
+kind: Architecture
+
+metadata:
+  name: single-node
+
+spec:
+
+  topology:
+    mode: single_node
+    clusters:
+      - name: local
+        role: mixed
+        runtime: k3d
+
+  components:
+
+    orchestrator:
+      type: openclaw
+      location: local
+
+    model_router:
+      type: litellm
+      location: local
+
+    inference_providers:
+      - name: local_slm
+        type: ollama
+        location: local
+        model: qwen2.5:7b-instruct
+
+    artifact_store:
+      type: minio
+      location: local
+      bucket: demo-artifacts
+
+    chat_adapters:
+      - telegram
+
+  model_aliases:
+    default: local_slm
+    fast: local_slm
+    reasoning: local_slm
+    code: local_slm
+
+  supported_execution_modes:
+    - local_standard
+    - local_large

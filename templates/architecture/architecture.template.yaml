@@ -1,0 +1,77 @@
+# Demo architecture template.
+#
+# Copy this file to `config/architectures/<your-name>.yaml` (or wherever you
+# keep deployment config) and fill every <...> slot. Run
+# `python3 scripts/validate-demo-templates.py` to check consistency with
+# docs/architecture-spec.md and catalog/scenarios.yaml.
+#
+# See templates/architecture/examples/ for worked examples you can mirror.
+
+apiVersion: demo.architecture/v1
+kind: Architecture
+
+metadata:
+  name: <unique-architecture-name>        # snake_case or kebab-case
+
+spec:
+
+  topology:
+    mode: <single_node|two_system|multi_system>
+    clusters:
+      - name: <cluster-name>              # e.g. orchestration, system-a
+        role: <orchestration|execution|mixed>
+        runtime: <k3s|kind|k3d|k8s>       # non-k8s allowed only for single_node/mixed
+      # repeat for each cluster
+
+  components:
+
+    orchestrator:
+      type: openclaw                       # shipped default
+      location: <cluster-name>             # must match a cluster in spec.topology.clusters[]
+
+    model_router:
+      type: litellm
+      location: <cluster-name>
+
+    inference_providers:                   # at least one required
+      # local provider example
+      - name: <provider-alias>             # e.g. local_slm
+        type: <vllm|ollama>
+        location: <cluster-name>
+        model: <model-id>                  # e.g. Qwen/Qwen3-4B-Instruct-2507
+        context_length: <int>              # e.g. 32768 (vllm only)
+
+      # cloud provider example
+      - name: <provider-alias>             # e.g. cloud_reasoning
+        type: <bedrock|sambanova|openai|anthropic>
+        model: <model-id>
+        auth: <aws-sdk|api-key>
+        region: <aws-region-if-bedrock>    # e.g. us-east-2
+        credential_ref: <secret-name>/<key>  # k8s Secret ref for api-key providers
+
+    execution_backends:                    # optional; required for offload_system_b
+      - name: <backend-name>               # e.g. analytics
+        location: <cluster-name>
+        profile:
+          cpu: <int-or-string>             # e.g. 32
+          memory: <size>                   # e.g. 64Gi
+
+    artifact_store:                        # required if any scenario has artifact_output: true
+      type: minio
+      location: <cluster-name>
+      bucket: <bucket-name>                # e.g. demo-artifacts
+
+    chat_adapters:                         # at least one required
+      - telegram
+      # - teams
+      # - web
+
+  model_aliases:                           # every key must resolve to a provider name above
+    default: <provider-alias>
+    fast: <provider-alias>
+    reasoning: <provider-alias>
+    code: <provider-alias>
+
+  supported_execution_modes:               # subset of: local_standard, local_large, offload_system_b
+    - <execution-mode>
+    # repeat
