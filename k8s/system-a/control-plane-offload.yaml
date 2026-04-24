@@ -7,11 +7,36 @@
 # Tier 1 local docker bring-up. For Tier 2 session management we still
 # rely on the OpenClaw operator — this manifest deliberately does NOT
 # recreate the legacy k8s-backed sessions API in `control-plane.yaml`.
+#
+# Required substitutions (envsubst or equivalent) before `kubectl apply`:
+#   OFFLOAD_WORKER_URL    — reachable URL of the offload-worker HTTP API.
+#                           In a single-cluster setup this can be
+#                           http://offload-worker.system-b.svc.cluster.local:8080;
+#                           in the two-cluster Tier 2 topology it MUST point
+#                           at the offload-worker NodePort / ingress on
+#                           System B (e.g. http://<system-b-node>:30800).
+#   SYSTEM_B_MINIO_ENDPOINT — reachable URL of MinIO on System B. Same
+#                           single-cluster vs. two-cluster note as above
+#                           (see k8s/system-b/minio.yaml NodePort 30900).
+#   MINIO_ACCESS_KEY / MINIO_SECRET_KEY — MinIO creds shared with
+#                           System B's minio-creds secret. Kubernetes does
+#                           not allow cross-namespace secretRefs, so the
+#                           secret is declared locally in this manifest.
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: platform
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-creds
+  namespace: platform
+type: Opaque
+stringData:
+  MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+  MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -37,11 +62,11 @@ spec:
               name: http
           env:
             - name: OFFLOAD_WORKER_URL
-              value: "http://offload-worker.system-b.svc.cluster.local:8080"
+              value: ${OFFLOAD_WORKER_URL}
             - name: OFFLOAD_TIMEOUT_SECONDS
               value: "60"
             - name: MINIO_ENDPOINT
-              value: "http://minio.system-b.svc.cluster.local:9000"
+              value: ${SYSTEM_B_MINIO_ENDPOINT}
             - name: MINIO_BUCKET
               value: "demo-artifacts"
             - name: MINIO_ACCESS_KEY

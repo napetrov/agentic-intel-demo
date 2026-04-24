@@ -110,6 +110,11 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
         }
 
     timeout = req.timeout_seconds if req.timeout_seconds else OFFLOAD_TIMEOUT_SECONDS
+    # httpx.HTTPError covers network/timeout/5xx via raise_for_status();
+    # ValueError (parent of json.JSONDecodeError) covers a 200 response
+    # body that is not valid JSON — e.g. an HTML error page returned by a
+    # misbehaving proxy. Either way, mark the job failed instead of
+    # leaving it stuck in `running`.
     try:
         resp = httpx.post(
             f"{OFFLOAD_WORKER_URL}/run",
@@ -122,7 +127,7 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
         )
         resp.raise_for_status()
         body = resp.json()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         with _jobs_lock:
             _jobs[job_id].update(
                 status="error",

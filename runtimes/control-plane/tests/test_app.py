@@ -146,6 +146,28 @@ def test_offload_worker_unreachable_returns_502(client):
     assert r404.status_code == 404
 
 
+def test_offload_worker_returns_non_json_body_marks_job_error(client, monkeypatch):
+    # Upstream returns 200 with an HTML error page (e.g. a misbehaving
+    # proxy). We should return 502 AND mark the job as error, not leave
+    # it stuck in `running` in the in-memory registry.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>gateway error</html>",
+                              headers={"content-type": "text/html"})
+
+    tc = client(handler)
+    # Snapshot registry before.
+    before_ids = set(cp_app._jobs.keys())
+    r = tc.post("/offload", json={"task_type": "echo", "payload": {}})
+    assert r.status_code == 502
+    after_ids = set(cp_app._jobs.keys())
+    new_ids = after_ids - before_ids
+    assert new_ids, "expected a new job registry entry even on failure"
+    entry = cp_app._jobs[next(iter(new_ids))]
+    assert entry["status"] == "error"
+    assert entry["completed_at"] is not None
+    assert "offload-worker call failed" in (entry["error"] or "")
+
+
 def test_unknown_job_id_returns_404():
     tc = TestClient(cp_app.app)
     r = tc.get("/offload/job-does-not-exist")
