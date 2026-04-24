@@ -151,12 +151,25 @@ const capacityBarContainer = sysABarFillEl.parentElement;
 
 let currentScenario = null;
 let runTimers = [];
+const originalRunLabel = runDemoBtn.textContent;
 
 sysATotalEl.textContent = SYSTEM_A_TOTAL_VCPU;
 
 function clearRunTimers() {
   runTimers.forEach((id) => clearTimeout(id));
   runTimers = [];
+}
+
+function restoreRunButton() {
+  if (runDemoBtn.disabled) {
+    runDemoBtn.disabled = false;
+    runDemoBtn.textContent = originalRunLabel;
+  }
+}
+
+function cancelRun() {
+  clearRunTimers();
+  restoreRunButton();
 }
 
 function setOrchestrationActive(activeIds) {
@@ -252,7 +265,7 @@ function renderMetrics(entries) {
 }
 
 function applyIdle() {
-  clearRunTimers();
+  cancelRun();
   currentScenario = null;
   dataModeEl.textContent = 'Static demo data';
   setOrchestrationActive([]);
@@ -269,7 +282,7 @@ function applyIdle() {
 }
 
 function applyPlanned(key) {
-  clearRunTimers();
+  cancelRun();
   const scenario = scenarios[key];
   if (!scenario) return;
   currentScenario = key;
@@ -277,7 +290,7 @@ function applyPlanned(key) {
   setOrchestrationActive(scenario.orchestrationActive);
   setServiceState({});
   renderSystemA(scenario, 'planned');
-  renderOffload(scenario, 'planned', Boolean(scenario.subagent));
+  renderOffload(scenario, 'planned', false);
   setCrossArrow(false);
   renderToolActivity([
     { name: 'read', status: 'planned' },
@@ -309,7 +322,7 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 });
 
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
-  clearRunTimers();
+  cancelRun();
   dataModeEl.textContent = 'Live status';
   setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
   setServiceState({ erag: true, 'ent-inference': true });
@@ -390,10 +403,9 @@ runDemoBtn.addEventListener('click', () => {
   const scenario = scenarios[scenarioKey];
   if (!scenario) return;
 
-  const restoreLabel = runDemoBtn.textContent;
+  clearRunTimers();
   runDemoBtn.textContent = 'Running...';
   runDemoBtn.disabled = true;
-  clearRunTimers();
 
   applyRunning(scenarioKey, { includeSubagentNow: false });
 
@@ -429,8 +441,7 @@ runDemoBtn.addEventListener('click', () => {
   const totalDuration = phases.length * phaseDurationMs;
   runTimers.push(setTimeout(() => {
     result.textContent = scenario.result;
-    runDemoBtn.textContent = restoreLabel;
-    runDemoBtn.disabled = false;
+    restoreRunButton();
   }, totalDuration));
 });
 
