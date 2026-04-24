@@ -106,7 +106,11 @@ Deploy minimal control plane on System A.
 - [ ] Session registry in SQLite (embedded in control plane for MVP)
 
 ### Code location
-`legacy/services/control-plane/`
+> **Note:** Phases 3 and 4 describe the original raw control-plane/session-pod
+> path. That path is superseded by `openclaw-operator` (external upstream) +
+> `OpenClawInstance` CRs — see `docs/operator-install.md` and
+> `docs/operator-runbook.md`. The old `legacy/` tree has been removed; these
+> phases are retained here only for historical context.
 
 ### Config files
 - `k8s/system-a/control-plane.yaml`
@@ -141,9 +145,8 @@ Define and launch a session pod that runs OpenClaw agent.
 - [ ] Update control plane to launch this image as session pod
 
 ### Config files
-- `legacy/runtimes/session-pod/Dockerfile`
-- `legacy/runtimes/session-pod/openclaw-config.yaml`
-- `k8s/system-a/session-pod-template.yaml`
+- `k8s/system-a/session-pod-template.yaml` (reference template; actual
+  session-pod image is supplied and managed by `openclaw-operator`)
 
 ### Check: done when
 ```
@@ -170,21 +173,19 @@ User sends a message in Telegram → gets back a correct result with log attache
 
 ---
 
-## Phase 6 — Scale-up path (Task 3)
+## Phase 6 — Scale-up path (Task 3) — **dropped**
 
-Extend control plane and agent with scale-up support.
+Originally planned as `POST /sessions/{id}/scale-up` on the control plane
+launching a sibling `large` Job. This phase is dropped for the demo:
+`large_build_test` now runs on a statically-sized `large` session pod
+(selected via pod profile at instance creation time) instead of a dynamic
+scale-up step. See `docs/architecture-variants.md` (`local-large` variant)
+for the pod-profile selection and `config/pod-profiles/profiles.yaml` for
+the profile definition.
 
-### Tasks
-- [ ] Implement `POST /sessions/{id}/scale-up` in control plane
-- [ ] Control plane launches execution Job with `large` pod profile
-- [ ] Agent submits work to execution Job, waits for result
-- [ ] Result returned via MinIO artifact, then to user
-
-### Config files
-- `config/pod-profiles/profiles.yaml`
-
-### Check: done when
-Agent requests scale-up, larger Job runs, result returned to user.
+If scale-up is re-introduced later, prefer the operator-native path
+(child or resized `OpenClawInstance`) over re-adding k8s-awareness to the
+control plane.
 
 ---
 
@@ -228,7 +229,7 @@ Agent sends a market research task → offload job runs on System B → agent re
 | 3 — Control plane | 1-2 days |
 | 4 — Session pod | 1 day |
 | 5 — Task 1 e2e | 1 day |
-| 6 — Scale-up | 1 day |
+| 6 — Scale-up | dropped (static `large` profile) |
 | 7 — Offload | 1-2 days |
 
 Total to first working demo (Task 1): ~4-5 days of focused implementation.

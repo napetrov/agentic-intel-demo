@@ -20,19 +20,15 @@ offload job on System B.
 
 1. frame the research question and comparison dimensions
 2. build a structured input spec
-3. submit an offload job through Control Plane (planned surface:
-   `POST /offload`, per `docs/architecture.md`)
-4. poll Control Plane for completion (planned surface:
-   `GET /offload/{job_id}`)
-5. fetch the artifact via Control Plane relay (planned surface:
-   `GET /artifacts/{ref}`)
+3. submit an offload job through Control Plane (`POST /offload`)
+4. poll Control Plane for completion (`GET /offload/{job_id}`)
+5. fetch the artifact via Control Plane relay (`GET /artifacts/{ref}`)
 6. assemble the analyst-style summary
 
-The endpoint names are the planned contract per `docs/architecture.md` and
-`docs/mvp-plan.md` Phase 7. The live Control Plane implementation in
-`legacy/services/control-plane` currently exposes only session endpoints;
-match the abstraction level used by the live `agents/scenarios/*` files
-when authoring a real scenario.
+The offload + artifact-relay endpoints are implemented by the control-plane
+offload relay in `runtimes/control-plane/` and exercised end-to-end by the
+`tier1-scenario-slice` CI job. Match the abstraction level used by the
+live `agents/scenarios/*` files when authoring a real scenario.
 
 ## Success criteria
 

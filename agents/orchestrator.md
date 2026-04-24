@@ -85,7 +85,7 @@ If the user is in chat mode:
 - route: `local_large`
 - acknowledge with `Starting large build/test demo`
 - follow `agents/scenarios/large-build-test/flow.md`
-- make the scale-up/build-test sequence visible in the output
+- make the large-profile build/test sequence visible in the output
 
 ## User-facing style
 
@@ -95,6 +95,6 @@ Examples:
 - Launching engineering environment
 - Running terminal task
 - Offloading analytics job
-- Scaling execution profile
+- Using large execution profile
 - Collecting final results
 - Demo task completed

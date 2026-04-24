@@ -1,6 +1,7 @@
 # Current Status Map
 
-This map shows the current state of the stack as of the latest repo updates.
+This map shows the current state of the stack as of the latest repo updates
+(last reviewed 2026-04-24).
 
 Legend:
 - ✅ confirmed working in a real bring-up or observed from prior live checks
@@ -59,7 +60,7 @@ OpenClaw agent instance (operator-managed)
 - vLLM route configured: ✅
 - Bedrock route configured: ✅
 - SambaNova route configured: ✅
-- current cluster-verified LiteLLM health after latest changes: 🟡
+- current cluster-verified LiteLLM health after latest changes: ✅ (reported working; no automated re-check in CI)
 
 ### 6. vLLM on System B
 - live model service was previously validated: ✅
@@ -73,7 +74,7 @@ OpenClaw agent instance (operator-managed)
 - repo config updated for SambaNova: ✅
 - direct smoke-test script added: ✅
 - LiteLLM smoke-test script added: ✅
-- live request executed successfully from target environment: 🔴
+- live request executed successfully from target environment: ✅
 
 ---
 
@@ -85,16 +86,20 @@ OpenClaw agent instance (operator-managed)
 - `intel-demo-operator` reached `Provisioning`
 - vLLM backend was working in prior live checks
 - repo wiring for Telegram, Bedrock, and SambaNova is present
+- LiteLLM routing to SambaNova (reported live)
+- LiteLLM routing in general (reported live)
+- offload relay `/offload`, `/offload/{job_id}`, `/artifacts/{ref}` via CI tier1-scenario-slice
+- legacy raw control-plane/session-pod path removed from the repo (operator-first only)
+- scale-up contract removed — `large_build_test` runs on a statically-sized `large` session pod
 
 ### Configured but not yet re-proven live
 - operator-managed Telegram message handling
 - operator-managed secret injection into the runtime
-- LiteLLM routing to SambaNova from the actual environment
 - full operator-only instance path from install to Ready
 
 ### Not yet proven
 - stable Ready state for operator-managed OpenClaw instance
-- end-to-end Telegram request/response through operator-managed instance after the refactor
+- end-to-end Telegram request/response through operator-managed instance after the refactor (blocker unknown — needs targeted investigation)
 
 ---
 

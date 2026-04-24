@@ -67,8 +67,9 @@ when their values can be inferred or are inapplicable.
 - Pick exactly one `execution_mode`. Do not mix modes inside one scenario.
 - `local_standard`: all work runs inside the session pod on System A. No
   scale-up, no System B compute.
-- `local_large`: session pod stays small; a sibling execution Job on System A
-  runs the heavy step. No System B compute.
+- `local_large`: session pod is statically sized from the `large` pod
+  profile and runs the heavy step directly. No dynamic scale-up step. No
+  System B compute.
 - `offload_system_b`: orchestration on System A; compute runs as a System B
   Job. Session pod never contacts System B directly (see
   `docs/contracts/offload-result-contract.md`).

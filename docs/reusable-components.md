@@ -89,7 +89,7 @@ This document lists what to reuse as-is, what to configure, and what to build mi
 
 | Component | Why custom | Scope |
 |-----------|-----------|-------|
-| Control plane API | k8s-specific logic, scale-up semantics | ~300-500 LOC FastAPI |
+| Control plane API | offload relay + artifact access semantics | ~300-500 LOC FastAPI |
 | Offload API (System B) | job contract, artifact handoff | ~200-300 LOC FastAPI |
 | Chat gateway session mapper | chat_user → session_id mapping | ~100 LOC |
 | Deploy scripts | system-specific, reproducibility | shell + kubectl manifests |

@@ -90,24 +90,38 @@ curl http://localhost:31000/health
 
 ---
 
-## Step 4 — Build and load session pod image
+## Step 4 — Install `openclaw-operator` and apply an `OpenClawInstance`
+
+The session-pod image is built and loaded by `openclaw-operator` (external
+upstream project — see `docs/operator-install.md`). Single-node validation
+uses the same path as a real cluster.
 
 ```bash
-cd legacy/runtimes/session-pod
-docker build -t demo-session-pod:latest .
-# Import into System A k3s (no registry needed for single-node):
-docker save demo-session-pod:latest | k3s-a ctr images import -
+./scripts/install-openclaw-operator.sh
+./scripts/check-operator-prereqs.sh
+kubectl apply -f examples/openclawinstance-intel-demo.yaml
+# Instance name comes from metadata.name in the manifest above.
+kubectl get openclawinstance intel-demo-operator -n default -o yaml
 ```
 
 ---
 
 ## Step 5 — End-to-end smoke test
 
+`./scripts/smoke-test-operator-instance.sh` is a checklist printer — it
+emits the `kubectl` commands you should run to verify the instance
+reached a healthy state, it does not execute assertions or gate on
+readiness. Run the suggested commands manually and confirm each one:
+
 ```bash
-./scripts/legacy/smoke-test-session.sh
+./scripts/smoke-test-operator-instance.sh   # prints the checklist
+kubectl get crd openclawinstances.openclaw.rocks
+kubectl get openclawinstance intel-demo-operator -n default -o yaml
+kubectl get pods -A | grep -E 'openclaw|operator|intel-demo-operator'
 ```
 
-This creates a session, sends a test message, and verifies a response.
+Then send a test message through Telegram and verify a response comes
+back.
 
 ---
 

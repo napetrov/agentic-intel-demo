@@ -37,14 +37,13 @@ Then state the flow briefly:
 - fetch the artifact via Control Plane artifact relay
 - assemble the analyst-style summary
 
-The specific endpoint surface (`POST /offload`, `GET /offload/{job_id}`,
-`GET /artifacts/{ref}`) is the planned contract documented in
-`docs/architecture.md` and `docs/mvp-plan.md` Phase 7. Treat it as the
-target shape; the live `legacy/services/control-plane` does not yet
-implement these routes. When authoring a real scenario, describe the
-behavior at the same abstraction level as the live
-`agents/scenarios/*/flow.md` files and point to the architecture doc for
-endpoint names.
+The endpoint surface (`POST /offload`, `GET /offload/{job_id}`,
+`GET /artifacts/{ref}`) is implemented by the control-plane offload relay
+in `runtimes/control-plane/` and exercised end-to-end by the
+`tier1-scenario-slice` CI job. When authoring a real scenario, describe
+the behavior at the same abstraction level as the live
+`agents/scenarios/*/flow.md` files and point to
+`docs/contracts/offload-result-contract.md` for the contract shape.
 
 ## Minimum evidence to show
 

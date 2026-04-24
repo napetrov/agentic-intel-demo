@@ -69,7 +69,7 @@ An agent configured with `litellm/default` will not resolve against the LiteLLM 
 `docs/reusable-components.md`, `docs/port-map.md`, `docs/repo-layout.md`, `docs/architecture.md`, `docs/implementation-guide.md`, `docs/mvp-plan.md` still describe ollama as the live path. The README already calls vLLM canonical; these docs should be mechanically updated or explicitly marked historical (the `docs/archive/` pattern is already in place, use it).
 
 ### 2.7 `docs/mvp-plan.md` directly contradicts the operator-first decision
-Phases 3–4 walk the reader through building a raw control plane in `legacy/services/control-plane/` and a bespoke session-pod image. Per `docs/operator-gap-analysis.md` this path is deprecated. Either (a) rewrite the plan around `openclaw-operator` install + `OpenClawInstance` apply + verify, or (b) move it under `docs/archive/` with a legacy banner.
+Phases 3–4 originally walked the reader through building a raw control plane and a bespoke session-pod image. The `legacy/` tree they pointed at has been removed; those phases now carry an explicit banner marking them historical and pointing at `docs/operator-install.md` / `docs/operator-runbook.md` as the canonical path. A full rewrite of mvp-plan.md around `openclaw-operator` install + `OpenClawInstance` apply + verify is still pending.
 
 ### 2.8 Manifests reference namespaces they don't create (fixed in this change)
 Found by actually running `kubectl apply -f k8s/system-a/rbac.yaml` on an empty k3s cluster:
@@ -80,7 +80,7 @@ Found by actually running `kubectl apply -f k8s/system-a/rbac.yaml` on an empty 
 Both fixed here by adding explicit `kind: Namespace` at the top of each file. Going forward, every manifest that owns resources in a namespace should also own its own namespace declaration; kustomize overlays or a top-level `k8s/namespaces.yaml` are the two common patterns.
 
 ### 2.9 `offload-worker.yaml` hardcodes `imagePullPolicy: Never` with an undocumented image tag
-`image: docker.io/library/demo-offload-worker:latest` with `imagePullPolicy: Never` means the image must already be loaded into every node's container runtime before apply. No doc or script builds/loads this image. The historical path (`scripts/legacy/build-images.sh` → `scripts/legacy/load-images-system-a.sh` via `ctr images import`) is marked legacy, yet this manifest still depends on that flow. Either:
+`image: docker.io/library/demo-offload-worker:latest` with `imagePullPolicy: Never` means the image must already be loaded into every node's container runtime before apply. No doc or script builds/loads this image. The historical build/load path lived under `scripts/legacy/` and has been removed without a replacement, so this manifest currently has no documented way to obtain its image. Either:
 
 1. Ship the Dockerfile and publish the image to `ghcr.io/<org>/offload-worker:<tag>` with a non-`Never` pull policy, document the publish step; or
 2. Replace the Deployment with the ConfigMap-mounted `app.py` pattern (base `python:3.12-slim`, inline `pip install`, mount `runtimes/offload-worker/app.py` via ConfigMap) so it runs on any cluster without image distribution.
@@ -152,7 +152,7 @@ The web demo is 100% static narrative — useful as a storyboard, misleading as 
 
 ## 6. Repo layout nits
 
-- `legacy/`, `scripts/legacy/`, `docs/archive/` all exist with slightly different "this is historical" conventions. Standardize on one (prefer `docs/archive/` + `legacy/`), add a one-line `LEGACY` banner at the top of each folder README.
+- ~~`legacy/`, `scripts/legacy/`, `docs/archive/` all exist with slightly different "this is historical" conventions.~~ — resolved: `legacy/` and `scripts/legacy/` have been removed. Historical material now lives only under `docs/archive/` and `archive/`.
 - `demo-workspace/` contains operator "soul/identity/memory" files with no explanation of who reads them. One sentence in `demo-workspace/README.md` stating "these are shipped into the OpenClawInstance workspace volume, consumed at session boot by the orchestrator" would save readers ten minutes.
 - `catalog/scenarios.yaml` and `catalog/tasks.yaml` both exist; `agents/orchestrator.md` references both. Worth a one-line note in `agents/README.md` describing the split.
 

@@ -224,7 +224,7 @@ Not every scenario in `catalog/scenarios.yaml` is exercised by every tier.
 |----------|--------|--------|--------|
 | `terminal_agent` (local-standard) | simulated | partial (no OpenClaw agent) | fully exercised |
 | `market_research` (offload) | simulated | fully exercised on System B path | fully exercised |
-| `large_build_test` (local-large) | simulated | partial (no scale-up surface) | partial — scale-up endpoints are planned, not implemented (see `docs/mvp-plan.md` Phase 6) |
+| `large_build_test` (local-large) | simulated | partial (runs inline, not on a sized pod) | fully exercised via a statically-sized `large` session pod (no runtime scale-up step) |
 
 "Fully exercised" here means the runtime path an end user would hit in
 production. "Simulated" means the UX flow is shown but no real backend runs.
@@ -237,8 +237,10 @@ production. "Simulated" means the UX flow is shown but no real backend runs.
   `tier2-offload-smoke` (k3d-level). The control-plane is a thin relay:
   in-memory job registry, synchronous forwarding to the offload-worker.
   A durable registry is still TODO.
-- `POST /sessions/{id}/scale-up` remains a planned surface for the
-  `large_build_test` scenario — see `docs/mvp-plan.md` Phase 6/7.
+- `POST /sessions/{id}/scale-up` has been dropped. `large_build_test` now
+  runs on a statically-sized `large` session pod selected at
+  `OpenClawInstance` creation time (see `docs/architecture-variants.md`,
+  `local-large` variant).
 - Full session-lifecycle registry beyond the current `/sessions` stub
   and operator-managed OpenClaw instance.
 

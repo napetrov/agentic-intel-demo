@@ -6,8 +6,9 @@ scenario. The live, authoritative file is
 
 ## Demo intent
 
-Show a larger System A engineering workload with explicit scale-up framing,
-visible build/test steps, and concrete completion evidence.
+Show a larger System A engineering workload on a statically-sized `large`
+session pod, with visible build/test steps and concrete completion
+evidence.
 
 ## Required opening
 
@@ -24,24 +25,25 @@ Then briefly state the flow:
 ## Scenario contract
 
 - route: `local_large`
-- system owner: System A; session pod stays small, execution Job runs large
+- system owner: System A; session pod is sized `large` at creation time
 - tool scope: shell, build_tools, python
 - do not offload to System B unless policy explicitly changes
 
 ## Execution expectations
 
-- agent detects the need for the large execution profile
-- Control Plane launches a sibling execution Job on System A with the
-  `large` profile
-- session pod REMAINS running as orchestrator
-- agent polls job completion via Control Plane
-- results surfaced via MinIO artifact (Control Plane relay) or job status
+- scenario is routed to a session pod created from the `large` pod profile
+  (set at `OpenClawInstance` creation time; see
+  `config/pod-profiles/profiles.yaml`)
+- agent runs the build/test directly in the `large` session pod
+- results surfaced via MinIO artifact or direct tool output
+- no dynamic scale-up step — profile is selected statically, up front
 
-The scale-up surface (`POST /sessions/{id}/scale-up`) is the planned
-contract per `docs/architecture.md` and `docs/mvp-plan.md` Phase 6 and is
-not yet live in `legacy/services/control-plane`. Use the same abstraction
-level as the live `agents/scenarios/*/flow.md` files when authoring a real
-scenario.
+The original design called for a dynamic `POST /sessions/{id}/scale-up`
+contract on the control plane; that phase has been dropped in favour of
+static profile selection. If it is revived later, the operator-native path
+(child or resized `OpenClawInstance`) is preferred. Use the same
+abstraction level as the live `agents/scenarios/*/flow.md` files when
+authoring a real scenario.
 
 ## Minimum evidence to show
 

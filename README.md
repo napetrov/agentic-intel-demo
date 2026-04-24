@@ -64,10 +64,9 @@ The current validated direction is:
 Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
 ## Scripts
+- `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`)
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
 - `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
-- `scripts/legacy/setup-system-a.sh` — legacy System A raw-manifest setup materials
-- `scripts/legacy/setup-system-b.sh` — legacy System B ollama-based path
 - `scripts/setup-system-b-vllm.sh` — current validated System B vLLM path
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
 - `scripts/cleanup-system-a.sh` — reduce disk pressure on System A safely
@@ -88,11 +87,11 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 3. Create one `OpenClawInstance`
 4. Verify model access through LiteLLM/vLLM
 5. Verify instance-managed gateway/service health
-6. Then add scale-up and System B offload behavior
+6. Then add System B offload behavior (scale-up is satisfied by static
+   `large` profile selection — no separate scale-up contract)
 
 ## Repo curation notes
 - `config/` is the canonical location for current live demo/runtime config
-- `config/` contains the canonical live and reference config used by this repo
 - `archive/` contains review bundles and historical review artifacts
 - `docs/archive/` contains historical planning and bring-up notes that are not the primary operator-first demo path
-- `scripts/legacy/`, `legacy/services/`, and `legacy/runtimes/` contain the deprecated raw control-plane/session-pod path kept only for reference
+- The deprecated raw control-plane/session-pod path previously kept in `legacy/` and `scripts/legacy/` has been removed; the operator-first path is the only supported lifecycle

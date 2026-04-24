@@ -36,5 +36,6 @@ profiles:
 # Default profile for new sessions
 default_session_profile: small
 
-# Scale-up path: session pod starts on small, execution job launched on large
-scale_up_via: execution_job
+# Profile selection for local-large scenarios is static: pick the profile
+# on the OpenClawInstance at creation time — there is no runtime scale-up
+# step. See docs/architecture-variants.md.
