@@ -139,7 +139,7 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"task_type":"echo","payload":{"hello":"ci"}}')
           echo "$body"
-          echo "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["status"]=="ok", d; assert d["result"]["hello"]=="ci", d'
+          echo "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["status"]=="ok", d; assert d["result"]["echo"]["hello"]=="ci", d'
       - name: dump debug info on failure
         if: failure()
         run: |

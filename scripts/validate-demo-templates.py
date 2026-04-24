@@ -80,10 +80,32 @@ def validate_scenarios(report: Report, supported_modes_union: set[str]) -> None:
     context_map_path = REPO_ROOT / "agents" / "context-map.md"
     orchestrator_path = REPO_ROOT / "agents" / "orchestrator.md"
 
-    scenarios_doc = load_yaml(scen_path) or {}
-    tasks_doc = load_yaml(tasks_path) or {}
-    scenarios = scenarios_doc.get("scenarios", {})
-    task_families = set((tasks_doc.get("task_families") or {}).keys())
+    try:
+        scenarios_doc = load_yaml(scen_path) or {}
+    except yaml.YAMLError as e:
+        report.add_error(f"catalog/scenarios.yaml: YAML parse error: {e}")
+        scenarios_doc = {}
+    try:
+        tasks_doc = load_yaml(tasks_path) or {}
+    except yaml.YAMLError as e:
+        report.add_error(f"catalog/tasks.yaml: YAML parse error: {e}")
+        tasks_doc = {}
+    if not isinstance(scenarios_doc, dict):
+        report.add_error("catalog/scenarios.yaml: root must be a mapping")
+        scenarios_doc = {}
+    if not isinstance(tasks_doc, dict):
+        report.add_error("catalog/tasks.yaml: root must be a mapping")
+        tasks_doc = {}
+
+    scenarios = scenarios_doc.get("scenarios") or {}
+    if not isinstance(scenarios, dict):
+        report.add_error("catalog/scenarios.yaml: `scenarios` must be a mapping")
+        scenarios = {}
+    task_families_block = tasks_doc.get("task_families") or {}
+    if not isinstance(task_families_block, dict):
+        report.add_error("catalog/tasks.yaml: `task_families` must be a mapping")
+        task_families_block = {}
+    task_families = set(task_families_block.keys())
     scenario_ids = set(scenarios.keys())
 
     context_map = load_text(context_map_path) if context_map_path.exists() else ""
@@ -95,29 +117,48 @@ def validate_scenarios(report: Report, supported_modes_union: set[str]) -> None:
             report.add_error(f"{where}: entry must be a mapping")
             continue
 
-        for required in ("label", "execution_mode", "task_family",
-                         "initial_user_message", "allowed_next_actions",
-                         "fallback_scenario"):
+        required_str = ("label", "execution_mode", "task_family",
+                        "initial_user_message")
+        for required in (*required_str, "allowed_next_actions", "fallback_scenario"):
             if required not in entry:
                 report.add_error(f"{where}: missing required field `{required}`")
-
-        mode = entry.get("execution_mode")
-        if mode and mode not in EXECUTION_MODES:
-            report.add_error(f"{where}: invalid execution_mode `{mode}`")
-        elif mode and mode not in supported_modes_union:
+        for field_name in required_str:
+            val = entry.get(field_name)
+            if val is not None and not isinstance(val, str):
+                report.add_error(
+                    f"{where}: `{field_name}` must be a string, got "
+                    f"{type(val).__name__}"
+                )
+        ana = entry.get("allowed_next_actions")
+        if ana is not None and not isinstance(ana, list):
             report.add_error(
-                f"{where}: execution_mode `{mode}` is not supported by any "
-                f"shipped architecture example"
+                f"{where}: `allowed_next_actions` must be a list, got "
+                f"{type(ana).__name__}"
             )
 
+        mode = entry.get("execution_mode")
+        if isinstance(mode, str):
+            if mode not in EXECUTION_MODES:
+                report.add_error(f"{where}: invalid execution_mode `{mode}`")
+            elif mode not in supported_modes_union:
+                report.add_error(
+                    f"{where}: execution_mode `{mode}` is not supported by any "
+                    f"shipped architecture example"
+                )
+
         tf = entry.get("task_family")
-        if tf and tf not in task_families:
+        if isinstance(tf, str) and tf not in task_families:
             report.add_error(
                 f"{where}: task_family `{tf}` not found in catalog/tasks.yaml"
             )
 
         fb = entry.get("fallback_scenario")
-        if fb is not None and fb not in scenario_ids:
+        if fb is not None and not isinstance(fb, str):
+            report.add_error(
+                f"{where}: `fallback_scenario` must be a string or null, got "
+                f"{type(fb).__name__}"
+            )
+        elif isinstance(fb, str) and fb not in scenario_ids:
             report.add_error(
                 f"{where}: fallback_scenario `{fb}` is not a known scenario id"
             )
@@ -179,6 +220,12 @@ def validate_architecture(report: Report, path: Path) -> set[str]:
         doc = load_yaml(path) or {}
     except yaml.YAMLError as e:
         report.add_error(f"{where}: YAML parse error: {e}")
+        return set()
+    if not isinstance(doc, dict):
+        report.add_error(
+            f"{where}: root document must be a mapping, got "
+            f"{type(doc).__name__}"
+        )
         return set()
 
     if doc.get("apiVersion") != "demo.architecture/v1":
@@ -288,8 +335,21 @@ def validate_architecture(report: Report, path: Path) -> set[str]:
             )
 
     sem = spec.get("supported_execution_modes") or []
+    if not isinstance(sem, list):
+        report.add_error(
+            f"{where}: spec.supported_execution_modes must be a list"
+        )
+        sem = []
+    normalized_sem: set[str] = set()
     allowed = TOPOLOGY_SUPPORTED_MODES.get(mode, set())
     for m in sem:
+        if not isinstance(m, str):
+            report.add_error(
+                f"{where}: supported_execution_modes entries must be strings, "
+                f"got {type(m).__name__}"
+            )
+            continue
+        normalized_sem.add(m)
         if m not in EXECUTION_MODES:
             report.add_error(f"{where}: supported_execution_modes entry `{m}` is unknown")
         elif m not in allowed:
@@ -299,7 +359,7 @@ def validate_architecture(report: Report, path: Path) -> set[str]:
             )
 
     report.ok(f"{where}: architecture structure OK")
-    return set(sem)
+    return normalized_sem
 
 
 def main() -> int:
