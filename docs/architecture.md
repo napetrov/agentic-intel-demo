@@ -67,6 +67,19 @@ The earlier control-plane sketch used explicit `/sessions` APIs, but for instanc
 
 Any helper APIs should be treated as supporting services, not the source of truth for instance creation or deletion.
 
+The offload-relay helper service is implemented in `runtimes/control-plane/`:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/offload` | submit a task; forwards to offload-worker, returns `{job_id, status, session_id}` |
+| `GET` | `/offload/{job_id}` | poll job state; returns inline `result` or `result_ref` + `error` |
+| `GET` | `/artifacts/{ref}` | presigned MinIO URL for a `result_ref` from a prior job |
+| `GET` | `/health` | liveness/readiness |
+
+This is a deliberately thin relay: jobs are kept in memory and forwarded
+synchronously. A durable registry is still TODO. Deployed in k8s via
+`k8s/system-a/control-plane-offload.yaml`.
+
 ### Internal modules
 - **Session Manager** — pod create/delete, status, session registry
 - **Pod Profile Resolver** — maps task type to pod profile

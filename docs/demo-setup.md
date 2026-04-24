@@ -13,8 +13,8 @@ is real vs. simulated.
 | Tier | What runs | Needs | Verifies |
 |------|-----------|-------|----------|
 | 0 — Web simulation | static HTML/CSS/JS in `web-demo/` | any machine with Python or Docker | scenario flow, UX, narrative |
-| 1 — Local services | `offload-worker` + MinIO (+ optional `control-plane`) | Docker on one machine | real `POST /run`, artifact write to MinIO |
-| 2 — Two-system k8s + operator | full stack: `openclaw-operator`, LiteLLM, vLLM, MinIO, offload-worker | two Intel CPU machines with k3s, Telegram bot | the full demo as shipped |
+| 1 — Local services | `control-plane` + `offload-worker` + MinIO | Docker on one machine | full scenario slice: `POST /offload` → `/run` → MinIO artifact |
+| 2 — Two-system k8s + operator | full stack: `openclaw-operator`, LiteLLM, vLLM, MinIO, offload-worker, control-plane | two Intel CPU machines with k3s, Telegram bot | the full demo as shipped |
 
 ## Tier 0 — Web simulation
 
@@ -53,18 +53,20 @@ the backend.
 
 ## Tier 1 — Local services
 
-**Goal:** exercise the System B side of the architecture for real — the
-offload worker, MinIO artifact storage, and (optionally) the legacy
-control-plane stub — on one machine. No Telegram, no OpenClaw, no vLLM.
+**Goal:** exercise the System A → System B offload path end-to-end —
+control-plane relay, offload worker, and MinIO artifact storage — on one
+machine. No Telegram, no OpenClaw, no vLLM.
 
 **Runs:**
-- `runtimes/offload-worker/` on localhost:8080 (FastAPI)
+- `runtimes/control-plane/` on localhost:8090 (FastAPI offload relay:
+  `POST /offload`, `GET /offload/{job_id}`, `GET /artifacts/{ref}`)
+- `runtimes/offload-worker/` on localhost:8080 (FastAPI `POST /run`)
 - MinIO on localhost:9000 (S3 API) and localhost:9001 (console)
-- optional: `legacy/services/control-plane/` on a different free port —
-  for example localhost:8081 — against a local kubeconfig. Do not reuse
-  9000/9001 or 8080; those are taken by MinIO and the offload worker in
-  this tier. Only useful if you have a k8s target the control-plane can
-  talk to.
+
+The control-plane is a thin relay: it accepts `POST /offload`, forwards
+to the offload-worker synchronously, tracks the result in memory, and
+returns presigned MinIO URLs for large artifacts. It does not own
+Kubernetes session state — that is the operator's job in Tier 2.
 
 ### Minimum bring-up (offload-worker + MinIO)
 
@@ -105,7 +107,7 @@ If you prefer host networking on Linux (simpler, but Linux-only), drop
 `--network host` on Docker Desktop — containers there run in a VM and
 `localhost` does not map to the host.
 
-Verification:
+Verification of the System B worker:
 ```bash
 curl localhost:8080/health
 curl -X POST localhost:8080/run -H 'content-type: application/json' -d '{
@@ -113,9 +115,36 @@ curl -X POST localhost:8080/run -H 'content-type: application/json' -d '{
 }'
 ```
 
+### Add the control-plane offload relay
+
+```bash
+docker build -t demo-control-plane:local ./runtimes/control-plane
+docker run --rm --name demo-control-plane --network demo-net \
+  -p 8090:8080 \
+  -e OFFLOAD_WORKER_URL=http://demo-offload:8080 \
+  -e MINIO_ENDPOINT=http://demo-minio:9000 \
+  -e MINIO_ACCESS_KEY=minioadmin \
+  -e MINIO_SECRET_KEY=minioadmin \
+  -e MINIO_BUCKET=demo-artifacts \
+  demo-control-plane:local
+```
+
+End-to-end slice (scenario route, not a raw worker call):
+```bash
+curl -X POST localhost:8090/offload -H 'content-type: application/json' -d '{
+  "task_type": "echo", "payload": {"hello":"world"}, "session_id": "sess-1"
+}'
+# -> {"job_id":"job-...","status":"completed","session_id":"sess-1"}
+curl localhost:8090/offload/job-XXXX
+# -> full OffloadStatus with result / result_ref
+```
+
+This matches what CI runs in the `tier1-scenario-slice` job via
+`scripts/ci-scenario-slice.py`.
+
 Cleanup when done:
 ```bash
-docker rm -f demo-minio demo-offload 2>/dev/null || true
+docker rm -f demo-minio demo-offload demo-control-plane 2>/dev/null || true
 docker network rm demo-net 2>/dev/null || true
 ```
 
@@ -123,10 +152,11 @@ Unit tests that run without extra deps:
 ```bash
 pip install fastapi pydantic boto3 pytest httpx
 pytest runtimes/offload-worker/tests/ -q -k 'echo or health or invalid'
+pytest runtimes/control-plane/tests/ -q
 ```
 
 Pandas/sklearn-backed tests require the Docker image dependencies; CI runs
-the full suite in `offload-worker` GitHub Actions job.
+the full suite in the `offload-worker` and `tier1-scenario-slice` jobs.
 
 Use Tier 1 when you need to show that the System B execution path actually
 runs and returns artifacts — for example, to demo offload before committing
@@ -201,13 +231,16 @@ production. "Simulated" means the UX flow is shown but no real backend runs.
 
 ## What is still a gap
 
-- `POST /offload`, `GET /offload/{job_id}`, `GET /artifacts/{ref}`, and
-  `POST /sessions/{id}/scale-up` are the documented contract in
-  `docs/architecture.md` but are not yet implemented in
-  `legacy/services/control-plane/app.py`. Tier 2 today relies on the
-  operator-managed OpenClaw instance plus direct offload-worker calls; the
-  control-plane relay is planned work (see `docs/mvp-plan.md` Phase 6/7).
-- Full session-lifecycle registry beyond the current `/sessions` stub.
+- `POST /offload`, `GET /offload/{job_id}`, `GET /artifacts/{ref}` are
+  now implemented in `runtimes/control-plane/` and exercised end-to-end
+  by the `tier1-scenario-slice` CI job (process-level) and by
+  `tier2-offload-smoke` (k3d-level). The control-plane is a thin relay:
+  in-memory job registry, synchronous forwarding to the offload-worker.
+  A durable registry is still TODO.
+- `POST /sessions/{id}/scale-up` remains a planned surface for the
+  `large_build_test` scenario — see `docs/mvp-plan.md` Phase 6/7.
+- Full session-lifecycle registry beyond the current `/sessions` stub
+  and operator-managed OpenClaw instance.
 
 See `docs/operator-gap-analysis.md` for the active gap list.
 

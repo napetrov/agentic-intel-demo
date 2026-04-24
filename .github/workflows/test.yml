@@ -84,6 +84,123 @@ jobs:
       - name: validate scenarios + architecture templates
         run: python3 scripts/validate-demo-templates.py
 
+  control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install control-plane deps + pytest
+        working-directory: runtimes/control-plane
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            boto3==1.37.38 \
+            pytest==8.3.5
+      - name: pytest
+        working-directory: runtimes/control-plane
+        run: pytest -v
+
+  tier1-scenario-slice:
+    # End-to-end Tier 1 slice on a single runner (no k8s): exercises the
+    # market_research scenario contract — control-plane POST /offload ->
+    # offload-worker POST /run -> MinIO put_object -> control-plane
+    # GET /offload/{job_id} + GET /artifacts/{ref}. This is the first job
+    # that drives a full scenario route through every process in the
+    # offload_system_b execution mode.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install runtime deps
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            boto3==1.37.38
+      - name: start MinIO in docker and create bucket
+        # Mirror the proven tier2-offload-smoke pattern: explicit docker
+        # run + mc mb, no dependency on the bitnami-specific
+        # MINIO_DEFAULT_BUCKETS env var.
+        run: |
+          docker network create tier1-net 2>/dev/null || true
+          docker run -d --name tier1-minio --network tier1-net \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9000/minio/health/live >/dev/null; then
+              echo "minio ready"; break
+            fi
+            sleep 1
+          done
+          docker run --rm --network tier1-net --entrypoint sh minio/mc -c '
+            mc alias set local http://tier1-minio:9000 minioadmin minioadmin &&
+            mc mb --ignore-existing local/demo-artifacts'
+      - name: start offload-worker
+        working-directory: runtimes/offload-worker
+        env:
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: demo-artifacts
+        run: |
+          nohup python -m uvicorn app:app --host 127.0.0.1 --port 8091 \
+            >/tmp/offload.log 2>&1 &
+          echo $! > /tmp/offload.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8091/health >/dev/null; then
+              echo "offload-worker ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "offload-worker never became ready"; cat /tmp/offload.log; exit 1
+      - name: start control-plane
+        working-directory: runtimes/control-plane
+        env:
+          OFFLOAD_WORKER_URL: http://127.0.0.1:8091
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: demo-artifacts
+        run: |
+          nohup python -m uvicorn app:app --host 127.0.0.1 --port 8090 \
+            >/tmp/cp.log 2>&1 &
+          echo $! > /tmp/cp.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8090/health >/dev/null; then
+              echo "control-plane ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "control-plane never became ready"; cat /tmp/cp.log; exit 1
+      - name: drive a market_research-shaped scenario through /offload
+        run: python3 scripts/ci-scenario-slice.py
+      - name: dump server + MinIO logs on failure
+        if: failure()
+        run: |
+          echo "----- control-plane -----"; cat /tmp/cp.log || true
+          echo "----- offload-worker ----"; cat /tmp/offload.log || true
+          echo "----- minio (docker) ----"; docker logs tier1-minio --tail 200 || true
+          echo "----- docker ps --------";   docker ps -a || true
+      - name: stop servers
+        if: always()
+        run: |
+          for pidfile in /tmp/cp.pid /tmp/offload.pid; do
+            if [ -f "$pidfile" ]; then
+              kill "$(cat $pidfile)" 2>/dev/null || true
+            fi
+          done
+          docker rm -f tier1-minio 2>/dev/null || true
+          docker network rm tier1-net 2>/dev/null || true
+
   tier2-offload-smoke:
     runs-on: ubuntu-latest
     steps:
