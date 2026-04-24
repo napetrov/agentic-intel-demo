@@ -170,7 +170,9 @@ Telegram ingress.
 4. **System A — operator and OpenClaw instance:**
    ```bash
    scripts/check-operator-prereqs.sh
-   scripts/install-openclaw-operator.sh                   # prints the safe order
+   # advisory: prints the CRD-first kubectl commands to run; it does NOT
+   # apply anything itself — run the printed commands manually
+   scripts/install-openclaw-operator.sh
    kubectl --context system-a apply -f examples/openclawinstance-intel-demo.yaml
    scripts/smoke-test-operator-instance.sh
    ```
