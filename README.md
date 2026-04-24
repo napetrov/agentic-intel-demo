@@ -26,7 +26,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers, Kubernetes-first)
 - `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload) within the two-system reference
 - `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
-- `docs/mvp-plan.md` — minimal MVP path and implementation order
+- `docs/mvp-plan.md` — (deprecated; describes the removed raw control-plane/session-pod path)
 - `docs/reusable-components.md` — what to reuse vs what to build
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
@@ -92,6 +92,5 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 
 ## Repo curation notes
 - `config/` is the canonical location for current live demo/runtime config
-- `archive/` contains review bundles and historical review artifacts
-- `docs/archive/` contains historical planning and bring-up notes that are not the primary operator-first demo path
+- `runtimes/control-plane/` is the canonical control-plane implementation (offload relay, artifact relay)
 - The deprecated raw control-plane/session-pod path previously kept in `legacy/` and `scripts/legacy/` has been removed; the operator-first path is the only supported lifecycle

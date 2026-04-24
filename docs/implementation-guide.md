@@ -61,7 +61,7 @@ The working System B path uses **vLLM**, not ollama.
 
 That means:
 - the old ollama-based setup path has been removed; use `scripts/setup-system-b-vllm.sh` as the current working path
-- the System B model service is now OpenAI-compatible via vLLM directly
+- the System B model service is OpenAI-compatible via vLLM directly
 - the deployed model is `Qwen/Qwen3-4B-Instruct-2507`
 - the validated working context length is `32768`
 
@@ -216,15 +216,14 @@ modelConfigs:
 
 To make the setup reproducible, align the repo with the working implementation.
 
-### System B script path
+### Validated scripts
 The old ollama-based `scripts/legacy/setup-system-b.sh` has been removed.
-The working vLLM path is:
+The current validated System B path uses vLLM:
 - `scripts/setup-system-b-vllm.sh`
 - `scripts/check-system-b-vllm.sh`
-- `scripts/cleanup-system-a.sh`
 
-### Keep the old ollama script only if needed
-If ollama remains useful as an alternate backend, keep it explicitly labeled as an alternative path, not the primary path.
+System A disk hygiene:
+- `scripts/cleanup-system-a.sh`
 
 ---
 
@@ -331,7 +330,7 @@ curl http://<SYSTEM_A_IP>:31000/health
 
 ## Phase 4 — smoke test
 
-### Session path
+### Operator-managed instance
 `./scripts/smoke-test-operator-instance.sh` only prints a suggested
 checklist — it does not run assertions. Run it to get the commands, then
 execute them manually and confirm the instance is healthy:
