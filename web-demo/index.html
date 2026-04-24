@@ -40,14 +40,32 @@
           </div>
         </section>
 
-        <section class="architecture panel mock-b">
+        <section class="cards">
+          <button class="scenario-card" data-scenario="terminal-agent">
+            <span class="tag">Demo scenario</span>
+            <h3>Terminal Agent</h3>
+            <p>Live engineering task with OpenClaw orchestration on the primary CWF path.</p>
+          </button>
+          <button class="scenario-card" data-scenario="market-research">
+            <span class="tag">Demo scenario</span>
+            <h3>Market Research</h3>
+            <p>Research workflow with SambaNova-backed inference and GNR offload visibility.</p>
+          </button>
+          <button class="scenario-card" data-scenario="large-build-test">
+            <span class="tag">Demo scenario</span>
+            <h3>Large Build/Test</h3>
+            <p>Heavy execution flow with routing, queueing, and handoff visibility across the stack.</p>
+          </button>
+        </section>
+
+        <section class="architecture panel">
           <div class="panel-head panel-head-wrap">
             <div>
-              <div class="section-title">Architecture — Mock B</div>
+              <div class="section-title">Architecture</div>
               <div class="section-subtitle">Placement-first: shared orchestration row, then System A / System B split</div>
             </div>
             <div class="panel-actions">
-              <div id="data-mode" class="data-mode-badge">Static demo data</div>
+              <div id="data-mode" class="data-mode-badge" hidden></div>
             </div>
           </div>
 
@@ -96,10 +114,10 @@
                 </div>
                 <div class="system-capacity">
                   <span class="capacity-label">capacity</span>
-                  <span class="capacity-value"><span id="sys-a-used">0</span>/<span id="sys-a-total">16</span> vCPU</span>
+                  <span class="capacity-value"><span id="sys-a-used">0</span>/<span id="sys-a-total">512</span> vCPU</span>
                 </div>
               </div>
-              <div class="capacity-bar" role="progressbar" aria-label="System A vCPU utilization" aria-valuemin="0" aria-valuemax="16" aria-valuenow="0">
+              <div class="capacity-bar" role="progressbar" aria-label="System A vCPU utilization" aria-valuemin="0" aria-valuemax="512" aria-valuenow="0">
                 <div id="sys-a-bar-fill" class="capacity-bar-fill" style="width: 0%"></div>
               </div>
               <div class="agent-list" id="sys-a-agents" aria-live="polite">
@@ -119,6 +137,13 @@
                   <div class="system-title">System B</div>
                   <div class="system-subtitle">heavy + services</div>
                 </div>
+                <div class="system-capacity">
+                  <span class="capacity-label">capacity</span>
+                  <span class="capacity-value"><span id="sys-b-used">0</span>/<span id="sys-b-total">100</span> vCPU</span>
+                </div>
+              </div>
+              <div class="capacity-bar" role="progressbar" aria-label="System B vCPU utilization" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="sys-b-bar-fill" class="capacity-bar-fill" style="width: 0%"></div>
               </div>
               <div class="service-list">
                 <div class="service-row" data-service="ent-inference">
@@ -140,24 +165,6 @@
               </div>
             </div>
           </div>
-        </section>
-
-        <section class="cards">
-          <button class="scenario-card" data-scenario="terminal-agent">
-            <span class="tag">Demo scenario</span>
-            <h3>Terminal Agent</h3>
-            <p>Live engineering task with OpenClaw orchestration on the primary CWF path.</p>
-          </button>
-          <button class="scenario-card" data-scenario="market-research">
-            <span class="tag">Demo scenario</span>
-            <h3>Market Research</h3>
-            <p>Research workflow with SambaNova-backed inference and GNR offload visibility.</p>
-          </button>
-          <button class="scenario-card" data-scenario="large-build-test">
-            <span class="tag">Demo scenario</span>
-            <h3>Large Build/Test</h3>
-            <p>Heavy execution flow with routing, queueing, and handoff visibility across the stack.</p>
-          </button>
         </section>
 
         <section class="workspace">
@@ -233,6 +240,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260424b"></script>
+    <script src="./app.js?v=20260424c"></script>
   </body>
 </html>
