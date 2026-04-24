@@ -219,13 +219,40 @@ def test_unknown_job_id_returns_404():
 
 
 def test_artifact_presign_returns_url():
+    # Seed a job whose result_ref matches the artifact we will request,
+    # mirroring the real flow (POST /offload returns result_ref, client
+    # calls GET /artifacts/{ref}). Without the seed the endpoint 404s —
+    # unknown refs aren't minted into presigned URLs.
+    ref = "offload/sess-1/task-abc.json"
+    with cp_app._jobs_lock:
+        cp_app._jobs["job-seeded"] = {
+            "job_id": "job-seeded",
+            "status": "completed",
+            "session_id": "sess-1",
+            "task_id": "task-abc",
+            "result": None,
+            "result_ref": ref,
+            "error": None,
+            "submitted_at": 0.0,
+            "completed_at": 0.0,
+        }
+    try:
+        tc = TestClient(cp_app.app)
+        r = tc.get(f"/artifacts/{ref}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ref"] == ref
+        assert body["url"].startswith("http://minio.test:9000/demo-artifacts/")
+        assert body["expires_in"] > 0
+    finally:
+        with cp_app._jobs_lock:
+            cp_app._jobs.pop("job-seeded", None)
+
+
+def test_artifact_presign_rejects_unknown_ref():
     tc = TestClient(cp_app.app)
-    r = tc.get("/artifacts/offload/sess-1/task-abc.json")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["ref"] == "offload/sess-1/task-abc.json"
-    assert body["url"].startswith("http://minio.test:9000/demo-artifacts/")
-    assert body["expires_in"] > 0
+    r = tc.get("/artifacts/offload/sess-unknown/task-never-issued.json")
+    assert r.status_code == 404
 
 
 def test_artifact_ref_rejects_path_traversal():

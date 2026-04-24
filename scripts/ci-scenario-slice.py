@@ -147,9 +147,12 @@ def main() -> int:
         original_host = parsed.hostname
         if parsed.port:
             original_host = f"{original_host}:{parsed.port}"
-        url = url.replace(
-            f"{parsed.scheme}://{parsed.netloc}", "http://localhost"
-        )
+        # Preserve the port when rewriting: dropping it routes to port 80,
+        # so a presigned URL like http://minio:9000/... would become
+        # http://localhost/... and fail ECONNREFUSED even before MinIO
+        # checks the signed Host header.
+        local_netloc = f"localhost:{parsed.port}" if parsed.port else "localhost"
+        url = parsed._replace(scheme="http", netloc=local_netloc).geturl()
         headers["Host"] = original_host
     with httpx.Client(timeout=TIMEOUT) as c:
         r = c.get(url, headers=headers)

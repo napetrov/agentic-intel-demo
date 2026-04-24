@@ -202,6 +202,15 @@ def get_offload(job_id: str) -> OffloadStatus:
 def get_artifact(ref: str) -> ArtifactRef:
     if not ref or ref.startswith("/") or ".." in ref:
         raise HTTPException(status_code=400, detail="invalid artifact ref")
+    # Only presign refs that this relay actually issued (via POST /offload).
+    # Otherwise any caller who can guess an object key turns this into a
+    # bucket-wide read proxy. The set of issued refs lives in `_jobs`.
+    with _jobs_lock:
+        issued = {
+            entry["result_ref"] for entry in _jobs.values() if entry.get("result_ref")
+        }
+    if ref not in issued:
+        raise HTTPException(status_code=404, detail=f"unknown artifact ref {ref}")
     client = _s3_client()
     try:
         url = client.generate_presigned_url(
