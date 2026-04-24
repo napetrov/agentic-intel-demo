@@ -42,7 +42,10 @@ of events. Run the same smoke locally:
 ```bash
 cd web-demo
 npm install && npx playwright install --with-deps chromium
-python3 -m http.server 8080 & BASE_URL=http://localhost:8080 npx playwright test
+python3 -m http.server 8080 &
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null' EXIT
+BASE_URL=http://localhost:8080 npx playwright test
 ```
 
 Use Tier 0 for audiences who care about the scenario catalog and UX, not
@@ -56,9 +59,12 @@ control-plane stub — on one machine. No Telegram, no OpenClaw, no vLLM.
 
 **Runs:**
 - `runtimes/offload-worker/` on localhost:8080 (FastAPI)
-- MinIO on localhost:9000/9001
-- optional: `legacy/services/control-plane/` on localhost:9000 against a
-  local kubeconfig (only useful if you have a k8s target)
+- MinIO on localhost:9000 (S3 API) and localhost:9001 (console)
+- optional: `legacy/services/control-plane/` on a different free port —
+  for example localhost:8081 — against a local kubeconfig. Do not reuse
+  9000/9001 or 8080; those are taken by MinIO and the offload worker in
+  this tier. Only useful if you have a k8s target the control-plane can
+  talk to.
 
 ### Minimum bring-up (offload-worker + MinIO)
 
