@@ -15,6 +15,7 @@ Demo-first repository area for a reproducible two-system prototype:
 
 ## Documents
 - `docs/demo-overview.md` — concise demo operating model for Telegram-first entry and two-system execution
+- `docs/demo-setup.md` — tiered bring-up guide (web simulation, local services, two-system k8s + operator)
 - `docs/contracts/session-lifecycle.md` — System A-owned lifecycle and user-visible state model
 - `docs/contracts/task-routing.md` — policy-driven routing for standard, local-large, and offload paths
 - `docs/contracts/offload-result-contract.md` — strict System A ↔ System B execution/result boundary
