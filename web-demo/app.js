@@ -127,6 +127,16 @@ const nodeEls = document.querySelectorAll('[data-node]');
 let fleetState = { total: 3, systemA: 2, systemB: 1 };
 let currentScenario = 'terminal-agent';
 let fleetToastTimer = null;
+let walkthroughRunId = 0;
+const RUN_DEMO_LABEL = 'Run walkthrough';
+
+function cancelWalkthrough() {
+  walkthroughRunId += 1;
+  if (runDemoBtn.disabled) {
+    runDemoBtn.textContent = RUN_DEMO_LABEL;
+    runDemoBtn.disabled = false;
+  }
+}
 
 function resetArchitecture() {
   nodeEls.forEach((el) => el.classList.remove('active'));
@@ -162,7 +172,7 @@ function renderCapacity() {
   vcpuSliderEl.max = capacity.scenarioMax;
   vcpuSliderEl.value = capacity.allocated;
   vcpuSliderEl.disabled = capacity.clusterFree === 0 && capacity.allocated >= capacity.scenarioMax;
-  dataModeEl.textContent = 'Static demo data';
+  dataModeEl.textContent = `Scenario: ${currentScenario}`;
 }
 
 function renderFleet() {
@@ -202,12 +212,14 @@ function renderScenario(key) {
 
 document.querySelectorAll('[data-scenario]').forEach((el) => {
   el.addEventListener('click', () => {
+    cancelWalkthrough();
     currentScenario = el.dataset.scenario;
     renderScenario(currentScenario);
   });
 });
 
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
+  cancelWalkthrough();
   resetArchitecture();
   ['openclaw', 'litellm', 'sambanova', 'slm', 'systemA', 'systemB'].forEach((id) => {
     const el = document.querySelector(`[data-node="${id}"]`);
@@ -244,6 +256,7 @@ document.querySelector('[data-action="status"]').addEventListener('click', () =>
 });
 
 document.querySelector('[data-action="reset"]').addEventListener('click', () => {
+  cancelWalkthrough();
   resetArchitecture();
   renderToolActivity([{ empty: true, label: 'Select a scenario to view expected tool usage.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
@@ -304,75 +317,83 @@ addAgentBtn.addEventListener('click', () => {
   fleetToastTimer = setTimeout(() => fleetToastEl.classList.add('hidden'), 2200);
 });
 
+function buildWalkthroughPhases(scenario) {
+  const lines = (scenario.commandLog || '').split('\n');
+  const toolNames = (scenario.metrics.Tools || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const timeline = (scenario.timeline && scenario.timeline.length)
+    ? scenario.timeline
+    : [['Walkthrough', 'Scenario replay']];
+  const phaseCount = timeline.length;
+  const chunkSize = Math.ceil(lines.length / phaseCount);
+  const parsedArtifacts = Number(scenario.metrics.Artifacts);
+  const artifactTotal = Number.isFinite(parsedArtifacts) ? parsedArtifacts : phaseCount;
+
+  return timeline.map((entry, idx) => {
+    const chunk = lines.slice(idx * chunkSize, (idx + 1) * chunkSize).join('\n');
+    const tools = toolNames.map((name, toolIdx) => {
+      let status = 'queued';
+      const progress = idx / Math.max(1, phaseCount - 1);
+      const toolProgress = toolIdx / Math.max(1, toolNames.length - 1);
+      if (progress >= toolProgress) status = 'active';
+      if (progress > toolProgress + 1 / Math.max(1, toolNames.length)) status = 'done';
+      if (idx === phaseCount - 1 && toolIdx < toolNames.length - 1) status = 'done';
+      return { name, status };
+    });
+    return {
+      label: entry[0],
+      detail: entry[1],
+      chunk,
+      tools,
+      artifacts: String(Math.min(idx + 1, artifactTotal))
+    };
+  });
+}
+
 runDemoBtn.addEventListener('click', () => {
+  const scenario = scenarios[currentScenario];
+  if (!scenario) return;
+  const runId = ++walkthroughRunId;
   const restoreLabel = runDemoBtn.textContent;
   runDemoBtn.textContent = 'Running...';
   runDemoBtn.disabled = true;
 
-  const steps = [
-    {
-      at: 400,
-      route: 'OpenClaw accepted request', tools: [
-        { name: 'session init', status: 'active' }
-      ], artifacts: '0',
-      log: '$ openclaw demo run terminal-agent --isolated\nrequest accepted\nsession_id=demo-term-0420 sandbox=created\n'
-    },
-    {
-      at: 2100,
-      route: 'LiteLLM → SambaNova', tools: [
-        { name: 'read', status: 'active' },
-        { name: 'exec', status: 'queued' }
-      ], artifacts: '0',
-      log: '$ pwd\n/workspace-intel-dev/agentic-intel-demo\n$ find agents -maxdepth 3 -type f | sort\n...\n'
-    },
-    {
-      at: 6800,
-      route: 'System A (CWF)', tools: [
-        { name: 'read', status: 'done' },
-        { name: 'exec', status: 'active' },
-        { name: 'summarize', status: 'queued' }
-      ], artifacts: '1',
-      log: '$ ./scripts/smoke-test-operator-instance.sh --profile terminal-agent\n[bootstrap] workspace mounted\n[exec] path=system-a\n'
-    },
-    {
-      at: 11600,
-      route: 'System A (CWF)', tools: [
-        { name: 'read', status: 'done' },
-        { name: 'exec', status: 'done' },
-        { name: 'summarize', status: 'active' }
-      ], artifacts: '2',
-      log: '$ tail -n 10 /tmp/demo-terminal-workflow.log\ncommand completed\nartifacts packaged\nsummary generated\n'
-    }
-  ];
+  resetArchitecture();
+  scenario.active.forEach((id) => {
+    const el = document.querySelector(`[data-node="${id}"]`);
+    if (el) el.classList.add('active');
+  });
+  renderConsole(scenario.console);
 
-  const totalDuration = steps[steps.length - 1].at;
+  const phases = buildWalkthroughPhases(scenario);
+  const phaseDurationMs = 1800;
+  const route = scenario.metrics.Route || scenario.console['current path'] || '—';
+  const model = scenario.metrics.Model || '—';
 
   commandLogEl.textContent = '';
-  result.textContent = 'Demo in progress...';
+  result.textContent = `Walkthrough: ${scenario.result.split('\n')[0]}`;
   result.className = 'result';
-  renderToolActivity([{ name: 'session init', status: 'active' }]);
-  renderMetrics({
-    Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
-    Route: 'preparing',
-    Tools: 'initializing',
-    Artifacts: '0'
-  });
 
-  steps.forEach((step) => {
+  phases.forEach((phase, idx) => {
     setTimeout(() => {
-      commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + step.log;
+      if (runId !== walkthroughRunId) return;
+      commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + phase.chunk;
       commandLogEl.scrollTop = commandLogEl.scrollHeight;
-      renderToolActivity(step.tools);
+      renderToolActivity(phase.tools.length ? phase.tools : [{ empty: true, label: phase.detail }]);
       renderMetrics({
-        Model: currentScenario === 'large-build-test' ? 'SambaNova + SLM on GNR' : 'SambaNova via LiteLLM',
-        Route: step.route,
-        Tools: step.tools.map((tool) => tool.name).join(', '),
-        Artifacts: step.artifacts
+        Model: model,
+        Route: `${route} · ${phase.label}`,
+        Tools: phase.tools.map((tool) => tool.name).join(', ') || '—',
+        Artifacts: phase.artifacts
       });
-    }, step.at);
+    }, idx * phaseDurationMs);
   });
 
+  const totalDuration = phases.length * phaseDurationMs;
   setTimeout(() => {
+    if (runId !== walkthroughRunId) return;
     renderScenario(currentScenario);
     runDemoBtn.textContent = restoreLabel;
     runDemoBtn.disabled = false;
