@@ -80,17 +80,19 @@ agentic-intel-demo/
 │           ├── Dockerfile       # build tools + compilers
 │           └── run.sh
 │
-├── demos/
-│   ├── task1-terminal-agent/
-│   │   ├── README.md
-│   │   └── task.yaml            # task definition for TerminalBench format
-│   ├── task2-market-research/
-│   │   ├── README.md
-│   │   ├── task.yaml
-│   │   └── sample-data/
-│   └── task3-large-build-test/
-│       ├── README.md
-│       └── task.yaml
+├── agents/
+│   ├── orchestrator.md          # top-level scenario routing / acknowledgements
+│   └── scenarios/               # one folder per built-in scenario
+│       ├── terminal-agent/
+│       ├── market-research/
+│       └── large-build-test/
+│
+├── catalog/
+│   ├── scenarios.yaml           # scenario catalog consumed by the agent
+│   └── tasks.yaml
+│
+├── examples/
+│   └── openclawinstance-intel-demo.yaml   # sample OpenClawInstance manifest
 │
 └── scripts/
     └── ... operator/demo scripts ...

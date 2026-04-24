@@ -224,7 +224,7 @@ Orchestration on System A. Heavy compute on System B.
 Session pod never calls System B directly.
 
 ### Task 3 — Build/test on a statically-sized large session pod
-```
+```text
 User → Chat Gateway → OpenClaw operator (System A)
   → Session Pod created from the `large` pod profile at OpenClawInstance
     creation time (no runtime scale-up step)

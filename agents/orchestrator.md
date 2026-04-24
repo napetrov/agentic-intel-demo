@@ -95,6 +95,6 @@ Examples:
 - Launching engineering environment
 - Running terminal task
 - Offloading analytics job
-- Scaling execution profile
+- Using large execution profile
 - Collecting final results
 - Demo task completed

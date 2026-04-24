@@ -25,7 +25,7 @@ Then briefly state the flow:
 ## Scenario contract
 
 - route: `local_large`
-- system owner: System A; session pod stays small, execution Job runs large
+- system owner: System A; session pod is sized `large` at creation time
 - tool scope: shell, build_tools, python
 - do not offload to System B unless policy explicitly changes
 

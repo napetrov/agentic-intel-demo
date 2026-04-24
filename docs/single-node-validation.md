@@ -100,7 +100,8 @@ uses the same path as a real cluster.
 ./scripts/install-openclaw-operator.sh
 ./scripts/check-operator-prereqs.sh
 kubectl apply -f examples/openclawinstance-intel-demo.yaml
-kubectl rollout status statefulset/<instance-name> -n default
+# Instance name comes from metadata.name in the manifest above.
+kubectl get openclawinstance intel-demo-operator -n default -o yaml
 ```
 
 ---
