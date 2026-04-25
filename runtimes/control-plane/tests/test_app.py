@@ -332,3 +332,19 @@ def test_probe_configured_down_when_unreachable(monkeypatch):
     body = r.json()
     assert body["state"] == "down"
     assert "target" in body
+    # detail must not leak the raw exception text or any embedded URL —
+    # only the exception class name is acceptable on the wire.
+    assert body["detail"] == "ConnectError"
+
+
+def test_probe_response_strips_credentials_and_query():
+    # Operators sometimes embed credentials or tokens in env-configured
+    # URLs; the probe response must surface only scheme://host[:port]/path,
+    # never userinfo or query params.
+    safe = cp_app._safe_probe_target(
+        "http://user:secret@internal.example:8080/v1/models?api_key=abc#frag"
+    )
+    assert safe == "http://internal.example:8080/v1/models"
+    assert "user" not in safe
+    assert "secret" not in safe
+    assert "api_key" not in safe

@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import boto3
 import httpx
@@ -71,6 +72,19 @@ PROBE_PATHS: dict[str, str] = {
     "sambanova": os.environ.get("SAMBANOVA_PROBE_PATH", "/"),
 }
 PROBE_TIMEOUT_SECONDS = _parse_env_number("PROBE_TIMEOUT_SECONDS", "2.5", float)
+
+
+def _safe_probe_target(url: str) -> str:
+    """Strip userinfo, query, and fragment from a probe URL before it
+    leaves the control plane. Operators sometimes embed credentials or
+    api-keys in env-configured URLs (e.g. http://user:token@host/...);
+    the probe response is consumed by browsers via /api/probe/{name},
+    so we don't want those parts on the wire."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 _jobs: dict[str, dict[str, Any]] = {}
@@ -155,12 +169,21 @@ def probe_dependency(name: str) -> dict[str, Any]:
     if not base:
         return {"state": "unconfigured"}
     url = base + PROBE_PATHS.get(name, "/health")
+    safe_target = _safe_probe_target(url)
     try:
         r = httpx.get(url, timeout=PROBE_TIMEOUT_SECONDS)
         r.raise_for_status()
     except httpx.HTTPError as exc:
-        return {"state": "down", "target": url, "detail": str(exc)[:200]}
-    return {"state": "ok", "target": url}
+        # Log the full URL + exception text server-side for diagnostics, but
+        # only return the sanitized target and the exception class name to
+        # the caller. str(exc) often embeds the full URL (incl. userinfo).
+        logger.warning("probe %s failed: url=%s err=%s", name, url, exc)
+        return {
+            "state": "down",
+            "target": safe_target,
+            "detail": type(exc).__name__,
+        }
+    return {"state": "ok", "target": safe_target}
 
 
 @app.get("/ready")

@@ -86,6 +86,35 @@ start_bg() {
   fi
 }
 
+verify_alive() {
+  # verify_alive <name> <pid-file> <log-file>
+  #
+  # Used by the launch blocks below that need to set env+cwd inline (which
+  # the argv-based start_bg can't do cleanly). Catches the EADDRINUSE case:
+  # if a stale uvicorn is still bound to the port, the new one dies, but
+  # the http probe would happily report the old listener as healthy. This
+  # check fails fast in that case so the operator sees the real error.
+  local name="$1" pidf="$2" logf="$3"
+  sleep 1
+  local pid
+  pid="$(cat "$pidf" 2>/dev/null || true)"
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    warn "$name died within 1s of launch; tail of log:"
+    tail -n 20 "$logf" >&2 || true
+    rm -f "$pidf"
+    return 1
+  fi
+}
+
+abort_if_failed() {
+  # Stop everything we already started before exiting on a launch failure,
+  # so the next dev-up.sh run starts from a clean state instead of leaving
+  # half a stack on the ports.
+  warn "aborting; tearing down anything already started"
+  bash "$REPO_ROOT/scripts/dev-down.sh" >&2 || true
+  exit 1
+}
+
 wait_http_ok() {
   # wait_http_ok <url> <retries> <label>
   local url="$1" retries="$2" label="$3"
@@ -127,64 +156,101 @@ except ClientError as exc:
         raise
 PY
 
+# Each launch block below uses verify_alive() right after the nohup so an
+# EADDRINUSE failure (uvicorn dies because a stale listener still owns the
+# port) is caught before wait_http_ok() probes it — otherwise the probe
+# would happily report the OLD process as healthy and dev-down.sh would
+# later fail to clean up the real one.
+
 # --- agent-stub -----------------------------------------------------------
 
-(
-  cd "$REPO_ROOT/runtimes/agent-stub"
-  AGENT_WORKSPACE_DIR="$REPO_ROOT/demo-workspace" \
-    nohup "$UVICORN" app:app --host 127.0.0.1 --port "$AGENT_STUB_PORT" \
-    >"$LOG_DIR/agent-stub.log" 2>&1 &
-  echo $! >"$PID_DIR/agent-stub.pid"
-)
-wait_http_ok "http://127.0.0.1:$AGENT_STUB_PORT/health" 20 "agent-stub"
+if [ -f "$PID_DIR/agent-stub.pid" ] && kill -0 "$(cat "$PID_DIR/agent-stub.pid")" 2>/dev/null; then
+  warn "agent-stub already running (pid $(cat "$PID_DIR/agent-stub.pid")); skipping"
+else
+  log "starting agent-stub -> $LOG_DIR/agent-stub.log"
+  (
+    cd "$REPO_ROOT/runtimes/agent-stub"
+    AGENT_WORKSPACE_DIR="$REPO_ROOT/demo-workspace" \
+      nohup "$UVICORN" app:app --host 127.0.0.1 --port "$AGENT_STUB_PORT" \
+      >"$LOG_DIR/agent-stub.log" 2>&1 &
+    echo $! >"$PID_DIR/agent-stub.pid"
+  )
+  verify_alive "agent-stub" "$PID_DIR/agent-stub.pid" "$LOG_DIR/agent-stub.log" \
+    || abort_if_failed
+fi
+wait_http_ok "http://127.0.0.1:$AGENT_STUB_PORT/health" 20 "agent-stub" \
+  || abort_if_failed
 
 # --- offload-worker -------------------------------------------------------
 
-(
-  cd "$REPO_ROOT/runtimes/offload-worker"
-  MINIO_ENDPOINT="http://127.0.0.1:$MOTO_PORT" \
-    MINIO_ACCESS_KEY="$MINIO_ROOT_USER" \
-    MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
-    MINIO_BUCKET="$MINIO_BUCKET" \
-    SCENARIO_SCRIPTS_DIR="$REPO_ROOT/agents/scenarios" \
-    OPENCLAW_GATEWAY_URL="http://127.0.0.1:$AGENT_STUB_PORT" \
-    OPENCLAW_GATEWAY_TOKEN="" \
-    DEBUG_TASK_ERRORS="${DEBUG_TASK_ERRORS:-1}" \
-    nohup "$UVICORN" app:app --host 127.0.0.1 --port "$OFFLOAD_WORKER_PORT" \
-    >"$LOG_DIR/offload-worker.log" 2>&1 &
-  echo $! >"$PID_DIR/offload-worker.pid"
-)
-wait_http_ok "http://127.0.0.1:$OFFLOAD_WORKER_PORT/health" 20 "offload-worker"
+if [ -f "$PID_DIR/offload-worker.pid" ] && kill -0 "$(cat "$PID_DIR/offload-worker.pid")" 2>/dev/null; then
+  warn "offload-worker already running (pid $(cat "$PID_DIR/offload-worker.pid")); skipping"
+else
+  log "starting offload-worker -> $LOG_DIR/offload-worker.log"
+  (
+    cd "$REPO_ROOT/runtimes/offload-worker"
+    MINIO_ENDPOINT="http://127.0.0.1:$MOTO_PORT" \
+      MINIO_ACCESS_KEY="$MINIO_ROOT_USER" \
+      MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
+      MINIO_BUCKET="$MINIO_BUCKET" \
+      SCENARIO_SCRIPTS_DIR="$REPO_ROOT/agents/scenarios" \
+      OPENCLAW_GATEWAY_URL="http://127.0.0.1:$AGENT_STUB_PORT" \
+      OPENCLAW_GATEWAY_TOKEN="" \
+      DEBUG_TASK_ERRORS="${DEBUG_TASK_ERRORS:-1}" \
+      nohup "$UVICORN" app:app --host 127.0.0.1 --port "$OFFLOAD_WORKER_PORT" \
+      >"$LOG_DIR/offload-worker.log" 2>&1 &
+    echo $! >"$PID_DIR/offload-worker.pid"
+  )
+  verify_alive "offload-worker" "$PID_DIR/offload-worker.pid" "$LOG_DIR/offload-worker.log" \
+    || abort_if_failed
+fi
+wait_http_ok "http://127.0.0.1:$OFFLOAD_WORKER_PORT/health" 20 "offload-worker" \
+  || abort_if_failed
 
 # --- control-plane --------------------------------------------------------
 
-(
-  cd "$REPO_ROOT/runtimes/control-plane"
-  OFFLOAD_WORKER_URL="http://127.0.0.1:$OFFLOAD_WORKER_PORT" \
-    OFFLOAD_TIMEOUT_SECONDS=120 \
-    MINIO_ENDPOINT="http://127.0.0.1:$MOTO_PORT" \
-    MINIO_ACCESS_KEY="$MINIO_ROOT_USER" \
-    MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
-    MINIO_BUCKET="$MINIO_BUCKET" \
-    OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:$AGENT_STUB_PORT}" \
-    LITELLM_BASE_URL="${LITELLM_BASE_URL:-}" \
-    SAMBANOVA_PROBE_URL="${SAMBANOVA_PROBE_URL:-}" \
-    nohup "$UVICORN" app:app --host 127.0.0.1 --port "$CONTROL_PLANE_PORT" \
-    >"$LOG_DIR/control-plane.log" 2>&1 &
-  echo $! >"$PID_DIR/control-plane.pid"
-)
-wait_http_ok "http://127.0.0.1:$CONTROL_PLANE_PORT/ready" 20 "control-plane"
+if [ -f "$PID_DIR/control-plane.pid" ] && kill -0 "$(cat "$PID_DIR/control-plane.pid")" 2>/dev/null; then
+  warn "control-plane already running (pid $(cat "$PID_DIR/control-plane.pid")); skipping"
+else
+  log "starting control-plane -> $LOG_DIR/control-plane.log"
+  (
+    cd "$REPO_ROOT/runtimes/control-plane"
+    OFFLOAD_WORKER_URL="http://127.0.0.1:$OFFLOAD_WORKER_PORT" \
+      OFFLOAD_TIMEOUT_SECONDS=120 \
+      MINIO_ENDPOINT="http://127.0.0.1:$MOTO_PORT" \
+      MINIO_ACCESS_KEY="$MINIO_ROOT_USER" \
+      MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
+      MINIO_BUCKET="$MINIO_BUCKET" \
+      OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:$AGENT_STUB_PORT}" \
+      LITELLM_BASE_URL="${LITELLM_BASE_URL:-}" \
+      SAMBANOVA_PROBE_URL="${SAMBANOVA_PROBE_URL:-}" \
+      nohup "$UVICORN" app:app --host 127.0.0.1 --port "$CONTROL_PLANE_PORT" \
+      >"$LOG_DIR/control-plane.log" 2>&1 &
+    echo $! >"$PID_DIR/control-plane.pid"
+  )
+  verify_alive "control-plane" "$PID_DIR/control-plane.pid" "$LOG_DIR/control-plane.log" \
+    || abort_if_failed
+fi
+wait_http_ok "http://127.0.0.1:$CONTROL_PLANE_PORT/ready" 20 "control-plane" \
+  || abort_if_failed
 
 # --- web demo proxy -------------------------------------------------------
 
-(
-  cd "$REPO_ROOT/scripts"
-  WEB_DEMO_DIR="$REPO_ROOT/web-demo" \
-    CONTROL_PLANE_URL="http://127.0.0.1:$CONTROL_PLANE_PORT" \
-    nohup "$UVICORN" dev_web_proxy:app --host 127.0.0.1 --port "$WEB_DEMO_PORT" \
-    >"$LOG_DIR/web-demo.log" 2>&1 &
-  echo $! >"$PID_DIR/web-demo.pid"
-)
+if [ -f "$PID_DIR/web-demo.pid" ] && kill -0 "$(cat "$PID_DIR/web-demo.pid")" 2>/dev/null; then
+  warn "web-demo already running (pid $(cat "$PID_DIR/web-demo.pid")); skipping"
+else
+  log "starting web-demo -> $LOG_DIR/web-demo.log"
+  (
+    cd "$REPO_ROOT/scripts"
+    WEB_DEMO_DIR="$REPO_ROOT/web-demo" \
+      CONTROL_PLANE_URL="http://127.0.0.1:$CONTROL_PLANE_PORT" \
+      nohup "$UVICORN" dev_web_proxy:app --host 127.0.0.1 --port "$WEB_DEMO_PORT" \
+      >"$LOG_DIR/web-demo.log" 2>&1 &
+    echo $! >"$PID_DIR/web-demo.pid"
+  )
+  verify_alive "web-demo" "$PID_DIR/web-demo.pid" "$LOG_DIR/web-demo.log" \
+    || abort_if_failed
+fi
 wait_http_ok "http://127.0.0.1:$WEB_DEMO_PORT/api/ready" 20 "web-demo proxy"
 
 log ""

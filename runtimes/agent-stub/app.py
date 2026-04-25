@@ -428,6 +428,15 @@ def _classify_llm(text: str) -> Optional[dict[str, Any]]:
     except ValueError as exc:
         logger.warning("LLM response not JSON (%s); falling back to rules", exc)
         return None
+    # `parsed.get(...)` below assumes a JSON object; a list or scalar would
+    # AttributeError out and skip the rules fallback, defeating the
+    # graceful-degradation contract.
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "LLM JSON is %s, not object; falling back to rules",
+            type(parsed).__name__,
+        )
+        return None
     tool = parsed.get("tool")
     args = parsed.get("args")
     if tool not in {"shell", "read_file", "list_files", "summarize", "echo"} \
