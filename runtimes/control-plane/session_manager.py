@@ -470,6 +470,14 @@ class KubeSessionBackend:
             spec, job_name = self._render_job(sid, scenario, profile)
             self._batch.create_namespaced_job(namespace=self._namespace, body=spec)
         except self._client.exceptions.ApiException as exc:
+            # 409 Conflict means the Job name (deterministic from session_id)
+            # is already taken — surface as ValueError so the FastAPI handler
+            # returns 400, matching LocalSessionBackend.create's duplicate-id
+            # behavior. Without this, a duplicate session_id would 502 on the
+            # kube backend and 400 on the local backend — confusing for
+            # callers writing against the same wire contract.
+            if getattr(exc, "status", None) == 409:
+                raise ValueError(f"session {sid!r} already exists") from exc
             raise RuntimeError(
                 f"failed to create session Job for {sid}: {exc.status} {exc.reason}"
             ) from exc
@@ -500,21 +508,31 @@ class KubeSessionBackend:
         job_name = f"{session_id}-job"
         try:
             job = self._batch.read_namespaced_job(name=job_name, namespace=self._namespace)
+            pods = self._core.list_namespaced_pod(
+                namespace=self._namespace,
+                label_selector=f"session-id={session_id}",
+            ).items
         except self._client.exceptions.ApiException as exc:
-            if exc.status == 404:
+            if getattr(exc, "status", None) == 404:
                 return None
-            raise
-        pods = self._core.list_namespaced_pod(
-            namespace=self._namespace,
-            label_selector=f"session-id={session_id}",
-        ).items
+            # Anything else (RBAC, API outage, 5xx) gets translated to
+            # RuntimeError so the FastAPI handler can return 502 instead
+            # of leaking a raw ApiException as a 500.
+            raise RuntimeError(
+                f"failed to read session {session_id!r}: {exc.status} {exc.reason}"
+            ) from exc
         return self._record_for_job(session_id, job, pods)
 
     def list(self) -> list[SessionRecord]:
-        jobs = self._batch.list_namespaced_job(
-            namespace=self._namespace,
-            label_selector="managed-by=control-plane",
-        ).items
+        try:
+            jobs = self._batch.list_namespaced_job(
+                namespace=self._namespace,
+                label_selector="managed-by=control-plane",
+            ).items
+        except self._client.exceptions.ApiException as exc:
+            raise RuntimeError(
+                f"failed to list sessions: {exc.status} {exc.reason}"
+            ) from exc
         # One label-selector pod query per Job is wasteful at scale, but at
         # the demo's session count (tens, not thousands) it's simpler than
         # joining the full pod list client-side.
@@ -523,10 +541,15 @@ class KubeSessionBackend:
             sid = (job.metadata.labels or {}).get("session-id")
             if not sid:
                 continue
-            pods = self._core.list_namespaced_pod(
-                namespace=self._namespace,
-                label_selector=f"session-id={sid}",
-            ).items
+            try:
+                pods = self._core.list_namespaced_pod(
+                    namespace=self._namespace,
+                    label_selector=f"session-id={sid}",
+                ).items
+            except self._client.exceptions.ApiException as exc:
+                raise RuntimeError(
+                    f"failed to list pods for session {sid!r}: {exc.status} {exc.reason}"
+                ) from exc
             out.append(self._record_for_job(sid, job, pods))
         out.sort(key=lambda r: r.created_at)
         return out
@@ -542,9 +565,11 @@ class KubeSessionBackend:
                 body=self._client.V1DeleteOptions(propagation_policy="Foreground"),
             )
         except self._client.exceptions.ApiException as exc:
-            if exc.status == 404:
+            if getattr(exc, "status", None) == 404:
                 return False
-            raise
+            raise RuntimeError(
+                f"failed to delete session {session_id!r}: {exc.status} {exc.reason}"
+            ) from exc
         return True
 
 

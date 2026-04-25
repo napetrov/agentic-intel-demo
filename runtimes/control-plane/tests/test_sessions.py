@@ -418,6 +418,177 @@ class _FakeApiException(Exception):
         self.reason = reason
 
 
+def _kube_backend_with_stubs(batch=None, core=None, load_template=None):
+    """Build a KubeSessionBackend without going through __init__ (which
+    needs a real kubeconfig). Tests inject just the surface they exercise."""
+    backend = sm.KubeSessionBackend.__new__(sm.KubeSessionBackend)
+    backend._client = SimpleNamespace(
+        exceptions=SimpleNamespace(ApiException=_FakeApiException),
+        V1DeleteOptions=lambda **kw: kw,
+    )
+    backend._namespace = "agents"
+    backend._template_configmap = "session-job-template"
+    backend._template_namespace = "agents"
+    backend._session_image = None
+    backend._ttl = 600
+    backend._batch = batch or SimpleNamespace()
+    backend._core = core or SimpleNamespace()
+    if load_template is not None:
+        backend._load_template = load_template  # type: ignore[method-assign]
+    return backend
+
+
+def test_kube_create_translates_409_to_value_error():
+    """409 Conflict means the Job name (deterministic from session_id) is
+    already taken — must surface as ValueError so /sessions returns 400,
+    matching LocalSessionBackend's duplicate-id behavior. Without this,
+    duplicate session_id would return 502 on kube and 400 on local — same
+    wire contract, two different error codes for the same condition."""
+    def boom(**_):
+        raise _FakeApiException(status=409, reason="Conflict")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(create_namespaced_job=boom),
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        backend.create(scenario="x", profile="small", session_id="dup")
+
+
+def test_kube_create_translates_other_apiexception_to_runtime_error():
+    """Sanity check that non-409 statuses still wrap as RuntimeError so
+    the caller-side translation (RuntimeError → 502) keeps working."""
+    def boom(**_):
+        raise _FakeApiException(status=500, reason="Internal")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(create_namespaced_job=boom),
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    with pytest.raises(RuntimeError, match="failed to create session Job"):
+        backend.create(scenario="x", profile="small", session_id="sess-ok")
+
+
+def test_kube_get_wraps_non_404_apiexception():
+    def boom(**_):
+        raise _FakeApiException(status=403, reason="Forbidden")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(read_namespaced_job=boom),
+    )
+    with pytest.raises(RuntimeError, match="failed to read session"):
+        backend.get("sess-x")
+
+
+def test_kube_get_returns_none_on_404():
+    def boom(**_):
+        raise _FakeApiException(status=404, reason="Not Found")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(read_namespaced_job=boom),
+    )
+    assert backend.get("sess-x") is None
+
+
+def test_kube_list_wraps_apiexception():
+    def boom(**_):
+        raise _FakeApiException(status=500, reason="Internal")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(list_namespaced_job=boom),
+    )
+    with pytest.raises(RuntimeError, match="failed to list sessions"):
+        backend.list()
+
+
+def test_kube_delete_wraps_non_404_apiexception():
+    def boom(**_):
+        raise _FakeApiException(status=403, reason="Forbidden")
+
+    backend = _kube_backend_with_stubs(
+        batch=SimpleNamespace(delete_namespaced_job=boom),
+    )
+    with pytest.raises(RuntimeError, match="failed to delete session"):
+        backend.delete("sess-x")
+
+
+# ---- Read-side handler error translation (CodeRabbit P-major) -----
+
+
+class _RaisingBackend:
+    """Backend whose every method raises RuntimeError — used to verify
+    that list/get/delete handlers translate to 502 instead of 500."""
+    name = "raising"
+
+    def __init__(self, msg="kube unreachable"):
+        self.msg = msg
+
+    def create(self, *a, **kw):
+        raise RuntimeError(self.msg)
+
+    def get(self, *a, **kw):
+        raise RuntimeError(self.msg)
+
+    def list(self):
+        raise RuntimeError(self.msg)
+
+    def delete(self, *a, **kw):
+        raise RuntimeError(self.msg)
+
+
+def test_list_handler_translates_runtime_error_to_502(monkeypatch):
+    monkeypatch.setattr(cp_app, "_session_backend", _RaisingBackend("kube apiserver down"))
+    tc = TestClient(cp_app.app)
+    r = tc.get("/sessions")
+    assert r.status_code == 502
+    assert "kube apiserver down" in r.json()["detail"]
+
+
+def test_get_handler_translates_runtime_error_to_502(monkeypatch):
+    monkeypatch.setattr(cp_app, "_session_backend", _RaisingBackend("rbac denied"))
+    tc = TestClient(cp_app.app)
+    r = tc.get("/sessions/sess-x")
+    assert r.status_code == 502
+    assert "rbac denied" in r.json()["detail"]
+
+
+def test_delete_handler_translates_runtime_error_to_502(monkeypatch):
+    monkeypatch.setattr(cp_app, "_session_backend", _RaisingBackend("api timeout"))
+    tc = TestClient(cp_app.app)
+    r = tc.delete("/sessions/sess-x")
+    assert r.status_code == 502
+
+
+# ---- /sessions/batch surfaces error reason (CodeRabbit minor) -----
+
+
+def test_batch_response_body_carries_error_reason(monkeypatch):
+    backend = _FlakyBackend(succeed_n=1, exc=RuntimeError("kube quota exceeded"))
+    monkeypatch.setattr(cp_app, "_session_backend", backend)
+    tc = TestClient(cp_app.app)
+    r = tc.post(
+        "/sessions/batch",
+        json={"scenario": "x", "profile": "small", "count": 3},
+    )
+    body = r.json()
+    assert body.get("error") == "kube quota exceeded"
+    assert r.status_code == 207
+    # Sanity: full-success path leaves error null.
+    backend2 = _FlakyBackend(succeed_n=10, exc=RuntimeError("never raised"))
+    monkeypatch.setattr(cp_app, "_session_backend", backend2)
+    tc2 = TestClient(cp_app.app)
+    r2 = tc2.post(
+        "/sessions/batch",
+        json={"scenario": "x", "profile": "small", "count": 2},
+    )
+    assert r2.status_code == 201
+    assert r2.json().get("error") is None
+
+
 def test_kube_create_wraps_template_read_apiexception():
     """_render_job() runs before the create_namespaced_job try/except — if
     _load_template's ConfigMap GET fails (RBAC / missing CM), the raw

@@ -400,6 +400,12 @@ class SessionListResponse(BaseModel):
     total: int
     by_status: dict[str, int]
     sessions: list[SessionResponse]
+    # Populated by /sessions/batch when the loop bails early so the
+    # caller learns *why* the batch was partial (kube quota, RBAC,
+    # transient API outage, etc.) instead of just seeing `_error: 1`
+    # in by_status. Always None for full-success responses and for
+    # /sessions (list).
+    error: Optional[str] = None
 
 
 def _record_to_response(rec) -> SessionResponse:
@@ -489,6 +495,7 @@ def create_session_batch(
         total=len(created),
         by_status=by_status,
         sessions=[_record_to_response(r) for r in created],
+        error=error,
     )
 
 
@@ -501,7 +508,13 @@ def _summarize_status(records) -> dict[str, int]:
 
 @app.get("/sessions", response_model=SessionListResponse)
 def list_sessions() -> SessionListResponse:
-    records = _session_backend.list()
+    try:
+        records = _session_backend.list()
+    except RuntimeError as exc:
+        # KubeSessionBackend translates kube ApiException to RuntimeError;
+        # surfacing as 502 keeps the read-side error contract aligned with
+        # POST /sessions.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return SessionListResponse(
         backend=_session_backend.name,
         total=len(records),
@@ -512,7 +525,10 @@ def list_sessions() -> SessionListResponse:
 
 @app.get("/sessions/{session_id}", response_model=SessionResponse)
 def get_session(session_id: str) -> SessionResponse:
-    rec = _session_backend.get(session_id)
+    try:
+        rec = _session_backend.get(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if rec is None:
         raise HTTPException(status_code=404, detail=f"unknown session {session_id!r}")
     return _record_to_response(rec)
@@ -520,7 +536,10 @@ def get_session(session_id: str) -> SessionResponse:
 
 @app.delete("/sessions/{session_id}")
 def delete_session(session_id: str) -> dict[str, str]:
-    deleted = _session_backend.delete(session_id)
+    try:
+        deleted = _session_backend.delete(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail=f"unknown session {session_id!r}")
     return {"session_id": session_id, "status": "deleting"}

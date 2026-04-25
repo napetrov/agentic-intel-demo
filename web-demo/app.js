@@ -1437,8 +1437,13 @@ async function spawnSessionBatch(scenario, profile, count) {
     if (created.length) hasSpawnedHere = true;
     const errored = body && body.by_status && body.by_status._error;
     if (errored) {
+      // Backend now serializes the failure reason on `body.error` so the
+      // user doesn't have to dig through server logs to find out why the
+      // batch was partial. Fall back to the older "see server logs" text
+      // when the field isn't present (older control-plane build).
+      const reason = body && body.error ? `: ${body.error}` : '. See server logs.';
       setMultiSessionStatus(
-        `Spawned ${created.length} (partial — backend reported an error before reaching ${count}). See server logs.`,
+        `Spawned ${created.length} (partial — backend bailed before reaching ${count})${reason}`,
         'warn'
       );
     } else {
