@@ -1,0 +1,163 @@
+# Flowise — optional alt orchestrator on System A.
+#
+# Co-located with OpenClaw on System A so it can call the same LiteLLM
+# gateway (`litellm.inference.svc.cluster.local:4000`) and the same control
+# plane (`control-plane.platform.svc.cluster.local:8080`).
+#
+# Apply:
+#   kubectl apply -f k8s/system-a/flowise.yaml
+#
+# Before applying, create the auth + secret-key Secret (do NOT commit real
+# values). Example:
+#   kubectl -n agents create secret generic flowise-auth \
+#     --from-literal=username=admin \
+#     --from-literal=password='<strong-password>' \
+#     --from-literal=secretkey="$(openssl rand -hex 32)"
+#
+# A NodePort is exposed on 31300 for browser access during the demo. Drop
+# the NodePort service if you front Flowise with an Ingress instead.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flowise-data
+  namespace: agents
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowise-config
+  namespace: agents
+data:
+  # Non-sensitive runtime config. Endpoints are in-cluster; replace if you
+  # are running Flowise on a different cluster than LiteLLM/control-plane.
+  LITELLM_BASE_URL: "http://litellm.inference.svc.cluster.local:4000"
+  CONTROL_PLANE_BASE_URL: "http://control-plane.platform.svc.cluster.local:8080"
+  DATABASE_PATH: "/root/.flowise"
+  APIKEY_PATH: "/root/.flowise"
+  SECRETKEY_PATH: "/root/.flowise"
+  LOG_PATH: "/root/.flowise/logs"
+  BLOB_STORAGE_PATH: "/root/.flowise/storage"
+  DISABLE_FLOWISE_TELEMETRY: "true"
+  DEBUG: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowise
+  namespace: agents
+  labels:
+    app: flowise
+spec:
+  replicas: 1
+  strategy:
+    # sqlite-backed; only one replica writes at a time.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flowise
+  template:
+    metadata:
+      labels:
+        app: flowise
+    spec:
+      securityContext:
+        runAsNonRoot: false
+        fsGroup: 0
+      containers:
+        - name: flowise
+          image: flowiseai/flowise:2.2.7
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: flowise-config
+          env:
+            - name: FLOWISE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: flowise-auth
+                  key: username
+            - name: FLOWISE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: flowise-auth
+                  key: password
+            - name: FLOWISE_SECRETKEY_OVERWRITE
+              valueFrom:
+                secretKeyRef:
+                  name: flowise-auth
+                  key: secretkey
+            # LiteLLM proxy accepts any non-empty key by default; flows that
+            # need a real key can override per-credential in the UI.
+            - name: LITELLM_API_KEY
+              value: "sk-demo-not-a-real-key"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ping
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/ping
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /root/.flowise
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: flowise-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowise
+  namespace: agents
+spec:
+  selector:
+    app: flowise
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowise-nodeport
+  namespace: agents
+spec:
+  selector:
+    app: flowise
+  type: NodePort
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 31300

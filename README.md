@@ -31,6 +31,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
 - `docs/improvement-plan.md` — analysis of the current repo, what was runnable locally, bugs found, and prioritized improvements
+- `docs/flowise-integration.md` — optional Flowise alt-orchestrator deployment (Docker + k8s) and flow specs
 
 ## Authoring new demo scenarios
 External authors adding a new guided scenario should start here:
@@ -83,6 +84,21 @@ text through `agent_invoke` and renders the agent's chosen tool, trace, and
 output. To target a real remote OpenClaw instead of the stub, set
 `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in your shell before
 `docker compose up`.
+
+### Optional: Flowise alt orchestrator
+
+Flowise (visual flow builder) is shipped as an opt-in overlay:
+
+```bash
+# .env: FLOWISE_USERNAME, FLOWISE_PASSWORD, FLOWISE_SECRETKEY_OVERWRITE
+docker compose -f docker-compose.yaml -f docker-compose.flowise.yaml up --build
+# Flowise UI: http://localhost:3000
+```
+
+For Kubernetes, apply `k8s/system-a/flowise.yaml` after creating the
+`flowise-auth` Secret; the UI is exposed at NodePort 31300. Full
+instructions, flow specs for the three demo scenarios, and configuration
+notes live in `docs/flowise-integration.md` and `config/flowise/`.
 
 ## Scripts
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
