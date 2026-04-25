@@ -781,7 +781,28 @@ async function runLiveWalkthrough(scenarioKey) {
     return;
   }
 
-  const inline = status.result;
+  // When the worker punts the result to MinIO we get result_ref instead of
+  // an inline result. Fetch the artifact JSON so the verdict reflects the
+  // real exit_code — otherwise exitCode stays null and a non-zero exit
+  // hidden inside the artifact would silently render as PASS.
+  let inline = status.result;
+  if ((!inline || typeof inline !== 'object' || !('exit_code' in inline)) && status.result_ref) {
+    try {
+      const presigned = await fetchJson(`${API_BASE}/artifacts/${status.result_ref}`);
+      if (!stillCurrent()) return;
+      const artifactResp = await fetch(presigned.url);
+      if (!stillCurrent()) return;
+      if (artifactResp.ok) {
+        inline = await artifactResp.json();
+      } else {
+        commandLogEl.textContent += `\n[warn] artifact fetch HTTP ${artifactResp.status}`;
+      }
+    } catch (err) {
+      if (!stillCurrent()) return;
+      commandLogEl.textContent += `\n[warn] artifact fetch failed: ${err.message}`;
+    }
+  }
+
   const stdout = (inline && typeof inline === 'object' && 'stdout' in inline)
     ? inline.stdout
     : (status.result_ref
@@ -791,10 +812,11 @@ async function runLiveWalkthrough(scenarioKey) {
     ? inline.exit_code
     : null;
 
-  // Treat null exit_code as success when the result was punted to MinIO
-  // (artifact-backed completion). Only an explicit non-zero exit_code is a
-  // failure. status==="completed" already implies the worker reported ok.
-  const shellSucceeded = exitCode === null || exitCode === 0;
+  // Only mark success when exit_code is explicitly 0, or when there's no
+  // artifact metadata at all (truly nothing to inspect). With a result_ref
+  // present, an unknown exit_code means the artifact fetch failed — don't
+  // optimistically render PASS.
+  const shellSucceeded = exitCode === 0 || (exitCode === null && !status.result_ref);
 
   commandLogEl.textContent += `\n--- worker stdout ---\n${stdout}`;
   if (exitCode !== null) {
