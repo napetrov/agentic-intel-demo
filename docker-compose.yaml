@@ -118,6 +118,15 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio-dummy-secret-1234}
       MINIO_BUCKET: demo-artifacts
+      # Probe targets for the "Platform health" rail. The agent-stub stands
+      # in for OpenClaw locally, so its /health is the closest honest signal.
+      # LiteLLM / SambaNova probes stay unset by default (UI shows "unwired"
+      # rather than misreporting OK) and can be turned on by setting
+      # LITELLM_BASE_URL / SAMBANOVA_PROBE_URL in your shell before
+      # `compose up`.
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://agent-stub:8080}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
+      SAMBANOVA_PROBE_URL: ${SAMBANOVA_PROBE_URL:-}
     depends_on:
       offload-worker:
         condition: service_healthy

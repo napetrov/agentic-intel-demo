@@ -12,3 +12,4 @@ node_modules/
 web-demo/test-results/
 web-demo/playwright-report/
 web-demo/package-lock.json
+.dev-up/

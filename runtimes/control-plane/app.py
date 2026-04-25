@@ -53,6 +53,25 @@ MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "demo-artifacts")
 PRESIGN_EXPIRES_SECONDS = _parse_env_number("PRESIGN_EXPIRES_SECONDS", "900", int)
 
+# Optional probe targets surfaced via /probe/{name}. Each is a base URL or
+# health URL; when unset, the probe returns state="unconfigured" so the UI
+# can show a neutral "not wired" indicator instead of falsely reporting OK.
+# Keys here match the data-health attribute values in web-demo/index.html.
+PROBE_TARGETS: dict[str, str] = {
+    "openclaw": os.environ.get("OPENCLAW_GATEWAY_URL", "").rstrip("/"),
+    "litellm": os.environ.get("LITELLM_BASE_URL", "").rstrip("/"),
+    "sambanova": os.environ.get("SAMBANOVA_PROBE_URL", "").rstrip("/"),
+}
+# Path appended to the base URL when probing. OpenClaw exposes /health (the
+# agent-stub stand-in does too); LiteLLM exposes /health/liveliness in 1.x
+# but the cheap, auth-free check is just `/`. Override per-target if needed.
+PROBE_PATHS: dict[str, str] = {
+    "openclaw": os.environ.get("OPENCLAW_PROBE_PATH", "/health"),
+    "litellm": os.environ.get("LITELLM_PROBE_PATH", "/health/liveliness"),
+    "sambanova": os.environ.get("SAMBANOVA_PROBE_PATH", "/"),
+}
+PROBE_TIMEOUT_SECONDS = _parse_env_number("PROBE_TIMEOUT_SECONDS", "2.5", float)
+
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
@@ -117,6 +136,31 @@ class ArtifactRef(BaseModel):
 def health() -> dict[str, str]:
     """Liveness probe. Returns 200 as long as the process is up."""
     return {"status": "ok"}
+
+
+@app.get("/probe/{name}")
+def probe_dependency(name: str) -> dict[str, Any]:
+    """Best-effort liveness probe of a named external dependency.
+
+    Used by the web demo's "Platform health" rail so each indicator
+    reflects something real instead of mirroring control-plane health.
+    Returns {state, target?, detail?}; states:
+      ok            target answered 2xx
+      down          target unreachable / non-2xx
+      unconfigured  no target URL is configured for this name
+    """
+    if name not in PROBE_TARGETS:
+        raise HTTPException(status_code=404, detail=f"unknown probe {name!r}")
+    base = PROBE_TARGETS[name]
+    if not base:
+        return {"state": "unconfigured"}
+    url = base + PROBE_PATHS.get(name, "/health")
+    try:
+        r = httpx.get(url, timeout=PROBE_TIMEOUT_SECONDS)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        return {"state": "down", "target": url, "detail": str(exc)[:200]}
+    return {"state": "ok", "target": url}
 
 
 @app.get("/ready")

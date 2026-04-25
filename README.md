@@ -75,6 +75,25 @@ docker compose up --build
 # via the control plane and renders the worker stdout in the demo UI.
 ```
 
+### Local bring-up without Docker
+
+When container registries (quay.io, docker.io, ghcr.io) aren't reachable —
+restricted networks, sandboxes, air-gapped CI — `scripts/dev-up.sh` brings
+up the same four services from a Python venv, with `moto[server]` standing
+in for MinIO:
+
+```bash
+./scripts/dev-up.sh        # creates .dev-up/venv + starts everything
+# open http://127.0.0.1:8080 — same UI, same /api/* contract
+./scripts/dev-down.sh      # stops everything
+```
+
+State (venv, logs, pid files) lives under `.dev-up/`. To target a real
+LiteLLM/SambaNova endpoint, export `LITELLM_BASE_URL` /
+`SAMBANOVA_PROBE_URL` before `dev-up.sh` — the "Platform health" rail
+probes them honestly via `/api/probe/{name}` and stays neutral when
+nothing is configured.
+
 `task_type=shell` is fully self-contained on this path. `task_type=agent_invoke`
 is also wired locally: an `agent-stub` container stands in for the OpenClaw
 gateway and exposes `POST /tools/invoke` with a small allow-listed tool set

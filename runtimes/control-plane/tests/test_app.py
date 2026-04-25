@@ -271,3 +271,64 @@ def test_artifact_ref_rejects_leading_slash():
     # FastAPI collapses repeated leading slashes; test via absolute ref.
     r = tc.get("/artifacts//absolute/key")
     assert r.status_code == 400
+
+
+def test_probe_unknown_name_404s():
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/does-not-exist")
+    assert r.status_code == 404
+
+
+def test_probe_unconfigured_target_returns_unconfigured(monkeypatch):
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "litellm", "")
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/litellm")
+    assert r.status_code == 200
+    assert r.json() == {"state": "unconfigured"}
+
+
+def test_probe_configured_ok(monkeypatch):
+    # Point the openclaw probe at a stub target and stub httpx.get to
+    # answer 200; the probe must return state=ok with the resolved URL.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "openclaw", "http://stub.local")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url, *, timeout=None):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, timeout=timeout)
+
+    monkeypatch.setattr(cp_app.httpx, "get", fake_get)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/openclaw")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "ok"
+    assert body["target"].endswith("/health")
+
+
+def test_probe_configured_down_when_unreachable(monkeypatch):
+    # Configured target that refuses connections must surface as state=down,
+    # not a 500. The UI relies on the 200 envelope.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "openclaw", "http://stub.local")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url, *, timeout=None):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, timeout=timeout)
+
+    monkeypatch.setattr(cp_app.httpx, "get", fake_get)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/openclaw")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "down"
+    assert "target" in body

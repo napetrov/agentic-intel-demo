@@ -1015,12 +1015,41 @@ async function fetchJson(url, init) {
   }
 }
 
-function setHealthDot(el, state) {
+function setHealthDot(el, state, detail) {
   if (!el) return;
-  el.classList.remove('ok', 'warn', 'down');
+  el.classList.remove('ok', 'warn', 'down', 'idle');
   el.classList.add(state);
-  const labels = { ok: 'healthy', warn: 'degraded', down: 'unreachable' };
+  const labels = {
+    ok: 'healthy',
+    warn: 'degraded',
+    down: 'unreachable',
+    idle: 'not configured'
+  };
   el.setAttribute('aria-label', labels[state] || state);
+  if (detail) {
+    el.setAttribute('title', detail);
+  } else {
+    el.removeAttribute('title');
+  }
+}
+
+async function probeDependency(name) {
+  // Hits control-plane's /probe/<name>. Returns { state, detail } where
+  // state is one of "ok"|"down"|"unconfigured". Network errors translate
+  // to "down" so the UI doesn't get stuck on the previous color.
+  try {
+    const body = await fetchJson(`${API_BASE}/probe/${name}`, { timeoutMs: 3000 });
+    return body;
+  } catch (err) {
+    return { state: 'down', detail: err.message };
+  }
+}
+
+function dotStateForProbe(probe) {
+  if (!probe) return 'down';
+  if (probe.state === 'ok') return 'ok';
+  if (probe.state === 'unconfigured') return 'idle';
+  return 'down';
 }
 
 async function probeBackend() {
@@ -1046,12 +1075,35 @@ async function probeBackend() {
   liveBackendAvailable = cpHealthy && workerReady;
   setHealthDot(healthDots.systemA, cpHealthy ? 'ok' : 'down');
   setHealthDot(healthDots.systemB, workerReady ? 'ok' : (cpHealthy ? 'warn' : 'down'));
-  // openclaw/litellm/sambanova aren't probed; warn when no backend is
-  // reachable so the dots aren't lying.
-  const fallback = cpHealthy ? 'ok' : 'warn';
-  setHealthDot(healthDots.openclaw, fallback);
-  setHealthDot(healthDots.litellm, fallback);
-  setHealthDot(healthDots.sambanova, fallback);
+  // OpenClaw / LiteLLM / SambaNova are probed honestly via the control
+  // plane. When a probe URL isn't configured the dot stays neutral
+  // ("not configured") instead of mirroring the relay's health.
+  if (cpHealthy) {
+    const [openclaw, litellm, sambanova] = await Promise.all([
+      probeDependency('openclaw'),
+      probeDependency('litellm'),
+      probeDependency('sambanova')
+    ]);
+    setHealthDot(
+      healthDots.openclaw,
+      dotStateForProbe(openclaw),
+      openclaw && openclaw.detail ? openclaw.detail : (openclaw && openclaw.target) || ''
+    );
+    setHealthDot(
+      healthDots.litellm,
+      dotStateForProbe(litellm),
+      litellm && litellm.detail ? litellm.detail : (litellm && litellm.target) || ''
+    );
+    setHealthDot(
+      healthDots.sambanova,
+      dotStateForProbe(sambanova),
+      sambanova && sambanova.detail ? sambanova.detail : (sambanova && sambanova.target) || ''
+    );
+  } else {
+    setHealthDot(healthDots.openclaw, 'down');
+    setHealthDot(healthDots.litellm, 'down');
+    setHealthDot(healthDots.sambanova, 'down');
+  }
   runDemoBtn.title = liveBackendAvailable
     ? 'Live backend detected — runs a real shell scenario via /api/offload.'
     : 'Backend not detected — runs scripted walkthrough only.';

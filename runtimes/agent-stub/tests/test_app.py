@@ -192,3 +192,59 @@ def test_unknown_tool_errors():
     body = r.json()
     assert body["status"] == "error"
     assert "unknown tool" in body["error"]
+
+
+def test_command_falls_back_when_inner_tool_errors():
+    # "list <path>" routes to list_files, which raises on a non-existent
+    # path. Without the soft fallback that would surface as a hard error
+    # to the demo UI; with the fallback the command echoes the input and
+    # the trace explains what went wrong.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "command", "args": {"text": "list files in workspace"}},
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    assert body["result"]["chosen_tool"] == "echo"
+    assert "fell back to echo" in body["result"]["rationale"]
+    assert any(t["tool"] == "fallback" for t in body["trace"])
+
+
+def test_classify_llm_returns_none_when_unconfigured(monkeypatch):
+    # The LLM hook only runs when LLM_BASE_URL+LLM_MODEL are set; with both
+    # empty, _classify must use the rule-based path and not touch httpx.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "")
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"
+
+
+def test_classify_llm_used_when_configured(monkeypatch):
+    # With LLM env set, _classify_llm() should be called and its choice
+    # accepted as long as it returns an allow-listed tool. Mock the inner
+    # function rather than httpx so this test stays fast and offline.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+    monkeypatch.setattr(
+        app_module,
+        "_classify_llm",
+        lambda text: {
+            "tool": "summarize",
+            "args": {"text": text},
+            "rationale": "stubbed LLM",
+        },
+    )
+    out = app_module._classify("anything goes")
+    assert out["tool"] == "summarize"
+    assert out["rationale"] == "stubbed LLM"
+
+
+def test_classify_llm_falls_back_on_failure(monkeypatch):
+    # When the LLM hook returns None (network/bad-shape/etc), _classify
+    # must fall through to the rule-based classifier so the demo keeps
+    # working offline.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+    monkeypatch.setattr(app_module, "_classify_llm", lambda text: None)
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"
