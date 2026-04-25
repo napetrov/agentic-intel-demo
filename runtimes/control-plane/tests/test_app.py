@@ -271,3 +271,126 @@ def test_artifact_ref_rejects_leading_slash():
     # FastAPI collapses repeated leading slashes; test via absolute ref.
     r = tc.get("/artifacts//absolute/key")
     assert r.status_code == 400
+
+
+def test_probe_unknown_name_404s():
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/does-not-exist")
+    assert r.status_code == 404
+
+
+def test_probe_unconfigured_target_returns_unconfigured(monkeypatch):
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "litellm", "")
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/litellm")
+    assert r.status_code == 200
+    assert r.json() == {"state": "unconfigured"}
+
+
+def _stub_httpx_get(monkeypatch, handler):
+    transport = httpx.MockTransport(handler)
+
+    def fake_get(url, *, timeout=None):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, timeout=timeout)
+
+    monkeypatch.setattr(cp_app.httpx, "get", fake_get)
+
+
+def test_probe_configured_ok(monkeypatch):
+    # Configured target answering 2xx must report state=ok. The `target`
+    # field is the probe's logical name (avoids leaking internal hosts
+    # to the browser); the full URL stays in server-side logs only.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "openclaw", "http://stub.local")
+    _stub_httpx_get(
+        monkeypatch,
+        lambda req: httpx.Response(200, json={"status": "ok"}),
+    )
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/openclaw")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"state": "ok", "target": "openclaw"}
+
+
+def test_probe_configured_down_when_unreachable(monkeypatch):
+    # Configured target that refuses connections must surface as state=down,
+    # not a 500. The UI relies on the 200 envelope.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "openclaw", "http://stub.local")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    _stub_httpx_get(monkeypatch, handler)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/openclaw")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "down"
+    assert body["target"] == "openclaw"
+    # detail must not leak the raw exception text or any embedded URL —
+    # only the exception class name is acceptable on the wire.
+    assert body["detail"] == "ConnectError"
+
+
+def test_probe_uses_path_override(monkeypatch):
+    # PROBE_PATHS is a separate dict from PROBE_TARGETS so an operator
+    # can probe e.g. /v1/models on a LiteLLM gateway without baking the
+    # path into the URL env. Make sure the override actually drives the
+    # outbound path.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "litellm", "http://stub.local")
+    monkeypatch.setitem(cp_app.PROBE_PATHS, "litellm", "/v1/models")
+    seen: dict[str, str] = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["path"] = req.url.path
+        return httpx.Response(200, json={"data": []})
+
+    _stub_httpx_get(monkeypatch, handler)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/litellm")
+    assert r.status_code == 200
+    assert seen["path"] == "/v1/models"
+
+
+def test_probe_returns_down_on_invalid_url(monkeypatch):
+    # Bad port syntax raises ValueError out of urlsplit().port, and
+    # httpx.InvalidURL isn't an HTTPError subclass. Either case must
+    # land in state=down rather than a 500.
+    monkeypatch.setitem(cp_app.PROBE_TARGETS, "litellm", "http://host:abc")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        # If we get here, urlsplit() didn't raise — but the test still
+        # passes through state=down via httpx.InvalidURL. Harmless
+        # belt-and-braces.
+        raise httpx.InvalidURL("malformed")
+
+    _stub_httpx_get(monkeypatch, handler)
+    tc = TestClient(cp_app.app)
+    r = tc.get("/probe/litellm")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "down"
+    assert body["target"] == "litellm"
+
+
+def test_probe_response_strips_credentials_and_query():
+    # Operators sometimes embed credentials or tokens in env-configured
+    # URLs; the helper must surface only scheme://host[:port]/path,
+    # never userinfo or query params. The full check belongs to the
+    # helper because the HTTP path uses the bare probe name in target.
+    safe = cp_app._safe_probe_target(
+        "http://user:secret@internal.example:8080/v1/models?api_key=abc#frag"
+    )
+    assert safe == "http://internal.example:8080/v1/models"
+    assert "user" not in safe
+    assert "secret" not in safe
+    assert "api_key" not in safe
+
+
+def test_safe_probe_target_returns_empty_on_malformed():
+    # Bad port -> ValueError from urlsplit().port. The helper must swallow
+    # that and return "" so the caller can substitute a non-leaking
+    # identifier instead of crashing.
+    assert cp_app._safe_probe_target("http://host:99999") == ""
+    assert cp_app._safe_probe_target("http://host:abc") == ""

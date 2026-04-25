@@ -30,11 +30,26 @@ import time
 from pathlib import Path
 from typing import Any
 
+import json
+
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import Optional
 
 app = FastAPI(title="agent-stub", version="0.1.0")
 logger = logging.getLogger("agent-stub")
+
+# Optional LLM hook for classification. When LLM_BASE_URL + LLM_MODEL are set
+# the agent asks an OpenAI-compatible endpoint (LiteLLM, vLLM, OpenAI) to
+# pick a tool from the allow-list. Any failure (network, bad JSON, missing
+# tool) falls back to the deterministic _classify() rules so the demo still
+# runs offline. Untested provider URLs aren't a regression — if they're
+# unset, _classify_llm() is never called.
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "").rstrip("/")
+LLM_MODEL = os.environ.get("LLM_MODEL", "")
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT_SECONDS", "10"))
 
 # Workspace mounted read-only by docker-compose. Tools that read/list files
 # resolve paths under this root and reject anything escaping it.
@@ -295,20 +310,43 @@ def _tool_command(args: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, 
     }]
     inner_tool = classification["tool"]
     inner_args = classification["args"]
-    if inner_tool == "echo":
+    # Inner tools raise ValueError on bad input (path-doesn't-exist,
+    # binary-not-allow-listed, etc.). On a free-form "command" call we
+    # don't want a misclassified verb to surface as a hard error — fall
+    # back to echo with the original text and a trace entry that names the
+    # underlying error so the UI is honest about what happened.
+    fallback_reason: Optional[str] = None
+    try:
+        if inner_tool == "echo":
+            result = {"echo": inner_args}
+        elif inner_tool == "shell":
+            result = _tool_shell(inner_args)
+        elif inner_tool == "read_file":
+            result = _tool_read_file(inner_args)
+        elif inner_tool == "list_files":
+            result = _tool_list_files(inner_args)
+        elif inner_tool == "summarize":
+            result = _tool_summarize(inner_args)
+        else:
+            raise ValueError(f"classifier produced unknown tool: {inner_tool!r}")
+    except (ValueError, OSError) as exc:
+        # ValueError covers user-input rejections from the inner tools
+        # (path-escape, unallowed binary, bad max_bytes, etc.). OSError
+        # subsumes FileNotFoundError + PermissionError for read_file /
+        # list_files; both should land in the soft echo fallback so the
+        # demo doesn't 5xx on a misclassified verb that points at a
+        # missing or unreadable path.
+        fallback_reason = f"{inner_tool} failed: {exc}"
+        inner_tool = "echo"
+        inner_args = {"text": text}
         result = {"echo": inner_args}
-    elif inner_tool == "shell":
-        result = _tool_shell(inner_args)
-    elif inner_tool == "read_file":
-        result = _tool_read_file(inner_args)
-    elif inner_tool == "list_files":
-        result = _tool_list_files(inner_args)
-    elif inner_tool == "summarize":
-        result = _tool_summarize(inner_args)
-    else:
-        raise ValueError(f"classifier produced unknown tool: {inner_tool!r}")
+        trace.append({
+            "step": 2,
+            "tool": "fallback",
+            "summary": fallback_reason,
+        })
     trace.append({
-        "step": 2,
+        "step": len(trace) + 1,
         "tool": inner_tool,
         "summary": _trace_summary(inner_tool, result),
     })
@@ -316,18 +354,117 @@ def _tool_command(args: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, 
         "input": text,
         "chosen_tool": inner_tool,
         "chosen_args": inner_args,
-        "rationale": classification["rationale"],
+        "rationale": classification["rationale"]
+        + (f"; fell back to echo ({fallback_reason})" if fallback_reason else ""),
         "result": result,
     }, trace
 
 
 def _classify(text: str) -> dict[str, Any]:
-    """Tiny rule-based classifier. Deterministic, no LLM.
+    """Pick a tool for the input.
 
-    Order matters: the first matching rule wins. This keeps the trace
-    explainable in the UI ("classified as shell.whoami because the
-    input started with 'whoami'").
+    If LLM_BASE_URL + LLM_MODEL are configured, ask the LLM first and
+    accept any answer that names an allow-listed tool. Otherwise, or on
+    any LLM failure, fall through to the deterministic rule-based path
+    below. Both modes return the same shape: {tool, args, rationale}.
     """
+    if LLM_BASE_URL and LLM_MODEL:
+        llm = _classify_llm(text)
+        if llm is not None:
+            return llm
+    return _classify_rules(text)
+
+
+def _classify_llm(text: str) -> Optional[dict[str, Any]]:
+    """Ask an OpenAI-compatible chat endpoint to pick a tool.
+
+    Returns None on any failure so the caller falls back to rules. The
+    prompt names the allow-listed tools and asks for strict JSON; we
+    validate the shape before accepting it.
+    """
+    system = (
+        "You route a free-form user request to one of these tools and emit JSON only.\n"
+        "Tools:\n"
+        "- shell: run an allow-listed binary in {whoami, date, uname, pwd, echo}.\n"
+        "  args = {command: '<binary> [arg]'}\n"
+        "- read_file: read a file under /workspace. args = {path: '<rel>'}\n"
+        "- list_files: list a dir under /workspace. args = {path: '<rel>'}\n"
+        "- summarize: heuristic summary. args = {text: '<text>'}\n"
+        "- echo: return the input. args = {text: '<text>'}\n"
+        "Respond with exactly: {\"tool\": ..., \"args\": {...}, \"rationale\": \"...\"}"
+    )
+    headers = {"Content-Type": "application/json"}
+    if LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    try:
+        resp = httpx.post(
+            f"{LLM_BASE_URL}/chat/completions",
+            json={
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": text},
+                ],
+                "temperature": 0,
+                "max_tokens": 200,
+            },
+            headers=headers,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        content = body["choices"][0]["message"]["content"]
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, IndexError) as exc:
+        # KeyError/IndexError: missing dict keys / empty choices.
+        # TypeError: body or any nested level is not the expected type
+        # (e.g. resp.json() returns a list, or "choices" is None).
+        # ValueError: covers json decoding errors via httpx + a parent of
+        # JSONDecodeError. httpx.HTTPError covers connect/read/timeout/5xx.
+        logger.warning("LLM classify failed (%s); falling back to rules", exc)
+        return None
+    # Some OpenAI-compatible providers return null or a structured
+    # tool-calls payload as message.content; only the plain-string shape
+    # is parseable here, anything else degrades to the rules fallback.
+    if not isinstance(content, str):
+        logger.warning(
+            "LLM message.content is %s, not str; falling back to rules",
+            type(content).__name__,
+        )
+        return None
+    try:
+        # Some models wrap JSON in ```json fences. Strip them defensively.
+        stripped = content.strip()
+        if stripped.startswith("```"):
+            stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
+            stripped = re.sub(r"\s*```$", "", stripped)
+        parsed = json.loads(stripped)
+    except ValueError as exc:
+        logger.warning("LLM response not JSON (%s); falling back to rules", exc)
+        return None
+    # `parsed.get(...)` below assumes a JSON object; a list or scalar would
+    # AttributeError out and skip the rules fallback, defeating the
+    # graceful-degradation contract.
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "LLM JSON is %s, not object; falling back to rules",
+            type(parsed).__name__,
+        )
+        return None
+    tool = parsed.get("tool")
+    args = parsed.get("args")
+    if tool not in {"shell", "read_file", "list_files", "summarize", "echo"} \
+       or not isinstance(args, dict):
+        logger.warning("LLM returned bad shape %r; falling back to rules", parsed)
+        return None
+    return {
+        "tool": tool,
+        "args": args,
+        "rationale": parsed.get("rationale") or f"LLM ({LLM_MODEL}) chose {tool}",
+    }
+
+
+def _classify_rules(text: str) -> dict[str, Any]:
+    """Deterministic rule-based fallback. Order matters: first match wins."""
     low = text.lower().strip()
     # Direct shell verbs — match the start of the input against the allow-list.
     first_word = low.split()[0] if low.split() else ""

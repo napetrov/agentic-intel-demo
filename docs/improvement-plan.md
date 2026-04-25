@@ -29,6 +29,26 @@ What I could **not** run locally:
 - `scripts/apply-operator-chat-config.sh` / `scripts/setup-system-b-vllm.sh` — they `ssh` into a fixed host (`onedal-build`)
 - MinIO / Ollama image pulls — images live on Docker Hub, which the sandbox can't reach
 
+### Update (2026-04-25): no-Docker dev path closed several of these
+
+The original blocker — "MinIO image can't be pulled, so the artifact-backed
+path can't run locally" — is now bypassed. `scripts/dev-up.sh` brings up
+`moto[server]` on `:9000` as a drop-in S3-compatible substitute, plus the
+three FastAPI runtimes and a small static + `/api/*` proxy
+(`scripts/dev_web_proxy.py`) that mirrors `web-demo/nginx.conf`. The
+large-result path (`task_type=echo` >4KB → MinIO put → presigned URL →
+browser fetch) was verified end-to-end against `moto`. Tear down with
+`scripts/dev-down.sh`. State lives under `.dev-up/` (gitignored).
+
+What this gets us:
+- `git clone && ./scripts/dev-up.sh` works without any container runtime.
+- 47 → 55 unit tests (added probe + classifier-fallback + LLM-hook tests).
+- The `agent_invoke` "command" path no longer 5xx's on misclassified verbs;
+  it falls back to echo with a transparent trace entry.
+- The "Platform health" rail no longer lies. OpenClaw / LiteLLM / SambaNova
+  probes are honest via `GET /api/probe/{name}`; unconfigured probes show
+  a neutral `idle` dot instead of mirroring control-plane health.
+
 ---
 
 ## 2. Real bugs found
@@ -147,6 +167,7 @@ The web demo is 100% static narrative — useful as a storyboard, misleading as 
 - [low] Strip the hardcoded "SambaNova active", "tokens today: 24.8k" strings or drive them from a single `demoState` object at the top of `app.js` so they are obviously mock.
 - [low] `currentScenario` is set but `runDemoBtn` always renders the terminal-agent steps regardless — either branch the `steps` array on `currentScenario` or remove the ambiguity.
 - [medium] Optional `DEMO_LIVE=1` mode that `fetch`es a real `/health` on the offload-worker and lights the System B dot green when it answers. This is the smallest thing that turns the demo from slideware into a probe.
+- ✅ Honest probes for the "Platform health" rail. `runtimes/control-plane/app.py` now exposes `GET /probe/{openclaw,litellm,sambanova}` driven by env (`OPENCLAW_GATEWAY_URL`, `LITELLM_BASE_URL`, `SAMBANOVA_PROBE_URL`); `web-demo/app.js` consumes them and renders an `idle` (neutral) dot when a target isn't configured instead of falsely reporting OK.
 
 ---
 

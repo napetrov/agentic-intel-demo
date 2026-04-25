@@ -104,10 +104,99 @@ jobs:
           python-version: "3.12"
       - name: install agent-stub deps + pytest
         working-directory: runtimes/agent-stub
-        run: pip install -r requirements.txt httpx==0.28.1 pytest==8.3.5
+        run: pip install -r requirements.txt pytest==8.3.5
       - name: pytest
         working-directory: runtimes/agent-stub
         run: pytest -v
+
+  dev-web-proxy:
+    # Unit-tests scripts/dev_web_proxy.py (the no-Docker stand-in for
+    # nginx) with httpx.MockTransport. No real backend required; this
+    # closes a coverage gap on a script the demo entry path now relies on.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install proxy deps + pytest
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            pytest==8.3.5
+      - name: pytest
+        run: pytest -v scripts/tests
+
+  dev-up-smoke:
+    # Drive scripts/dev-up.sh end-to-end without Docker (moto[server]
+    # stands in for MinIO). This is the closest thing to a "user runs the
+    # demo locally" check we have, and catches regressions in the launch
+    # flow that the per-runtime unit tests can't see.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: bring up the no-Docker stack
+        run: bash scripts/dev-up.sh
+      - name: probe and exercise the stack
+        run: |
+          set -euxo pipefail
+          # Honest probes — openclaw is wired to the local agent-stub,
+          # the rest are unconfigured by design.
+          curl -sf http://127.0.0.1:8080/api/health
+          curl -sf http://127.0.0.1:8080/api/ready
+          curl -sf http://127.0.0.1:8080/api/probe/openclaw \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d=={"state":"ok","target":"openclaw"}, d'
+          curl -sf http://127.0.0.1:8080/api/probe/litellm \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d=={"state":"unconfigured"}, d'
+          # One shell scenario through the full chain (web-demo proxy ->
+          # control-plane -> offload-worker -> scenario script).
+          job=$(curl -sf -X POST http://127.0.0.1:8080/api/offload \
+            -H 'content-type: application/json' \
+            -d '{"task_type":"shell","payload":{"scenario":"terminal-agent"},"session_id":"ci"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+          curl -sf "http://127.0.0.1:8080/api/offload/$job" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["status"]=="completed", d'
+          # The agent_invoke fallback path: a misclassified verb must
+          # echo back, never 5xx.
+          curl -sf -X POST http://127.0.0.1:8080/api/offload \
+            -H 'content-type: application/json' \
+            -d '{"task_type":"agent_invoke","payload":{"tool":"command","args":{"text":"list files in workspace"}},"session_id":"ci"}' \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["status"]=="completed", d'
+          # Large echo exercises the moto-as-MinIO put + presigned URL +
+          # browser fetch path that the docker-compose stack uses MinIO for.
+          payload=$(python3 -c 'import json; print(json.dumps({"task_type":"echo","payload":{"big":"X"*6000},"session_id":"ci"}))')
+          job=$(curl -sf -X POST http://127.0.0.1:8080/api/offload \
+            -H 'content-type: application/json' -d "$payload" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+          ref=$(curl -sf "http://127.0.0.1:8080/api/offload/$job" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["result_ref"])')
+          [ -n "$ref" ] && [ "$ref" != "None" ] || (echo "no result_ref produced"; exit 1)
+          url=$(curl -sf "http://127.0.0.1:8080/api/artifacts/$ref" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')
+          # Capture the artifact body to a file rather than piping curl
+          # into `head | grep`. With `set -o pipefail`, a downstream
+          # head/grep that closes its stdin early sends SIGPIPE to curl,
+          # which then exits 23 ("Failed writing data") and propagates
+          # as the pipeline's failure even though both head and grep
+          # succeeded. Capturing once + testing the file avoids that.
+          curl -sf "$url" -o /tmp/artifact.json
+          head -c 80 /tmp/artifact.json
+          grep -q '"echo"' /tmp/artifact.json
+      - name: dump logs on failure
+        if: failure()
+        run: |
+          echo "=== logs ==="
+          for f in .dev-up/logs/*.log; do
+            echo "----- $f -----"; tail -n 100 "$f" || true
+          done
+      - name: tear down
+        if: always()
+        run: bash scripts/dev-down.sh || true
 
   tier1-scenario-slice:
     # End-to-end Tier 1 slice on a single runner (no k8s): exercises the

@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Point the workspace at the repo root so read_file/list_files have real
 # files to work against without needing a writable scratch dir. Use direct
 # assignment (not setdefault) so an externally-set AGENT_WORKSPACE_DIR can't
@@ -18,6 +20,19 @@ import app as app_module
 from app import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _force_rule_based_classifier(monkeypatch):
+    """Disable the LLM hook for every test by default.
+
+    A stray LLM_BASE_URL / LLM_MODEL in the developer's shell would
+    otherwise route the `command` classifier through the LLM path and
+    make these tests network-coupled and non-deterministic. Tests that
+    specifically exercise the LLM hook re-enable it via monkeypatch
+    inside the test body."""
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "")
 
 
 def test_health():
@@ -192,3 +207,231 @@ def test_unknown_tool_errors():
     body = r.json()
     assert body["status"] == "error"
     assert "unknown tool" in body["error"]
+
+
+def test_command_falls_back_when_inner_tool_errors():
+    # "list <path>" routes to list_files, which raises on a non-existent
+    # path. Without the soft fallback that would surface as a hard error
+    # to the demo UI; with the fallback the command echoes the input and
+    # the trace explains what went wrong.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "command", "args": {"text": "list files in workspace"}},
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    assert body["result"]["chosen_tool"] == "echo"
+    assert "fell back to echo" in body["result"]["rationale"]
+    assert any(t["tool"] == "fallback" for t in body["trace"])
+
+
+def test_classify_llm_returns_none_when_unconfigured(monkeypatch):
+    # The LLM hook only runs when LLM_BASE_URL+LLM_MODEL are set; with both
+    # empty, _classify must use the rule-based path and not touch httpx.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "")
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"
+
+
+def test_classify_llm_used_when_configured(monkeypatch):
+    # With LLM env set, _classify_llm() should be called and its choice
+    # accepted as long as it returns an allow-listed tool. Mock the inner
+    # function rather than httpx so this test stays fast and offline.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+    monkeypatch.setattr(
+        app_module,
+        "_classify_llm",
+        lambda text: {
+            "tool": "summarize",
+            "args": {"text": text},
+            "rationale": "stubbed LLM",
+        },
+    )
+    out = app_module._classify("anything goes")
+    assert out["tool"] == "summarize"
+    assert out["rationale"] == "stubbed LLM"
+
+
+def test_classify_llm_falls_back_on_failure(monkeypatch):
+    # When the LLM hook returns None (network/bad-shape/etc), _classify
+    # must fall through to the rule-based classifier so the demo keeps
+    # working offline.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+    monkeypatch.setattr(app_module, "_classify_llm", lambda text: None)
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"
+
+
+def test_classify_llm_handles_non_string_content(monkeypatch):
+    # Some OpenAI-compatible providers return null or a structured payload
+    # as message.content. Calling .strip() on those raises AttributeError,
+    # which would bypass the rules fallback if not handled — regression
+    # guard for that path.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+
+    class _FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": None}}]}
+
+    monkeypatch.setattr(app_module.httpx, "post", lambda *a, **kw: _FakeResp())
+    assert app_module._classify_llm("anything") is None
+    # And the outer _classify still falls through to the rule-based path.
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"
+
+
+def _stub_llm_response(monkeypatch, content):
+    """Helper to stub httpx.post with a chat.completions-shaped response
+    whose message.content is exactly `content` (str or otherwise)."""
+    class _FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+    monkeypatch.setattr(app_module.httpx, "post", lambda *a, **kw: _FakeResp())
+
+
+def test_classify_llm_happy_path(monkeypatch):
+    # Real models return a JSON string in message.content; the hook must
+    # parse it and adopt the choice when the tool is allow-listed.
+    _stub_llm_response(
+        monkeypatch,
+        '{"tool": "summarize", "args": {"text": "hi"}, "rationale": "it"}',
+    )
+    out = app_module._classify_llm("anything")
+    assert out is not None
+    assert out["tool"] == "summarize"
+    assert out["args"] == {"text": "hi"}
+    assert out["rationale"] == "it"
+
+
+def test_classify_llm_strips_code_fences(monkeypatch):
+    # Many models wrap JSON in ```json ... ``` even when explicitly told
+    # not to. The hook strips that defensively before json.loads.
+    _stub_llm_response(
+        monkeypatch,
+        '```json\n{"tool":"echo","args":{"text":"x"},"rationale":"y"}\n```',
+    )
+    out = app_module._classify_llm("anything")
+    assert out is not None
+    assert out["tool"] == "echo"
+
+
+def test_classify_llm_rejects_non_object_json(monkeypatch):
+    # JSON list/scalar must be rejected, not crash on parsed.get().
+    _stub_llm_response(monkeypatch, '["echo", "args"]')
+    assert app_module._classify_llm("anything") is None
+
+
+def test_classify_llm_rejects_non_allowlisted_tool(monkeypatch):
+    # Hallucinated tool name must fall back to None so the outer
+    # _classify() takes the rule-based path.
+    _stub_llm_response(
+        monkeypatch,
+        '{"tool":"format-disk","args":{},"rationale":"why not"}',
+    )
+    assert app_module._classify_llm("anything") is None
+
+
+def test_classify_llm_rejects_non_object_args(monkeypatch):
+    # `args` must be a dict; a string is bad shape.
+    _stub_llm_response(
+        monkeypatch,
+        '{"tool":"echo","args":"not-a-dict","rationale":"y"}',
+    )
+    assert app_module._classify_llm("anything") is None
+
+
+def test_classify_llm_handles_non_json_content(monkeypatch):
+    # Free-text content (no JSON) must be rejected without escaping the
+    # ValueError out of _classify_llm.
+    _stub_llm_response(monkeypatch, "Sure, here's a plan: do X then Y.")
+    assert app_module._classify_llm("anything") is None
+
+
+def test_classify_llm_handles_malformed_top_level_payload(monkeypatch):
+    # Some misbehaving providers return 200 with a top-level list or
+    # null instead of the OpenAI-shaped {choices: [...]} envelope. The
+    # subscript chain `body["choices"][0]["message"]["content"]` then
+    # raises TypeError, which must land in the rules-fallback path
+    # rather than escape as a 500.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+
+    for bad_body in ([], "not a dict", {"choices": None}, {"choices": [{"message": "str"}]}):
+        class _R:
+            _b = bad_body
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._b
+
+        # Instantiate once and capture in the closure rather than passing
+        # `_R()` as a default arg (Ruff B008: function call in lambda
+        # default), and so each iteration's monkeypatch sees the latest
+        # bad_body via fresh class definition.
+        resp = _R()
+        monkeypatch.setattr(app_module.httpx, "post", lambda *a, **kw: resp)
+        assert app_module._classify_llm("anything") is None, bad_body
+
+
+def test_command_falls_back_when_shell_inner_fails():
+    # `whoami | wc -l` classifies as shell (first_word=whoami is in the
+    # allow-list) but the shell tool rejects metacharacters with a
+    # ValueError. Without the soft fallback, that would surface as a
+    # hard error to the demo UI; with it, the input echoes back and the
+    # trace explains the rejection.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "command", "args": {"text": "whoami | wc -l"}},
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    assert body["result"]["chosen_tool"] == "echo"
+    assert "fell back to echo" in body["result"]["rationale"]
+    assert any(t["tool"] == "fallback" for t in body["trace"])
+
+
+def test_command_falls_back_when_read_path_missing():
+    # "read <path>" classifies into read_file; a missing path raises
+    # ValueError("not a file ..."), which must land in the soft echo
+    # fallback rather than a hard error.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "command", "args": {"text": "read does/not/exist.txt"}},
+    )
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["result"]["chosen_tool"] == "echo"
+    assert any(t["tool"] == "fallback" for t in body["trace"])
+
+
+def test_tool_command_fallback_handles_oserror(monkeypatch):
+    # Inner tools may raise OSError subclasses (PermissionError,
+    # FileNotFoundError, IsADirectoryError); they must be funneled into
+    # the same echo fallback as ValueError, not bubble up as 500s.
+    def _raise(*a, **kw):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(app_module, "_tool_read_file", _raise)
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "command", "args": {"text": "read README.md"}},
+    )
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["result"]["chosen_tool"] == "echo"
+    assert "Permission denied" in body["result"]["rationale"]

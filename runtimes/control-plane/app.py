@@ -20,6 +20,7 @@ import threading
 import time
 import uuid
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import boto3
 import httpx
@@ -52,6 +53,49 @@ MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "")
 MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "demo-artifacts")
 PRESIGN_EXPIRES_SECONDS = _parse_env_number("PRESIGN_EXPIRES_SECONDS", "900", int)
+
+# Optional probe targets surfaced via /probe/{name}. Each is a base URL or
+# health URL; when unset, the probe returns state="unconfigured" so the UI
+# can show a neutral "not wired" indicator instead of falsely reporting OK.
+# Keys here match the data-health attribute values in web-demo/index.html.
+PROBE_TARGETS: dict[str, str] = {
+    "openclaw": os.environ.get("OPENCLAW_GATEWAY_URL", "").rstrip("/"),
+    "litellm": os.environ.get("LITELLM_BASE_URL", "").rstrip("/"),
+    "sambanova": os.environ.get("SAMBANOVA_PROBE_URL", "").rstrip("/"),
+}
+# Path appended to the base URL when probing. OpenClaw exposes /health (the
+# agent-stub stand-in does too); LiteLLM exposes /health/liveliness in 1.x
+# but the cheap, auth-free check is just `/`. Override per-target if needed.
+PROBE_PATHS: dict[str, str] = {
+    "openclaw": os.environ.get("OPENCLAW_PROBE_PATH", "/health"),
+    "litellm": os.environ.get("LITELLM_PROBE_PATH", "/health/liveliness"),
+    "sambanova": os.environ.get("SAMBANOVA_PROBE_PATH", "/"),
+}
+PROBE_TIMEOUT_SECONDS = _parse_env_number("PROBE_TIMEOUT_SECONDS", "2.5", float)
+
+
+def _safe_probe_target(url: str) -> str:
+    """Strip userinfo, query, and fragment from a probe URL before it
+    leaves the control plane. Operators sometimes embed credentials or
+    api-keys in env-configured URLs (e.g. http://user:token@host/...);
+    the probe response is consumed by browsers via /api/probe/{name},
+    so we don't want those parts on the wire.
+
+    Returns "" on malformed input so the caller can substitute a
+    non-leaking identifier (the probe's logical name) instead.
+    """
+    try:
+        parts = urlsplit(url)
+        # parts.port raises ValueError for non-numeric or out-of-range
+        # port specifications (e.g. "host:abc", "host:99999"); guard so
+        # bad config doesn't 500 the probe handler.
+        port = parts.port
+    except ValueError:
+        return ""
+    host = parts.hostname or ""
+    if port is not None:
+        host = f"{host}:{port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 _jobs: dict[str, dict[str, Any]] = {}
@@ -117,6 +161,47 @@ class ArtifactRef(BaseModel):
 def health() -> dict[str, str]:
     """Liveness probe. Returns 200 as long as the process is up."""
     return {"status": "ok"}
+
+
+@app.get("/probe/{name}")
+def probe_dependency(name: str) -> dict[str, Any]:
+    """Best-effort liveness probe of a named external dependency.
+
+    Used by the web demo's "Platform health" rail so each indicator
+    reflects something real instead of mirroring control-plane health.
+    Returns {state, target?, detail?}; states:
+      ok            target answered 2xx
+      down          target unreachable / non-2xx
+      unconfigured  no target URL is configured for this name
+    """
+    if name not in PROBE_TARGETS:
+        raise HTTPException(status_code=404, detail=f"unknown probe {name!r}")
+    base = PROBE_TARGETS[name]
+    if not base:
+        return {"state": "unconfigured"}
+    url = base + PROBE_PATHS.get(name, "/health")
+    # The probe's `target` field is consumed by the browser, so we surface
+    # only the probe's logical name. The full URL stays in server-side
+    # logs for the operator. _safe_probe_target() is still computed so a
+    # future caller (e.g. an admin endpoint) can opt into a sanitized
+    # URL instead of the bare name.
+    _safe_probe_target(url)
+    try:
+        r = httpx.get(url, timeout=PROBE_TIMEOUT_SECONDS)
+        r.raise_for_status()
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        # httpx.HTTPError covers connect/read/timeout/non-2xx;
+        # httpx.InvalidURL is a sibling (NOT a subclass) and triggers on
+        # malformed URLs; ValueError can leak from urlsplit/.port for
+        # bad port syntax. Bad config must surface as state=down, never
+        # as a 500 from this handler.
+        logger.warning("probe %s failed: url=%s err=%s", name, url, exc)
+        return {
+            "state": "down",
+            "target": name,
+            "detail": type(exc).__name__,
+        }
+    return {"state": "ok", "target": name}
 
 
 @app.get("/ready")
