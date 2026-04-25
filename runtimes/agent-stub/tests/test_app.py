@@ -345,6 +345,29 @@ def test_classify_llm_handles_non_json_content(monkeypatch):
     assert app_module._classify_llm("anything") is None
 
 
+def test_classify_llm_handles_malformed_top_level_payload(monkeypatch):
+    # Some misbehaving providers return 200 with a top-level list or
+    # null instead of the OpenAI-shaped {choices: [...]} envelope. The
+    # subscript chain `body["choices"][0]["message"]["content"]` then
+    # raises TypeError, which must land in the rules-fallback path
+    # rather than escape as a 500.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+
+    for bad_body in ([], "not a dict", {"choices": None}, {"choices": [{"message": "str"}]}):
+        class _R:
+            _b = bad_body
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._b
+
+        monkeypatch.setattr(app_module.httpx, "post", lambda *a, _r=_R(), **kw: _r)
+        assert app_module._classify_llm("anything") is None, bad_body
+
+
 def test_command_falls_back_when_shell_inner_fails():
     # `whoami | wc -l` classifies as shell (first_word=whoami is in the
     # allow-list) but the shell tool rejects metacharacters with a

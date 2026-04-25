@@ -414,7 +414,12 @@ def _classify_llm(text: str) -> Optional[dict[str, Any]]:
         resp.raise_for_status()
         body = resp.json()
         content = body["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, KeyError, ValueError, IndexError) as exc:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, IndexError) as exc:
+        # KeyError/IndexError: missing dict keys / empty choices.
+        # TypeError: body or any nested level is not the expected type
+        # (e.g. resp.json() returns a list, or "choices" is None).
+        # ValueError: covers json decoding errors via httpx + a parent of
+        # JSONDecodeError. httpx.HTTPError covers connect/read/timeout/5xx.
         logger.warning("LLM classify failed (%s); falling back to rules", exc)
         return None
     # Some OpenAI-compatible providers return null or a structured
