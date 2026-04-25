@@ -95,6 +95,20 @@ jobs:
         working-directory: runtimes/control-plane
         run: pytest -v
 
+  agent-stub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install agent-stub deps + pytest
+        working-directory: runtimes/agent-stub
+        run: pip install -r requirements.txt httpx==0.28.1 pytest==8.3.5
+      - name: pytest
+        working-directory: runtimes/agent-stub
+        run: pytest -v
+
   tier1-scenario-slice:
     # End-to-end Tier 1 slice on a single runner (no k8s): exercises the
     # market_research scenario contract — control-plane POST /offload ->

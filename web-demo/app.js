@@ -753,6 +753,248 @@ runDemoBtn.addEventListener('click', () => {
   }
 });
 
+// ---- agent command form ------------------------------------------------
+
+const agentForm = document.getElementById('agent-command-form');
+const agentInput = document.getElementById('agent-command-input');
+const agentSubmit = document.getElementById('agent-command-submit');
+const agentStatusEl = document.getElementById('agent-command-status');
+const agentSubmitOriginalLabel = agentSubmit ? agentSubmit.textContent : 'Run agent command';
+
+function setAgentStatus(text, kind) {
+  if (!agentStatusEl) return;
+  agentStatusEl.textContent = text || '';
+  agentStatusEl.dataset.kind = kind || '';
+}
+
+function appendAgentLog(text) {
+  if (!commandLogEl) return;
+  commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + text;
+  commandLogEl.scrollTop = commandLogEl.scrollHeight;
+}
+
+function renderAgentResult(payload) {
+  // payload is the agent-stub /tools/invoke response embedded under
+  // status.result.response (set by offload-worker._dispatch_agent_invoke).
+  if (!payload || typeof payload !== 'object') {
+    appendAgentLog(`[agent] empty payload`);
+    return;
+  }
+  if (payload.status === 'error') {
+    appendAgentLog(`[agent error] ${payload.error || 'unknown error'}`);
+    return;
+  }
+  const elapsed = typeof payload.elapsed_ms === 'number' ? `${payload.elapsed_ms} ms` : '?';
+  appendAgentLog(`[agent ok] tool=${payload.tool} elapsed=${elapsed}`);
+  if (Array.isArray(payload.trace) && payload.trace.length) {
+    payload.trace.forEach((step) => {
+      appendAgentLog(`  [trace ${step.step}] ${step.tool}: ${step.summary}`);
+    });
+  }
+  const result = payload.result;
+  if (!result) return;
+
+  // The `command` tool wraps an inner tool result. Render the inner one.
+  const inner = result.result && result.chosen_tool ? result.result : result;
+  const innerTool = result.chosen_tool || payload.tool;
+  if (result.chosen_tool) {
+    appendAgentLog(`  [agent picked] ${result.chosen_tool} (${result.rationale})`);
+  }
+  if (innerTool === 'shell') {
+    appendAgentLog(`  $ ${(inner.argv || []).join(' ')}  (cwd=${inner.cwd}, exit=${inner.exit_code})`);
+    if (inner.stdout) appendAgentLog(`--- stdout ---\n${inner.stdout.trimEnd()}`);
+    if (inner.stderr) appendAgentLog(`--- stderr ---\n${inner.stderr.trimEnd()}`);
+  } else if (innerTool === 'read_file') {
+    appendAgentLog(`  read ${inner.path} (${inner.bytes} bytes${inner.truncated ? ', truncated' : ''})`);
+    appendAgentLog(`--- content ---\n${(inner.content || '').trimEnd()}`);
+  } else if (innerTool === 'list_files') {
+    appendAgentLog(`  list ${inner.root} (${(inner.entries || []).length} entries)`);
+    (inner.entries || []).forEach((e) => {
+      const sz = e.size === null || e.size === undefined ? '' : ` ${e.size}B`;
+      appendAgentLog(`   - ${e.kind === 'dir' ? 'd' : 'f'} ${e.name}${sz}`);
+    });
+  } else if (innerTool === 'summarize') {
+    appendAgentLog(`  summary of ${inner.input_chars} chars`);
+    appendAgentLog(`  first sentence: ${inner.first_sentence}`);
+    const top = (inner.top_words || []).map((w) => `${w.word}(${w.count})`).join(', ');
+    if (top) appendAgentLog(`  top words: ${top}`);
+  } else if (innerTool === 'echo') {
+    appendAgentLog(`  echo: ${JSON.stringify(inner.echo || inner, null, 2)}`);
+  } else {
+    appendAgentLog(JSON.stringify(inner, null, 2));
+  }
+}
+
+async function runAgentCommand(text) {
+  if (!liveBackendAvailable) {
+    setAgentStatus('Backend not available — agent command requires the local stack to be up.', 'warn');
+    return;
+  }
+  const sessionId = `web-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  setAgentStatus(`submitting "${text}"…`, 'pending');
+  appendAgentLog(`$ POST /api/offload {task_type:"agent_invoke", tool:"command", text:${JSON.stringify(text)}}`);
+
+  // Deadline guards the entire submit+poll flow. Each fetchJson call gets
+  // an explicit timeout derived from the remaining budget; without this,
+  // fetchJson's 60s default could let one stalled request blow past the
+  // advertised 30s window.
+  const deadline = Date.now() + 30_000;
+  const remainingMs = () => Math.max(0, deadline - Date.now());
+
+  let submit;
+  try {
+    submit = await fetchJson(`${API_BASE}/offload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      timeoutMs: remainingMs(),
+      body: JSON.stringify({
+        task_type: 'agent_invoke',
+        payload: { tool: 'command', args: { text } },
+        session_id: sessionId,
+      }),
+    });
+  } catch (err) {
+    setAgentStatus(`submit failed: ${err.message}`, 'error');
+    appendAgentLog(`[error] submit failed: ${err.message}`);
+    return;
+  }
+
+  appendAgentLog(`job_id=${submit.job_id} status=${submit.status}`);
+
+  // The control-plane forwards synchronously, so the first GET typically
+  // already returns terminal. Poll briefly to stay correct if that ever
+  // becomes async.
+  let status = null;
+  while (Date.now() < deadline) {
+    const callTimeout = remainingMs();
+    if (callTimeout <= 0) break;
+    try {
+      status = await fetchJson(
+        `${API_BASE}/offload/${submit.job_id}`,
+        { timeoutMs: callTimeout }
+      );
+    } catch (err) {
+      setAgentStatus(`poll failed: ${err.message}`, 'error');
+      appendAgentLog(`[error] poll failed: ${err.message}`);
+      return;
+    }
+    if (status.status === 'completed' || status.status === 'error') break;
+    await sleep(300);
+  }
+
+  if (!status || (status.status !== 'completed' && status.status !== 'error')) {
+    setAgentStatus('agent did not respond within 30s', 'error');
+    appendAgentLog(`[error] agent did not respond within 30s`);
+    return;
+  }
+  if (status.status === 'error') {
+    setAgentStatus(`worker error: ${status.error || 'unknown'}`, 'error');
+    appendAgentLog(`[worker error] ${status.error || 'unknown'}`);
+    return;
+  }
+
+  // offload-worker's agent_invoke wraps the gateway response under
+  // result.response (or .response_text if the body wasn't JSON). When the
+  // wrapped response is larger than the worker's inline cutoff (4 KB) it's
+  // pushed to MinIO and we get result_ref instead of result — common for
+  // `read <large file>` or verbose summaries.
+  let agentPayload = null;
+  if (status.result) {
+    const wrapper = status.result;
+    agentPayload = wrapper.response || wrapper.response_text || wrapper;
+  } else if (status.result_ref) {
+    agentPayload = await fetchArtifactPayload(status.result_ref);
+    if (!agentPayload) {
+      // fetchArtifactPayload already logged the failure mode; surface a
+      // clear final status instead of falsely claiming "agent returned ok".
+      setAgentStatus(
+        `agent finished, but response is stored as artifact ${status.result_ref} (fetch failed)`,
+        'warn'
+      );
+      return;
+    }
+  } else {
+    appendAgentLog(`[agent] empty response (no inline result, no artifact ref)`);
+    setAgentStatus(`agent returned no payload (job ${submit.job_id})`, 'warn');
+    return;
+  }
+
+  renderAgentResult(agentPayload);
+
+  // Surface gateway-level errors honestly: when the agent itself reported
+  // status="error" (e.g. read on a missing file), the badge must reflect
+  // that. The log already shows the error; don't end with "agent returned ok".
+  const isAgentError = agentPayload && agentPayload.status === 'error';
+  const chosen = agentPayload && agentPayload.result && agentPayload.result.chosen_tool;
+  if (isAgentError) {
+    setAgentStatus(
+      `agent error: ${agentPayload.error || 'see log'} (job ${submit.job_id})`,
+      'error'
+    );
+  } else {
+    setAgentStatus(
+      chosen ? `agent ran ${chosen} (job ${submit.job_id})` : `agent returned ok (job ${submit.job_id})`,
+      'ok'
+    );
+  }
+}
+
+async function fetchArtifactPayload(ref) {
+  // Two hops: control-plane presigns a MinIO URL, then we fetch the JSON
+  // from MinIO directly. The MinIO fetch crosses origins (web on :8080,
+  // MinIO on :9000); if CORS isn't configured the browser will block it,
+  // which is why we degrade to a clear status message instead of crashing.
+  appendAgentLog(`[agent result stored as artifact ${ref}; fetching…]`);
+  // Don't encodeURIComponent: the worker constructs refs as
+  // `offload/<session>/<task>.json` from server-controlled alphanumerics
+  // and the nginx /api/artifacts/<ref> location accepts raw `/`. Encoding
+  // here would turn `/` into `%2F`, which neither the regex (no `%` class)
+  // nor nginx's variable-substitution path handling round-trips cleanly.
+  let presigned;
+  try {
+    presigned = await fetchJson(`${API_BASE}/artifacts/${ref}`);
+  } catch (err) {
+    appendAgentLog(`[error] artifact presign failed: ${err.message}`);
+    return null;
+  }
+  try {
+    const r = await fetch(presigned.url);
+    if (!r.ok) {
+      appendAgentLog(`[error] artifact fetch HTTP ${r.status}`);
+      return null;
+    }
+    const wrapper = await r.json();
+    return wrapper.response || wrapper.response_text || wrapper;
+  } catch (err) {
+    appendAgentLog(`[error] artifact fetch failed: ${err.message} (CORS on MinIO?)`);
+    appendAgentLog(`  retrieve manually: curl "${presigned.url}"`);
+    return null;
+  }
+}
+
+if (agentForm) {
+  agentForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const text = (agentInput.value || '').trim();
+    if (!text) {
+      setAgentStatus('Type a command first.', 'warn');
+      return;
+    }
+    if (!liveBackendAvailable) {
+      setAgentStatus('Backend not detected — start docker compose to enable agent commands.', 'warn');
+      return;
+    }
+    agentSubmit.disabled = true;
+    agentSubmit.textContent = 'Running…';
+    try {
+      await runAgentCommand(text);
+    } finally {
+      agentSubmit.disabled = false;
+      agentSubmit.textContent = agentSubmitOriginalLabel;
+    }
+  });
+}
+
 function sleep(ms) {
   return new Promise((res) => setTimeout(res, ms));
 }
