@@ -51,6 +51,13 @@ BASE_URL=http://localhost:8080 npx playwright test
 Use Tier 0 for audiences who care about the scenario catalog and UX, not
 the backend.
 
+> **Tier 0 caveat — the "Agent command" panel.** The static page has no
+> `/api/*` proxy, so the Platform health rail stays "probing" and the
+> Agent command panel renders "Backend not detected". That panel needs
+> Tier 1 (the `docker compose up --build` stack, or `scripts/dev-up.sh`
+> when registries are blocked). Same for the "Run demo" button's live
+> backend mode — Tier 0 falls back to the scripted walkthrough.
+
 ## Tier 1 — Local services
 
 **Goal:** exercise the System A → System B offload path end-to-end —

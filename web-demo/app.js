@@ -827,7 +827,7 @@ function renderAgentResult(payload) {
 
 async function runAgentCommand(text) {
   if (!liveBackendAvailable) {
-    setAgentStatus('Backend not available — agent command requires the local stack to be up.', 'warn');
+    setAgentStatus('Backend not available — agent command requires the local stack to be up (`docker compose up --build` or `scripts/dev-up.sh`).', 'warn');
     return;
   }
   const sessionId = `web-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -981,7 +981,7 @@ if (agentForm) {
       return;
     }
     if (!liveBackendAvailable) {
-      setAgentStatus('Backend not detected — start docker compose to enable agent commands.', 'warn');
+      setAgentStatus('Backend not detected — run `docker compose up --build` (or `scripts/dev-up.sh` if container registries are blocked) to enable agent commands.', 'warn');
       return;
     }
     agentSubmit.disabled = true;
