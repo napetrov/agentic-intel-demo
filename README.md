@@ -85,7 +85,10 @@ OpenWebUI overlays add `3000` / `3030`).
 Verify the stack came up before clicking through the UI:
 
 ```bash
-docker compose ps                      # all services should be "healthy"
+docker compose ps                      # agent-stub / offload-worker / control-plane
+                                       # should be "healthy"; minio is "running" (no
+                                       # healthcheck) and minio-init exits 0 after
+                                       # creating the bucket
 curl -fsS http://localhost:8080/api/health   # control-plane via the nginx /api proxy
 curl -fsS http://localhost:8080/api/ready    # 200 once dependencies are wired
 ```
