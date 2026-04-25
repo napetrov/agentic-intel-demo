@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Service Views — Agentic Intel Demo (Mock)</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      /* Page-local layout: stacked browser-window mocks. Kept inline so
+         styles.css (tested via Playwright) stays untouched. */
+      .sv-main { padding: 28px; max-width: 1200px; margin: 0 auto; }
+      .sv-hero { padding: 24px; margin-bottom: 22px; }
+      .sv-hero h2 { margin-bottom: 8px; }
+      .sv-hero p { color: var(--muted); }
+      .sv-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        color: var(--cyan);
+        text-decoration: none;
+      }
+      .sv-back:hover { text-decoration: underline; }
+      .sv-grid {
+        display: grid;
+        gap: 22px;
+      }
+      .sv-section-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: .12em;
+        color: var(--cyan);
+        margin: 4px 0 10px;
+      }
+      .sv-section-blurb {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+        margin-bottom: 12px;
+      }
+
+      /* Browser window chrome */
+      .sv-window {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .sv-titlebar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: rgba(3,8,16,.65);
+        border-bottom: 1px solid var(--line);
+      }
+      .sv-dots { display: inline-flex; gap: 6px; }
+      .sv-dots span {
+        width: 11px; height: 11px; border-radius: 999px;
+        background: rgba(255,255,255,.18);
+      }
+      .sv-dots span:nth-child(1) { background: #ff6058; }
+      .sv-dots span:nth-child(2) { background: #ffbd2e; }
+      .sv-dots span:nth-child(3) { background: #28c941; }
+      .sv-url {
+        flex: 1;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--muted);
+        background: rgba(255,255,255,.04);
+        border: 1px solid var(--line);
+        padding: 5px 10px;
+        border-radius: 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sv-tag {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--cyan);
+        border: 1px solid rgba(69,226,213,.3);
+        padding: 3px 8px;
+        border-radius: 999px;
+      }
+      .sv-tag.optional {
+        color: #ffc15c;
+        border-color: rgba(255,193,92,.3);
+      }
+      .sv-body { padding: 18px; }
+
+      /* MinIO console mock */
+      .minio-shell { display: grid; grid-template-columns: 200px 1fr; gap: 0; min-height: 320px; }
+      .minio-side {
+        border-right: 1px solid var(--line);
+        padding: 14px 12px;
+        background: rgba(0,0,0,.18);
+      }
+      .minio-side .brand {
+        font-weight: 800; letter-spacing: .04em; color: #c8102e;
+        font-size: 14px; margin-bottom: 14px;
+      }
+      .minio-side ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+      .minio-side li {
+        padding: 7px 10px; font-size: 13px; color: var(--muted);
+        border-radius: 8px; cursor: default;
+      }
+      .minio-side li.active {
+        color: var(--text); background: rgba(85,168,255,.12);
+        border: 1px solid rgba(85,168,255,.3);
+      }
+      .minio-content { padding: 14px 16px; }
+      .minio-crumbs {
+        font: 12px/1.4 ui-monospace, Menlo, monospace;
+        color: var(--muted); margin-bottom: 10px;
+      }
+      .minio-crumbs strong { color: var(--text); }
+      .minio-table {
+        width: 100%; border-collapse: collapse; font-size: 13px;
+      }
+      .minio-table th, .minio-table td {
+        text-align: left; padding: 9px 8px;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+      }
+      .minio-table th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .minio-table td.mono { font-family: ui-monospace, Menlo, monospace; color: #cfe2ff; }
+      .minio-table td.size { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .minio-pill {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        font-size: 11px; border: 1px solid var(--line);
+      }
+      .minio-pill.csv { color: #45e2d5; border-color: rgba(69,226,213,.35); }
+      .minio-pill.png { color: #ffc15c; border-color: rgba(255,193,92,.35); }
+      .minio-pill.txt { color: #cbe6ff; border-color: rgba(85,168,255,.35); }
+      .minio-pill.json { color: #c0a8ff; border-color: rgba(192,168,255,.35); }
+
+      /* Flowise canvas mock */
+      .flowise-canvas {
+        position: relative;
+        height: 320px;
+        background:
+          radial-gradient(circle at 20% 30%, rgba(85,168,255,.06), transparent 40%),
+          repeating-linear-gradient(0deg, rgba(255,255,255,.04) 0 1px, transparent 1px 24px),
+          repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 1px, transparent 1px 24px);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .fl-node {
+        position: absolute; min-width: 150px; padding: 10px 12px;
+        background: var(--panel-2); border: 1px solid var(--line);
+        border-radius: 10px; font-size: 12px;
+        box-shadow: 0 8px 22px rgba(0,0,0,.4);
+      }
+      .fl-node strong { display: block; font-size: 12px; margin-bottom: 4px; }
+      .fl-node .fl-meta { color: var(--muted); font-size: 11px; }
+      .fl-node.in    { border-left: 3px solid var(--blue); }
+      .fl-node.llm   { border-left: 3px solid var(--cyan); }
+      .fl-node.tool  { border-left: 3px solid var(--green); }
+      .fl-node.out   { border-left: 3px solid var(--orange); }
+      .fl-edge {
+        position: absolute; height: 2px;
+        background: linear-gradient(90deg, rgba(69,226,213,.6), rgba(85,168,255,.2));
+      }
+      .fl-toolbar {
+        display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+      }
+      .fl-btn {
+        font-size: 12px; padding: 6px 10px; border-radius: 8px;
+        border: 1px solid var(--line); background: rgba(255,255,255,.03);
+        color: var(--muted);
+      }
+      .fl-btn.primary { background: linear-gradient(135deg, var(--blue), var(--cyan)); color: #04101c; border: 0; font-weight: 700; }
+
+      /* LiteLLM dashboard mock */
+      .ll-grid {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+        margin-bottom: 14px;
+      }
+      .ll-stat {
+        padding: 12px 14px; border: 1px solid var(--line);
+        border-radius: 12px; background: rgba(255,255,255,.03);
+      }
+      .ll-stat .ll-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .ll-stat .ll-val { font-size: 20px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+      .ll-stat .ll-delta { font-size: 11px; color: var(--green); }
+      .ll-table {
+        width: 100%; border-collapse: collapse; font-size: 13px;
+      }
+      .ll-table th, .ll-table td {
+        text-align: left; padding: 9px 10px;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+      }
+      .ll-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+      .ll-bar {
+        position: relative; height: 8px; border-radius: 999px;
+        background: rgba(255,255,255,.05); overflow: hidden;
+        min-width: 120px;
+      }
+      .ll-bar > span {
+        position: absolute; left: 0; top: 0; bottom: 0;
+        background: linear-gradient(90deg, var(--blue), var(--cyan));
+      }
+      .ll-route { font-family: ui-monospace, Menlo, monospace; color: #cfe2ff; }
+
+      /* OpenWebUI chat mock */
+      .ow-shell { display: grid; grid-template-columns: 200px 1fr; min-height: 320px; }
+      .ow-side {
+        border-right: 1px solid var(--line);
+        padding: 14px 12px; background: rgba(0,0,0,.18);
+      }
+      .ow-side .ow-model {
+        font-size: 12px; color: var(--muted); margin-bottom: 8px;
+      }
+      .ow-side .ow-model strong { color: var(--text); display: block; font-size: 13px; }
+      .ow-side ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+      .ow-side li {
+        padding: 7px 10px; font-size: 12px; color: var(--muted);
+        border-radius: 8px;
+      }
+      .ow-side li.active { background: rgba(85,168,255,.12); color: var(--text); }
+      .ow-thread {
+        display: flex; flex-direction: column; padding: 14px 18px; gap: 10px;
+      }
+      .ow-msg {
+        max-width: 85%; padding: 10px 14px; border-radius: 14px;
+        font-size: 13px; line-height: 1.5;
+      }
+      .ow-msg.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, rgba(85,168,255,.18), rgba(69,226,213,.12));
+        border: 1px solid rgba(85,168,255,.3);
+      }
+      .ow-msg.bot {
+        align-self: flex-start;
+        background: rgba(255,255,255,.04);
+        border: 1px solid var(--line);
+      }
+      .ow-msg .ow-meta {
+        font-size: 11px; color: var(--muted); margin-top: 6px;
+      }
+      .ow-input {
+        margin: 12px 18px 16px;
+        padding: 10px 14px; border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,.04);
+        color: var(--muted); font-size: 13px;
+      }
+
+      .sv-callout {
+        margin-top: 10px; padding: 10px 12px;
+        border-left: 3px solid var(--cyan);
+        background: rgba(69,226,213,.06);
+        font-size: 12px; color: var(--muted); line-height: 1.55;
+        border-radius: 0 8px 8px 0;
+      }
+      .sv-callout strong { color: var(--text); }
+
+      @media (max-width: 800px) {
+        .ll-grid { grid-template-columns: repeat(2, 1fr); }
+        .minio-shell, .ow-shell { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sv-main">
+      <a class="sv-back" href="./index.html">&larr; back to demo portal</a>
+
+      <section class="sv-hero panel">
+        <div class="eyebrow">Behind the scenes (mock)</div>
+        <h2>Service interfaces beyond Telegram &amp; the portal</h2>
+        <p>Each card is a static mock of a real service we already run (or could opt-in). The point: when we tell the audience "the artifact landed in MinIO" or "LiteLLM routed this to vLLM", we can show the actual UI instead of describing it. None of the panels below are live — wire-up notes per section.</p>
+      </section>
+
+      <div class="sv-grid">
+
+        <!-- ===== MinIO ===== -->
+        <section>
+          <div class="sv-section-title">1 · MinIO console — artifact bucket</div>
+          <p class="sv-section-blurb">Already exposed at <code>127.0.0.1:9001</code> by <code>docker-compose.yaml</code>. Open it during the Market Research walkthrough to show the offload artifact actually appear in <code>demo-artifacts/</code>.</p>
+          <div class="sv-window">
+            <div class="sv-titlebar">
+              <span class="sv-dots"><span></span><span></span><span></span></span>
+              <span class="sv-url">http://127.0.0.1:9001/browser/demo-artifacts</span>
+              <span class="sv-tag">live in tier 1</span>
+            </div>
+            <div class="minio-shell">
+              <nav class="minio-side">
+                <div class="brand">MinIO</div>
+                <ul>
+                  <li>Object Browser</li>
+                  <li class="active">Buckets</li>
+                  <li>Access Keys</li>
+                  <li>Monitoring</li>
+                  <li>Settings</li>
+                </ul>
+              </nav>
+              <div class="minio-content">
+                <div class="minio-crumbs">Buckets / <strong>demo-artifacts</strong> / <strong>job-7f3c1a/</strong></div>
+                <table class="minio-table">
+                  <thead>
+                    <tr><th>Name</th><th>Type</th><th>Size</th><th>Last modified</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="mono">market-segments.csv</td>
+                      <td><span class="minio-pill csv">csv</span></td>
+                      <td class="size">82.4 KB</td>
+                      <td class="size">just now</td>
+                    </tr>
+                    <tr>
+                      <td class="mono">forecast.png</td>
+                      <td><span class="minio-pill png">png</span></td>
+                      <td class="size">211.8 KB</td>
+                      <td class="size">just now</td>
+                    </tr>
+                    <tr>
+                      <td class="mono">summary.txt</td>
+                      <td><span class="minio-pill txt">txt</span></td>
+                      <td class="size">3.1 KB</td>
+                      <td class="size">just now</td>
+                    </tr>
+                    <tr>
+                      <td class="mono">offload-result.json</td>
+                      <td><span class="minio-pill json">json</span></td>
+                      <td class="size">1.7 KB</td>
+                      <td class="size">just now</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="sv-callout">
+                  <strong>Show on stage:</strong> trigger the walkthrough, switch tabs to MinIO,
+                  refresh — the four objects above appear. This is the most honest "offload
+                  actually executed" visual we have.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== Flowise ===== -->
+        <section>
+          <div class="sv-section-title">2 · Flowise — scenario authoring (optional)</div>
+          <p class="sv-section-blurb">Already shown as a dashed node in the architecture panel. If we add it as <code>profiles: [authoring]</code> in compose pointing at LiteLLM, we get a visual "this is how a scenario would be authored" surface. Runtime still goes through the control-plane / scenario YAML path.</p>
+          <div class="sv-window">
+            <div class="sv-titlebar">
+              <span class="sv-dots"><span></span><span></span><span></span></span>
+              <span class="sv-url">http://127.0.0.1:3000/canvas/market-research</span>
+              <span class="sv-tag optional">opt-in profile</span>
+            </div>
+            <div class="sv-body">
+              <div class="fl-toolbar">
+                <button class="fl-btn">+ Node</button>
+                <button class="fl-btn">Variables</button>
+                <button class="fl-btn">Credentials</button>
+                <button class="fl-btn">API endpoint</button>
+                <button class="fl-btn primary">Save flow</button>
+              </div>
+              <div class="flowise-canvas" aria-hidden="true">
+                <div class="fl-edge" style="left:170px; top:74px; width:90px;"></div>
+                <div class="fl-edge" style="left:420px; top:74px; width:90px;"></div>
+                <div class="fl-edge" style="left:330px; top:160px; width:80px; transform: rotate(35deg); transform-origin: left center;"></div>
+                <div class="fl-edge" style="left:670px; top:74px; width:90px;"></div>
+
+                <div class="fl-node in"   style="left:24px;  top:50px;">
+                  <strong>Telegram trigger</strong>
+                  <div class="fl-meta">scenario: market_research</div>
+                </div>
+                <div class="fl-node llm"  style="left:280px; top:50px;">
+                  <strong>LiteLLM router</strong>
+                  <div class="fl-meta">→ DeepSeek-V3.1</div>
+                </div>
+                <div class="fl-node tool" style="left:530px; top:50px;">
+                  <strong>Offload tool</strong>
+                  <div class="fl-meta">POST /offload (System B)</div>
+                </div>
+                <div class="fl-node out"  style="left:780px; top:50px;">
+                  <strong>Reply to user</strong>
+                  <div class="fl-meta">artifact link + summary</div>
+                </div>
+                <div class="fl-node tool" style="left:280px; top:200px;">
+                  <strong>eRAG retrieval</strong>
+                  <div class="fl-meta">retrieval service (System B)</div>
+                </div>
+              </div>
+              <div class="sv-callout">
+                <strong>Add to compose (sketch):</strong>
+                <code>flowise: image: flowiseai/flowise; ports: ["127.0.0.1:3000:3000"]; profiles: [authoring]</code>.
+                Run with <code>docker compose --profile authoring up</code>. Clearly label as
+                "authoring view" so it doesn't compete with the runtime narrative.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== LiteLLM dashboard ===== -->
+        <section>
+          <div class="sv-section-title">3 · LiteLLM admin UI — model routing</div>
+          <p class="sv-section-blurb">Tier 2 only, ships with LiteLLM. One env flag (<code>UI_USERNAME</code> / <code>UI_PASSWORD</code>) and it's reachable on <code>:4000/ui</code>. Strong "we route between SambaNova and the local SLM on Intel CPU" visual.</p>
+          <div class="sv-window">
+            <div class="sv-titlebar">
+              <span class="sv-dots"><span></span><span></span><span></span></span>
+              <span class="sv-url">http://litellm.system-a.local:4000/ui/dashboard</span>
+              <span class="sv-tag">tier 2</span>
+            </div>
+            <div class="sv-body">
+              <div class="ll-grid">
+                <div class="ll-stat"><div class="ll-label">Requests / 5min</div><div class="ll-val">128</div><div class="ll-delta">+18%</div></div>
+                <div class="ll-stat"><div class="ll-label">Tokens / 5min</div><div class="ll-val">94.2k</div><div class="ll-delta">+22%</div></div>
+                <div class="ll-stat"><div class="ll-label">p95 latency</div><div class="ll-val">1.74s</div><div class="ll-delta" style="color:#ffc15c">+0.2s</div></div>
+                <div class="ll-stat"><div class="ll-label">Failover rate</div><div class="ll-val">0.4%</div><div class="ll-delta">−0.1%</div></div>
+              </div>
+              <table class="ll-table">
+                <thead>
+                  <tr><th>Model alias</th><th>Backend</th><th>Share</th><th>Tokens</th><th>p95</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="ll-route">reasoning</td>
+                    <td>SambaNova / DeepSeek-V3.1</td>
+                    <td><div class="ll-bar"><span style="width:62%"></span></div></td>
+                    <td>58.4k</td>
+                    <td>1.42s</td>
+                  </tr>
+                  <tr>
+                    <td class="ll-route">local-slm</td>
+                    <td>vLLM / Qwen3-4B-Instruct (System B)</td>
+                    <td><div class="ll-bar"><span style="width:31%"></span></div></td>
+                    <td>29.0k</td>
+                    <td>2.10s</td>
+                  </tr>
+                  <tr>
+                    <td class="ll-route">embed</td>
+                    <td>vLLM / bge-small (System B)</td>
+                    <td><div class="ll-bar"><span style="width:7%"></span></div></td>
+                    <td>6.8k</td>
+                    <td>0.31s</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="sv-callout">
+                <strong>Show on stage:</strong> after the run, point at the <em>local-slm</em> row
+                lighting up to make "this ran on Intel CPU via vLLM" concrete.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ===== OpenWebUI ===== -->
+        <section>
+          <div class="sv-section-title">4 · OpenWebUI — direct chat with the local SLM (optional)</div>
+          <p class="sv-section-blurb">Pointed at LiteLLM's OpenAI-compatible endpoint, gives a ChatGPT-style surface for poking the on-CPU model. Useful for "we have a real local model" side-demo; weak fit with the scenario flow.</p>
+          <div class="sv-window">
+            <div class="sv-titlebar">
+              <span class="sv-dots"><span></span><span></span><span></span></span>
+              <span class="sv-url">http://127.0.0.1:3030/c/qwen3-4b-instruct</span>
+              <span class="sv-tag optional">opt-in</span>
+            </div>
+            <div class="ow-shell">
+              <nav class="ow-side">
+                <div class="ow-model">
+                  Active model
+                  <strong>qwen3-4b-instruct</strong>
+                  served by vLLM · System B
+                </div>
+                <ul>
+                  <li class="active">SLM smoke check</li>
+                  <li>Catalog summary</li>
+                  <li>Code review draft</li>
+                </ul>
+              </nav>
+              <div>
+                <div class="ow-thread">
+                  <div class="ow-msg user">
+                    Quick smoke: confirm you are running locally and not via SambaNova.
+                  </div>
+                  <div class="ow-msg bot">
+                    Yes — this reply is generated by <strong>Qwen3-4B-Instruct</strong> served by vLLM on System B (GNR Intel CPU).
+                    LiteLLM routed the request to alias <code>local-slm</code>.
+                    <div class="ow-meta">142 tokens · 1.9s · cpu-only</div>
+                  </div>
+                </div>
+                <div class="ow-input">Ask anything…</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <p class="sv-section-blurb" style="margin-top:24px;">
+        These are static mocks. To make 1 &amp; 3 real, the only work is exposing the
+        existing endpoints and adding a small "open service" launcher button on
+        the portal. Flowise (2) and OpenWebUI (4) need new compose services
+        gated behind an opt-in profile.
+      </p>
+    </main>
+  </body>
+</html>

@@ -37,6 +37,7 @@
             <button class="ghost" data-action="status" title="Light up every node and route in the architecture diagram so you can see the full stack at a glance.">Stack overview</button>
             <button class="primary" id="run-demo">Run demo</button>
             <button class="ghost" data-action="reset">Reset demo</button>
+            <a class="ghost" href="./service-views.html" role="button">Behind the scenes</a>
           </div>
         </section>
 
@@ -191,6 +192,20 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="panel services-panel" id="services-panel" hidden>
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title">Service launchers</div>
+              <div class="section-subtitle">Open the live UI of each running service. Cards auto-hide when the service isn't reachable.</div>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost small" id="services-hide" type="button" title="Hide this panel; restore via Reset demo">Hide panel</button>
+            </div>
+          </div>
+          <div class="services-grid" id="services-grid" role="list"></div>
+          <p class="panel-note" id="services-empty" hidden>No optional services reachable. Start them with <code>docker compose --profile authoring up</code> (Flowise / OpenWebUI), or open MinIO directly at <code>:9001</code>.</p>
         </section>
 
         <section class="workspace">

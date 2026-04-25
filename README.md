@@ -100,6 +100,27 @@ For Kubernetes, apply `k8s/system-a/flowise.yaml` after creating the
 instructions, flow specs for the three demo scenarios, and configuration
 notes live in `docs/flowise-integration.md` and `config/flowise/`.
 
+### Optional: OpenWebUI direct-chat surface
+
+OpenWebUI ships as an opt-in overlay alongside the Flowise overlay above:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.openwebui.yaml up --build
+# OpenWebUI: http://localhost:3030 (defaults to LiteLLM at /v1)
+```
+
+Stack both overlays together with `-f docker-compose.yaml -f docker-compose.flowise.yaml -f docker-compose.openwebui.yaml up`.
+
+### Service launchers panel
+
+The web demo carries a "Service launchers" section that probes MinIO,
+Flowise, the LiteLLM admin UI, and OpenWebUI on their default localhost
+ports. Cards are shown only for services that respond, so leaving the
+overlays off simply hides them. To hide the entire panel, click "Hide
+panel" (persisted to localStorage) or load the page with `?services=off`;
+clicking "Reset demo" brings it back. URLs can be overridden by setting
+the `demoServices` localStorage key to a JSON array.
+
 ## Scripts
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites

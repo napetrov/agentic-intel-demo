@@ -1060,3 +1060,177 @@ async function probeBackend() {
 applyIdle();
 probeBackend();
 setInterval(probeBackend, 15_000);
+
+// ---------- Optional service launchers ----------
+//
+// Three layers of "off":
+//   1. compose `profiles: [authoring]` — Flowise / OpenWebUI not started
+//   2. probeService() auto-hides any card whose service doesn't respond
+//   3. user clicks "Hide panel" (persists to localStorage) or appends
+//      ?services=off to the URL for a single demo session
+//
+// Operators can override URLs by editing this list directly or by setting
+// the `demoServices` localStorage key to a JSON array of {id,name,url,...}.
+const DEFAULT_SERVICES = [
+  {
+    id: 'minio',
+    name: 'MinIO console',
+    sub: 'artifact bucket',
+    url: 'http://127.0.0.1:9001/',
+    tag: 'tier 1',
+    tagClass: ''
+  },
+  {
+    id: 'flowise',
+    name: 'Flowise',
+    sub: 'visual scenario authoring',
+    url: 'http://127.0.0.1:3000/',
+    tag: 'authoring profile',
+    tagClass: 'optional'
+  },
+  {
+    id: 'litellm',
+    name: 'LiteLLM admin',
+    sub: 'model routing dashboard',
+    url: 'http://127.0.0.1:4000/ui/',
+    tag: 'tier 2',
+    tagClass: ''
+  },
+  {
+    id: 'open-webui',
+    name: 'OpenWebUI',
+    sub: 'direct chat with the local SLM',
+    url: 'http://127.0.0.1:3030/',
+    tag: 'authoring profile',
+    tagClass: 'optional'
+  }
+];
+
+const SERVICES_HIDE_KEY = 'demoServicesHidden';
+const SERVICES_OVERRIDE_KEY = 'demoServices';
+
+function getConfiguredServices() {
+  try {
+    const raw = localStorage.getItem(SERVICES_OVERRIDE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch (_) { /* fall through to default */ }
+  return DEFAULT_SERVICES;
+}
+
+function isServicesPanelHidden() {
+  if (new URLSearchParams(window.location.search).get('services') === 'off') return true;
+  try {
+    return localStorage.getItem(SERVICES_HIDE_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+async function probeService(url) {
+  // Cross-origin services rarely send CORS headers; use no-cors and treat
+  // any fulfilled fetch (even an opaque response) as "reachable". A network
+  // failure rejects, which we treat as "down".
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    await fetch(url, { mode: 'no-cors', signal: ctrl.signal, cache: 'no-store' });
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function renderServiceCard(svc, reachable) {
+  const card = document.createElement('div');
+  card.className = 'service-card' + (reachable ? '' : ' service-card-down');
+  card.setAttribute('role', 'listitem');
+  card.dataset.service = svc.id;
+
+  const head = document.createElement('div');
+  head.className = 'service-card-head';
+  const dot = document.createElement('span');
+  dot.className = 'dot ' + (reachable ? 'ok' : 'down');
+  const title = document.createElement('span');
+  title.className = 'service-card-title';
+  title.textContent = svc.name;
+  head.append(dot, title);
+
+  if (svc.tag) {
+    const tag = document.createElement('span');
+    tag.className = 'service-card-tag' + (svc.tagClass ? ' ' + svc.tagClass : '');
+    tag.textContent = svc.tag;
+    head.append(tag);
+  }
+
+  const sub = document.createElement('div');
+  sub.className = 'service-card-sub';
+  sub.textContent = svc.sub || '';
+
+  const link = document.createElement('a');
+  link.className = 'service-card-link';
+  link.href = svc.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = reachable ? 'Open ↗' : 'Not reachable';
+  if (!reachable) {
+    link.setAttribute('aria-disabled', 'true');
+    link.tabIndex = -1;
+  }
+
+  card.append(head, sub, link);
+  return card;
+}
+
+async function renderServiceLaunchers() {
+  const panel = document.getElementById('services-panel');
+  const grid = document.getElementById('services-grid');
+  const empty = document.getElementById('services-empty');
+  const hideBtn = document.getElementById('services-hide');
+  if (!panel || !grid) return;
+
+  if (isServicesPanelHidden()) {
+    panel.hidden = true;
+    return;
+  }
+
+  if (hideBtn && !hideBtn.dataset.bound) {
+    hideBtn.addEventListener('click', () => {
+      try { localStorage.setItem(SERVICES_HIDE_KEY, '1'); } catch (_) {}
+      panel.hidden = true;
+    });
+    hideBtn.dataset.bound = '1';
+  }
+
+  const services = getConfiguredServices();
+  const probes = await Promise.all(services.map((s) => probeService(s.url)));
+  const visible = services.filter((_, i) => probes[i]);
+
+  grid.innerHTML = '';
+  if (visible.length === 0) {
+    panel.hidden = false;
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  for (let i = 0; i < services.length; i += 1) {
+    if (probes[i]) grid.append(renderServiceCard(services[i], true));
+  }
+  panel.hidden = false;
+}
+
+// Reset clears the "hide panel" preference so a fresh demo run shows it again.
+const resetBtn = document.querySelector('[data-action="reset"]');
+if (resetBtn) {
+  resetBtn.addEventListener('click', () => {
+    try { localStorage.removeItem(SERVICES_HIDE_KEY); } catch (_) {}
+    renderServiceLaunchers();
+  });
+}
+
+renderServiceLaunchers();
+setInterval(renderServiceLaunchers, 30_000);
