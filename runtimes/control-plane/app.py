@@ -79,11 +79,22 @@ def _safe_probe_target(url: str) -> str:
     leaves the control plane. Operators sometimes embed credentials or
     api-keys in env-configured URLs (e.g. http://user:token@host/...);
     the probe response is consumed by browsers via /api/probe/{name},
-    so we don't want those parts on the wire."""
-    parts = urlsplit(url)
+    so we don't want those parts on the wire.
+
+    Returns "" on malformed input so the caller can substitute a
+    non-leaking identifier (the probe's logical name) instead.
+    """
+    try:
+        parts = urlsplit(url)
+        # parts.port raises ValueError for non-numeric or out-of-range
+        # port specifications (e.g. "host:abc", "host:99999"); guard so
+        # bad config doesn't 500 the probe handler.
+        port = parts.port
+    except ValueError:
+        return ""
     host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
+    if port is not None:
+        host = f"{host}:{port}"
     return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
@@ -169,21 +180,28 @@ def probe_dependency(name: str) -> dict[str, Any]:
     if not base:
         return {"state": "unconfigured"}
     url = base + PROBE_PATHS.get(name, "/health")
-    safe_target = _safe_probe_target(url)
+    # The probe's `target` field is consumed by the browser, so we surface
+    # only the probe's logical name. The full URL stays in server-side
+    # logs for the operator. _safe_probe_target() is still computed so a
+    # future caller (e.g. an admin endpoint) can opt into a sanitized
+    # URL instead of the bare name.
+    _safe_probe_target(url)
     try:
         r = httpx.get(url, timeout=PROBE_TIMEOUT_SECONDS)
         r.raise_for_status()
-    except httpx.HTTPError as exc:
-        # Log the full URL + exception text server-side for diagnostics, but
-        # only return the sanitized target and the exception class name to
-        # the caller. str(exc) often embeds the full URL (incl. userinfo).
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        # httpx.HTTPError covers connect/read/timeout/non-2xx;
+        # httpx.InvalidURL is a sibling (NOT a subclass) and triggers on
+        # malformed URLs; ValueError can leak from urlsplit/.port for
+        # bad port syntax. Bad config must surface as state=down, never
+        # as a 500 from this handler.
         logger.warning("probe %s failed: url=%s err=%s", name, url, exc)
         return {
             "state": "down",
-            "target": safe_target,
+            "target": name,
             "detail": type(exc).__name__,
         }
-    return {"state": "ok", "target": safe_target}
+    return {"state": "ok", "target": name}
 
 
 @app.get("/ready")

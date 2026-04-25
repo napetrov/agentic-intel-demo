@@ -133,9 +133,11 @@ wait_http_ok() {
 # --- moto (S3) ------------------------------------------------------------
 
 start_bg "moto-server" "$LOG_DIR/moto.log" "$PID_DIR/moto.pid" -- \
-  "$MOTO" -H 127.0.0.1 -p "$MOTO_PORT"
+  "$MOTO" -H 127.0.0.1 -p "$MOTO_PORT" \
+  || abort_if_failed
 
-wait_http_ok "http://127.0.0.1:$MOTO_PORT/" 30 "moto"
+wait_http_ok "http://127.0.0.1:$MOTO_PORT/" 30 "moto" \
+  || abort_if_failed
 
 log "creating bucket $MINIO_BUCKET"
 "$PY" - <<PY
@@ -251,7 +253,8 @@ else
   verify_alive "web-demo" "$PID_DIR/web-demo.pid" "$LOG_DIR/web-demo.log" \
     || abort_if_failed
 fi
-wait_http_ok "http://127.0.0.1:$WEB_DEMO_PORT/api/ready" 20 "web-demo proxy"
+wait_http_ok "http://127.0.0.1:$WEB_DEMO_PORT/api/ready" 20 "web-demo proxy" \
+  || abort_if_failed
 
 log ""
 log "demo is up"

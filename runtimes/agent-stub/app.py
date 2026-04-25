@@ -30,6 +30,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import json
+
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -327,7 +329,13 @@ def _tool_command(args: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, 
             result = _tool_summarize(inner_args)
         else:
             raise ValueError(f"classifier produced unknown tool: {inner_tool!r}")
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, OSError) as exc:
+        # ValueError covers user-input rejections from the inner tools
+        # (path-escape, unallowed binary, bad max_bytes, etc.). OSError
+        # subsumes FileNotFoundError + PermissionError for read_file /
+        # list_files; both should land in the soft echo fallback so the
+        # demo doesn't 5xx on a misclassified verb that points at a
+        # missing or unreadable path.
         fallback_reason = f"{inner_tool} failed: {exc}"
         inner_tool = "echo"
         inner_args = {"text": text}
@@ -424,7 +432,7 @@ def _classify_llm(text: str) -> Optional[dict[str, Any]]:
         if stripped.startswith("```"):
             stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
             stripped = re.sub(r"\s*```$", "", stripped)
-        parsed = __import__("json").loads(stripped)
+        parsed = json.loads(stripped)
     except ValueError as exc:
         logger.warning("LLM response not JSON (%s); falling back to rules", exc)
         return None
