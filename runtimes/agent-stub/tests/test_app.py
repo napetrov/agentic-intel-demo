@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Point the workspace at the repo root so read_file/list_files have real
 # files to work against without needing a writable scratch dir. Use direct
 # assignment (not setdefault) so an externally-set AGENT_WORKSPACE_DIR can't
@@ -18,6 +20,19 @@ import app as app_module
 from app import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _force_rule_based_classifier(monkeypatch):
+    """Disable the LLM hook for every test by default.
+
+    A stray LLM_BASE_URL / LLM_MODEL in the developer's shell would
+    otherwise route the `command` classifier through the LLM path and
+    make these tests network-coupled and non-deterministic. Tests that
+    specifically exercise the LLM hook re-enable it via monkeypatch
+    inside the test body."""
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "")
 
 
 def test_health():
@@ -364,7 +379,12 @@ def test_classify_llm_handles_malformed_top_level_payload(monkeypatch):
             def json(self):
                 return self._b
 
-        monkeypatch.setattr(app_module.httpx, "post", lambda *a, _r=_R(), **kw: _r)
+        # Instantiate once and capture in the closure rather than passing
+        # `_R()` as a default arg (Ruff B008: function call in lambda
+        # default), and so each iteration's monkeypatch sees the latest
+        # bad_body via fresh class definition.
+        resp = _R()
+        monkeypatch.setattr(app_module.httpx, "post", lambda *a, **kw: resp)
         assert app_module._classify_llm("anything") is None, bad_body
 
 
