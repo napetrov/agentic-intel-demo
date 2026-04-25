@@ -826,9 +826,14 @@ async function fetchArtifactPayload(ref) {
   // MinIO on :9000); if CORS isn't configured the browser will block it,
   // which is why we degrade to a clear status message instead of crashing.
   appendAgentLog(`[agent result stored as artifact ${ref}; fetching…]`);
+  // Don't encodeURIComponent: the worker constructs refs as
+  // `offload/<session>/<task>.json` from server-controlled alphanumerics
+  // and the nginx /api/artifacts/<ref> location accepts raw `/`. Encoding
+  // here would turn `/` into `%2F`, which neither the regex (no `%` class)
+  // nor nginx's variable-substitution path handling round-trips cleanly.
   let presigned;
   try {
-    presigned = await fetchJson(`${API_BASE}/artifacts/${encodeURIComponent(ref)}`);
+    presigned = await fetchJson(`${API_BASE}/artifacts/${ref}`);
   } catch (err) {
     appendAgentLog(`[error] artifact presign failed: ${err.message}`);
     return null;
