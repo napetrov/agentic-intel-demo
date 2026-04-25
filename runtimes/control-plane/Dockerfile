@@ -8,6 +8,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app.py /app/app.py
+COPY session_manager.py /app/session_manager.py
 
 USER appuser
 

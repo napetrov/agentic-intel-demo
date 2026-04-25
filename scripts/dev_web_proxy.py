@@ -79,5 +79,39 @@ async def api_probe(name: str) -> Response:
     return await _forward("GET", f"{CONTROL_PLANE}/probe/{name}")
 
 
+# Sessions API — multi-agent fan-out. Mirrors the routes in nginx.conf so
+# the dev-up path serves the same /api contract as the docker-compose path.
+@app.get("/api/sessions/profiles")
+async def api_sessions_profiles() -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/sessions/profiles")
+
+
+@app.post("/api/sessions")
+async def api_sessions_create(request: Request) -> Response:
+    body = await request.body()
+    return await _forward("POST", f"{CONTROL_PLANE}/sessions", body=body)
+
+
+@app.post("/api/sessions/batch")
+async def api_sessions_batch(request: Request) -> Response:
+    body = await request.body()
+    return await _forward("POST", f"{CONTROL_PLANE}/sessions/batch", body=body)
+
+
+@app.get("/api/sessions")
+async def api_sessions_list() -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/sessions")
+
+
+@app.get("/api/sessions/{session_id}")
+async def api_sessions_get(session_id: str) -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/sessions/{session_id}")
+
+
+@app.delete("/api/sessions/{session_id}")
+async def api_sessions_delete(session_id: str) -> Response:
+    return await _forward("DELETE", f"{CONTROL_PLANE}/sessions/{session_id}")
+
+
 # Static last so /api/* wins. html=True makes "/" serve index.html.
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")

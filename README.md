@@ -143,6 +143,38 @@ output. To target a real remote OpenClaw instead of the stub, set
 `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in your shell before
 `docker compose up`.
 
+### Multi-agent fan-out (concurrent sessions)
+
+The control plane exposes a `/sessions` API for spawning many agent
+workloads concurrently — the original demo only supported one running
+agent at a time. Two backends:
+
+* **Local** (default for `docker compose up` / `dev-up.sh`) — in-memory
+  state-machine simulator. Sessions transition `Pending → Running →
+  Completed` on a wall-clock timer; useful for showing the multi-agent
+  story without spinning up a real cluster.
+* **Kube** (in the k8s deployment) — every session becomes one
+  `batch/v1.Job` from `k8s/system-a/session-job-template.yaml`, sized
+  by the requested profile (`small` / `medium` / `large`). Status is
+  read back from the Job's `Complete` / `Failed` conditions.
+  `ttlSecondsAfterFinished` lets k8s GC finished sessions for you.
+
+Two ways to drive it:
+
+```bash
+# CLI: fan out 10 medium market-research sessions, then watch
+scripts/load-simulate.sh -s market-research -p medium -c 10 -w
+
+# Web UI: the "Multi-agent fan-out" panel on http://localhost:8080 —
+# pick scenario / profile / count, hit Spawn, watch the table update.
+```
+
+The k8s side also ships `k8s/system-b/offload-worker-hpa.yaml`, a CPU-
+based HPA that scales the shared offload-worker between 1 and 12
+replicas so concurrent sessions don't all queue on one worker.
+Architecture details and the full status-mapping table live in
+`docs/architecture.md` under "Sessions API — multi-agent fan-out".
+
 ### Optional: Flowise alt orchestrator
 
 Flowise (visual flow builder) is shipped as an opt-in overlay:

@@ -22,10 +22,23 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "create", "delete"]
+    # `watch` so a future async refresh can long-poll instead of
+    # repeatedly listing; harmless to grant now since the verbs are
+    # additive.
+    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list"]
+  # Sessions-as-Jobs: the control plane creates one batch/v1.Job per
+  # session via session_manager.KubeSessionBackend, reads back status
+  # for /sessions/{id}, and deletes on /sessions DELETE. ConfigMap read
+  # is needed to load the session-job-template at create time.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

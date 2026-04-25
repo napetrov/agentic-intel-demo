@@ -173,6 +173,68 @@
           </div>
         </section>
 
+        <section class="panel multi-session-panel" id="multi-session-panel" aria-labelledby="multi-session-title">
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title" id="multi-session-title">Multi-agent fan-out</div>
+              <div class="section-subtitle">Spawn N concurrent sessions to load the system. In k8s each session is a Job; locally each is simulated.</div>
+            </div>
+            <div class="panel-actions multi-session-actions">
+              <span class="multi-session-backend" id="multi-session-backend" title="Backend reported by /api/sessions">backend: probing…</span>
+              <button class="ghost small" id="multi-session-refresh" type="button" title="Refresh the session table now">Refresh</button>
+              <button class="ghost small" id="multi-session-clear" type="button" title="Delete all sessions tracked here (local list only — does not affect other clients)">Clear list</button>
+            </div>
+          </div>
+          <form id="multi-session-form" class="multi-session-form" autocomplete="off">
+            <label for="multi-session-scenario" class="multi-session-label">Scenario</label>
+            <select id="multi-session-scenario" class="multi-session-select">
+              <option value="terminal-agent">terminal-agent</option>
+              <option value="market-research">market-research</option>
+              <option value="large-build-test">large-build-test</option>
+            </select>
+            <label for="multi-session-profile" class="multi-session-label">Profile</label>
+            <select id="multi-session-profile" class="multi-session-select">
+              <option value="small">small (1 vCPU)</option>
+              <option value="medium">medium (4 vCPU)</option>
+              <option value="large">large (16 vCPU)</option>
+            </select>
+            <label for="multi-session-count" class="multi-session-label">Count</label>
+            <input
+              id="multi-session-count"
+              class="multi-session-count"
+              type="number"
+              min="1"
+              max="50"
+              step="1"
+              value="5"
+              aria-label="Number of sessions to spawn"
+            />
+            <button type="submit" id="multi-session-spawn" class="primary">Spawn sessions</button>
+          </form>
+          <div id="multi-session-status" class="multi-session-status" role="status" aria-live="polite">
+            Waiting for spawn. The session table updates every second while sessions are pending or running.
+          </div>
+          <div class="multi-session-summary" id="multi-session-summary" hidden></div>
+          <div class="multi-session-table-wrap">
+            <table class="multi-session-table" id="multi-session-table">
+              <thead>
+                <tr>
+                  <th scope="col">Session</th>
+                  <th scope="col">Scenario</th>
+                  <th scope="col">Profile</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Pod / Job</th>
+                  <th scope="col">Age</th>
+                  <th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody id="multi-session-rows">
+                <tr class="multi-session-empty"><td colspan="7">No sessions yet. Spawn some above.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="panel services-panel" id="services-panel" hidden>
           <div class="panel-head panel-head-wrap">
             <div>
@@ -281,6 +343,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260425g"></script>
+    <script src="./app.js?v=20260425h"></script>
   </body>
 </html>

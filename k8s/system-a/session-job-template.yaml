@@ -1,0 +1,81 @@
+# Job template used by the control plane's KubeSessionBackend to create
+# one Job per session. The control plane reads this ConfigMap on every
+# session create (no restart needed for template edits), substitutes the
+# session-id / scenario / profile labels and resource requests, then
+# POSTs the rendered manifest to the batch API.
+#
+# Why a Job and not a Pod:
+#   * `ttlSecondsAfterFinished` lets k8s GC completed sessions for us so
+#     the namespace doesn't accumulate hundreds of stale Pods after a
+#     load demo.
+#   * `backoffLimit` plus `restartPolicy: OnFailure` give us bounded
+#     retries — a crashed agent retries once instead of either looping
+#     forever (Pod restartPolicy: Always) or vanishing on first crash.
+#   * The Job's `Complete`/`Failed` conditions are exactly the signal
+#     the /sessions/{id} endpoint reports back to the UI.
+#
+# Resource requests / limits are filled in by the control plane from the
+# requested profile (small / medium / large in PROFILES). The values
+# below are placeholders — they get overwritten on every render.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: session-job-template
+  namespace: agents
+data:
+  job.yaml: |
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      labels:
+        app: session-job
+        managed-by: control-plane
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app: session-job
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: agent
+              image: ${SESSION_IMAGE}
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: OPENCLAW_CONFIG_PATH
+                  value: /config/openclaw.json
+                - name: AWS_REGION
+                  value: ${AWS_REGION}
+                - name: CLAUDE_CODE_USE_BEDROCK
+                  value: "1"
+                - name: AWS_BEARER_TOKEN_BEDROCK
+                  value: ${AWS_BEARER_TOKEN_BEDROCK}
+                - name: ANTHROPIC_DEFAULT_SONNET_MODEL
+                  value: ${ANTHROPIC_DEFAULT_SONNET_MODEL}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: session-pod-artifact-creds
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: session-pod-artifact-creds
+                      key: AWS_SECRET_ACCESS_KEY
+              # Placeholder; control plane overwrites from PROFILES.
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: 2Gi
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+          volumes:
+            - name: config
+              configMap:
+                name: session-pod-config
