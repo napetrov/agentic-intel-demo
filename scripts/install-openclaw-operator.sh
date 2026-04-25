@@ -115,8 +115,12 @@ run "$KUBECTL" -n openclaw-operator-system rollout status \
 cat <<EOF
 
 [install-openclaw-operator] done.
-Next steps:
-  1. Apply secrets:   $KUBECTL apply -f k8s/shared/intel-demo-operator-secrets.yaml
-  2. Apply instance:  $KUBECTL apply -f examples/openclawinstance-intel-demo.yaml
-  3. Verify:          $KUBECTL get openclawinstance -A
+Next steps (operator-first lifecycle):
+  1. Create secrets:   APPLY=1 TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \\
+                         SAMBANOVA_API_KEY=... MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \\
+                         ./scripts/create-operator-secrets.sh
+  2. Smoke-test:       APPLY=1 ./scripts/smoke-test-operator-instance.sh
+                       (or KEEP=1 to leave the instance running for the demo)
+  3. Tear down:        APPLY=1 ./scripts/teardown-openclaw-instance.sh
+  4. Verify any time:  $KUBECTL get openclawinstance -A
 EOF

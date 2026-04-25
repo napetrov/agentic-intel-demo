@@ -35,6 +35,10 @@ A fresh deploy should be considered correct only when all of the following are t
 - `docs/operator-gap-analysis.md`
 - `examples/openclawinstance-intel-demo.yaml`
 - `scripts/check-operator-prereqs.sh`
+- `scripts/install-openclaw-operator.sh` — server-side CRD apply + pinning warning
+- `scripts/create-operator-secrets.sh` — render `intel-demo-operator-secrets` from env
+- `scripts/smoke-test-operator-instance.sh` — real create → wait-ready → optional gateway probe → delete
+- `scripts/teardown-openclaw-instance.sh` — operator-owned CR delete + optional PVC/secret cleanup
 
 ---
 
@@ -51,29 +55,30 @@ Why it matters:
 - without a pinned source, the operator install is not reproducible
 
 ### 2. CRD-safe install process is not automated
-Status: open
+Status: closed
 
-What is missing:
-- a script or documented command sequence that applies CRDs separately and safely
-- ideally server-side apply for the CRD stage
-
-Why it matters:
-- this is the one known real blocker observed on-cluster
+`scripts/install-openclaw-operator.sh` applies the CRD with `--server-side`
+by default (`MODE=server-side-crd`) and falls back to `create || replace`
+under `MODE=create-replace-crd`. It also fails fast if the operator overlay
+still references `../crd` (which would re-apply the CRD client-side and
+re-introduce the `metadata.annotations: Too long` failure).
 
 ### 3. Secret contract for operator-managed instance is incomplete
-Status: open
+Status: closed
 
-What is missing:
-- exact secret manifest template for `intel-demo-operator-secrets`
-- exact list of required keys
-- namespace expectations
+The required Secret is `intel-demo-operator-secrets` in the instance's
+namespace, with these keys (used by `OpenClawInstance.spec.envFromSecrets`
+in `examples/openclawinstance-intel-demo.yaml`):
 
-Likely required keys include:
 - `TELEGRAM_BOT_TOKEN`
 - `AWS_BEARER_TOKEN_BEDROCK`
+- `SAMBANOVA_API_KEY`
 - `MINIO_ACCESS_KEY`
 - `MINIO_SECRET_KEY`
-- any additional provider credentials used by the instance
+
+Materialize it from env with `scripts/create-operator-secrets.sh`
+(uses `kubectl create secret --dry-run=client -o yaml | kubectl apply`,
+so values never land on disk).
 
 ### 4. Operator image contract is not fully defined
 Status: open
@@ -84,12 +89,22 @@ What is missing:
 - if private, imagePullSecret requirements
 
 ### 5. Health/ready criteria are not yet documented precisely
-Status: open
+Status: partially closed
 
-What is missing:
-- canonical success condition for `OpenClawInstance`
-- expected services, pods, conditions, or status fields
-- failure signatures and which logs to inspect first
+`scripts/smoke-test-operator-instance.sh` encodes the current best-known
+success contract:
+- CRD `openclawinstances.openclaw.rocks` exists
+- controller `deploy/openclaw-operator-controller-manager` rollout completes
+- `kubectl wait --for=condition=Ready openclawinstance/<name>` succeeds, OR
+- `.status.phase` reaches one of `Ready|Running|Active|Healthy`
+- with `PROBE_GATEWAY=1`, the gateway service responds to `/healthz`
+
+On failure it dumps `describe openclawinstance`, controller logs, and pod
+list scoped to `openclaw.rocks/instance=<name>`.
+
+Still open: pin the exact `.status.phase` / Ready condition that the
+upstream operator surfaces in the pinned ref, so the fallback list above
+can be replaced with a single canonical check.
 
 ### 6. Old raw control-plane path still dominates repo structure
 Status: open
@@ -114,12 +129,12 @@ Consequences:
 ## Recommended next repo changes
 
 ### Highest priority
-1. add an operator install script
-2. add a secret template for operator-managed instance
-3. add a smoke test that creates/checks/deletes `OpenClawInstance`
+1. ~~add an operator install script~~ — done (`scripts/install-openclaw-operator.sh`)
+2. ~~add a secret template for operator-managed instance~~ — done (`scripts/create-operator-secrets.sh` + template)
+3. ~~add a smoke test that creates/checks/deletes `OpenClawInstance`~~ — done (`scripts/smoke-test-operator-instance.sh` + `teardown-openclaw-instance.sh`)
 4. rewrite main docs to make operator the default path
 
 ### Second priority
 1. ~~move legacy control-plane path into `docs/legacy/` or mark clearly as non-canonical~~ — done (legacy/ and scripts/legacy/ removed)
-2. pin exact operator source ref
-3. document exact Ready verification output from a successful cluster
+2. pin exact operator source ref (`OPENCLAW_OPERATOR_REF=<tag|sha>`); the install script now warns when left at `main`
+3. document exact Ready verification output from a successful cluster (the smoke test currently auto-detects between condition `Ready` and `.status.phase`)
