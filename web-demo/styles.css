@@ -50,7 +50,7 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .dot.ok { background: var(--green); box-shadow: 0 0 14px rgba(73,217,135,.7); }
 .dot.warn { background: #d8a838; box-shadow: 0 0 12px rgba(216,168,56,.6); }
 .dot.down { background: #c25255; box-shadow: 0 0 12px rgba(194,82,85,.6); }
-.dot.idle { background: #4a4d55; box-shadow: none; }
+.dot.idle, .dot.unknown { background: #4a4d55; box-shadow: none; }
 .hero {
   padding: 24px;
   display: flex;
