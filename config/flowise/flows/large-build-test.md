@@ -7,22 +7,33 @@ Mirrors `catalog/scenarios.yaml` → `large_build_test`.
 | Demo scenario | Large Build/Test |
 | Execution mode | `local_large` |
 | Task family | `software_engineering` |
-| Backend | control-plane `POST /offload` with `task_type=shell` against a session pod created from the `large` profile |
+| Backend | control-plane `POST /offload` with `task_type=shell, payload.scenario=large-build-test` |
+
+## Important: this is not a generic remote build runner
+
+The offload-worker's `shell` task type only runs the **allow-listed
+`run.sh`** for one of `{"terminal-agent","market-research","large-build-test"}`
+(see `runtimes/offload-worker/app.py` → `ALLOWED_SCENARIOS`). Free-form
+clone/install/test commands authored by the LLM are rejected. This flow
+therefore drives the canned `large-build-test` scenario script and uses
+the LLM only to plan-around / summarize, not to author commands.
+
+`local_large` selects the large pod profile statically at session
+creation; the flow does NOT scale up at runtime. The session running this
+flow must already be configured with the large profile (see
+`config/pod-profiles/profiles.yaml`).
 
 ## Intent
 
-User asks the agent to build/test a small repo. The flow:
+User asks the agent to run the large build/test demo. The flow:
 
-1. Asks the local SLM to plan a build sequence (clone → install → test).
-2. Issues each step as a `shell` offload against the large profile.
-3. Streams the per-step result back, stops on first non-zero exit.
-4. Final summary uses cloud reasoning if the run failed, local SLM if it
-   succeeded.
-
-This flow does NOT scale up the pod at runtime — `local_large` selects the
-large profile statically at session creation. The flow assumes the demo
-session is already configured with that profile (see
-`config/pod-profiles/profiles.yaml`).
+1. Briefly explains what the canned scenario will do (planner LLM, no tool
+   call).
+2. Submits `{task_type: 'shell', payload: { scenario: 'large-build-test' }}`
+   to the control-plane.
+3. Summarizes stdout/stderr/exit_code. On a non-zero exit, routes to the
+   cloud-reasoning model for a deeper diagnosis; on success, summarizes
+   with the local SLM.
 
 ## Nodes
 
@@ -31,64 +42,89 @@ session is already configured with that profile (see
    - Credential: `litellm-openai`
    - Model name: `system-b-vllm-qwen3-4b-default`
    - System prompt:
-     > Given a repo URL and a target ("build" / "test"), output a JSON
-     > array of shell commands in execution order. No prose.
-3. **Custom Tool: run_step**
-   - Input schema: `{ "command": "string", "step_index": "number" }`
+     > You are the large-build-test demo guide. Briefly tell the user the
+     > canned scenario is about to run, then call the `run_scenario` tool
+     > with no arguments. Do not invent commands; the worker only runs
+     > the allow-listed scenario script.
+3. **Custom Tool: run_scenario**
+   - Input schema: `{}`
    - Body:
      ```js
-     const r = await fetch(`${$vars.CONTROL_PLANE_BASE_URL}/offload`, {
+     // POST /offload is synchronous: terminal status comes back on the
+     // POST response. Treat `error` as the only failure status.
+     const submit = await fetch(`${$vars.CONTROL_PLANE_BASE_URL}/offload`, {
        method: 'POST',
        headers: { 'content-type': 'application/json' },
        body: JSON.stringify({
          task_type: 'shell',
-         payload: { command: $input.command, profile_hint: 'large' },
+         payload: { scenario: 'large-build-test' },
          session_id: $flow.session_id || 'flowise-demo'
        })
      });
-     const submitted = await r.json();
-     for (let i = 0; i < 180; i++) {  // up to 6 min per step
+     const submitted = await submit.json();
+     // The build script can run for several minutes; even though the
+     // current control-plane is synchronous, give the GET loop room.
+     for (let i = 0; i < 180; i++) {
        const s = await fetch(
          `${$vars.CONTROL_PLANE_BASE_URL}/offload/${submitted.job_id}`
        ).then(x => x.json());
-       if (s.status === 'completed' || s.status === 'failed') {
-         return { ...s, step_index: $input.step_index };
-       }
+       if (s.status === 'completed' || s.status === 'error') return s;
        await new Promise(res => setTimeout(res, 2000));
      }
-     return { status: 'timeout', step_index: $input.step_index };
+     return { status: 'timeout', job_id: submitted.job_id };
      ```
-4. **Sequential Agent** (or a JS Function node iterating the planner output)
-   - For each command in the planner's array, call `run_step`.
-   - Halt on the first `status: 'failed'` or non-zero exit code.
-5. **Chat Model: ChatOpenAI (summarizer)**
-   - On success: `system-b-vllm-qwen3-4b-fast`
-   - On failure: `aws-bedrock-claude-sonnet` (route by an If node on the
-     final step's `exit_code`).
-6. **Chat Output** — built-in.
+4. **If/Else (or JS Function) router**
+   - Inspect the tool result's `status` and (for `completed`)
+     `result.exit_code`.
+   - Route a successful run (`status === 'completed'` and `exit_code === 0`)
+     to the fast SLM summarizer.
+   - Route a failure (`status === 'error'`, or `completed` with
+     `exit_code !== 0`) to the cloud-reasoning summarizer.
+5. **Chat Model: ChatOpenAI (summarizer, success)**
+   - Model name: `system-b-vllm-qwen3-4b-fast`
+   - System prompt:
+     > Summarize the build/test stdout for the user in 3 bullets. Quote
+     > exit code.
+6. **Chat Model: ChatOpenAI (summarizer, failure)**
+   - Model name: `aws-bedrock-claude-sonnet`
+   - System prompt:
+     > The build/test failed. Summarize stderr, the likely root cause,
+     > and one concrete next step. Quote exit code.
+7. **Chat Output** — built-in.
 
 ## Wiring
 
 ```
-Chat Input ─▶ planner LLM ─▶ Sequential Agent (run_step ×N)
-                                       │
-                            success ───┼──▶ summarizer (fast SLM)
-                            failure ───┴──▶ summarizer (cloud reasoning)
-                                                  │
-                                                  ▼
-                                             Chat Output
+Chat Input ─▶ planner LLM ─▶ run_scenario tool
+                                  │
+                          status / exit_code
+                                  │
+                  success ────────┼──────── failure
+                     ▼                          ▼
+            fast-SLM summarizer        cloud reasoning summarizer
+                     │                          │
+                     └──────────► Chat Output ◄─┘
 ```
 
 ## Variables
 
 Same as the other flows: `CONTROL_PLANE_BASE_URL`, `LITELLM_BASE_URL`.
 
+## Status model
+
+Control-plane terminal states are **`completed`** and **`error`** (see
+`runtimes/control-plane/app.py`). There is no `failed` state. Within a
+`completed` response, a non-zero `result.exit_code` still means the build
+failed — branch on both signals.
+
 ## Notes
 
-- The control-plane today exposes `task_type=shell`; `profile_hint` is a
-  hint that the operator-managed session was created with the large
-  profile. Until the operator wires `profile_hint` end-to-end, treat this
-  as documentation: the field is forwarded to the worker but not enforced.
-- For repos that need network access, ensure the worker container has
-  egress to the git remote. The compose default is wide-open egress; the
-  k8s default depends on the cluster's NetworkPolicy.
+- The large profile applies to the session running this flow, not to the
+  offload-worker; the worker is sized independently. If you need the
+  build to run inside the agent pod (true `local_large` semantics) rather
+  than on the offload-worker, drive the canned script through OpenClaw
+  instead of through Flowise. The Flowise variant runs the same script on
+  the offload-worker, which is sufficient for the demo.
+- For repos that need network access during the build, ensure the worker
+  container has egress to the git remote. The compose default is
+  wide-open egress; the k8s default depends on the cluster's NetworkPolicy.
