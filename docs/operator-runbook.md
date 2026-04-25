@@ -94,6 +94,38 @@ Use the operator for:
 
 Do not treat direct raw pod/deployment creation as the supported way to manage OpenClaw instances.
 
+### Canonical scripted lifecycle
+
+For day-to-day demo bring-up, prefer the scripted path. All four scripts
+default to dry-run; pass `APPLY=1` to actually run kubectl.
+
+```bash
+# 1. Install operator (pin OPENCLAW_OPERATOR_REF first)
+APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> ./scripts/install-openclaw-operator.sh
+
+# 2. Materialize the instance Secret from env
+APPLY=1 \
+  TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... SAMBANOVA_API_KEY=... \
+  MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+  ./scripts/create-operator-secrets.sh
+
+# 3. Smoke-test the full lifecycle (create -> wait Ready -> delete)
+APPLY=1 ./scripts/smoke-test-operator-instance.sh
+
+# 3b. Or leave the instance running for a live demo
+APPLY=1 KEEP=1 ./scripts/smoke-test-operator-instance.sh
+
+# 4. Drop the instance (operator-owned cleanup of pods/services)
+APPLY=1 ./scripts/teardown-openclaw-instance.sh
+```
+
+Per-demo agent vs shared agent: the operator owns one
+`OpenClawInstance` named `intel-demo-operator`; demo scenarios reuse that
+instance and the operator manages the underlying session pods. To force a
+clean slate between demo runs, run `teardown-openclaw-instance.sh` then
+re-apply `examples/openclawinstance-intel-demo.yaml` (the smoke test does
+both).
+
 ## What the demo already proved
 
 During bring-up, the following states were already observed:
