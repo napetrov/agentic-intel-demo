@@ -565,7 +565,10 @@ function runSimulatedWalkthrough(scenarioKey) {
       renderMetrics({
         Model: model,
         Route: `${route} · ${phase.label}`,
-        Tools: phase.tools.map((tool) => tool.name).join(', ') || '—',
+        Tools: phase.tools
+          .filter((tool) => tool.status === 'active' || tool.status === 'done')
+          .map((tool) => tool.tool)
+          .join(', ') || '—',
         Artifacts: phase.artifacts
       });
       if (idx === subagentPhaseIdx) {
