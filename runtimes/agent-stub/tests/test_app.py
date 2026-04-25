@@ -248,3 +248,25 @@ def test_classify_llm_falls_back_on_failure(monkeypatch):
     monkeypatch.setattr(app_module, "_classify_llm", lambda text: None)
     out = app_module._classify("whoami")
     assert out["tool"] == "shell"
+
+
+def test_classify_llm_handles_non_string_content(monkeypatch):
+    # Some OpenAI-compatible providers return null or a structured payload
+    # as message.content. Calling .strip() on those raises AttributeError,
+    # which would bypass the rules fallback if not handled — regression
+    # guard for that path.
+    monkeypatch.setattr(app_module, "LLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(app_module, "LLM_MODEL", "fake-model")
+
+    class _FakeResp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": None}}]}
+
+    monkeypatch.setattr(app_module.httpx, "post", lambda *a, **kw: _FakeResp())
+    assert app_module._classify_llm("anything") is None
+    # And the outer _classify still falls through to the rule-based path.
+    out = app_module._classify("whoami")
+    assert out["tool"] == "shell"

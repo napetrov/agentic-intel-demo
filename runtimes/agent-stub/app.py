@@ -409,6 +409,15 @@ def _classify_llm(text: str) -> Optional[dict[str, Any]]:
     except (httpx.HTTPError, KeyError, ValueError, IndexError) as exc:
         logger.warning("LLM classify failed (%s); falling back to rules", exc)
         return None
+    # Some OpenAI-compatible providers return null or a structured
+    # tool-calls payload as message.content; only the plain-string shape
+    # is parseable here, anything else degrades to the rules fallback.
+    if not isinstance(content, str):
+        logger.warning(
+            "LLM message.content is %s, not str; falling back to rules",
+            type(content).__name__,
+        )
+        return None
     try:
         # Some models wrap JSON in ```json fences. Strip them defensively.
         stripped = content.strip()
