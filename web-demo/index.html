@@ -9,11 +9,6 @@
   <body>
     <div class="shell">
       <aside class="rail">
-        <div>
-          <div class="eyebrow">OpenClaw + SambaNova</div>
-          <h1>Agentic Intelligence Demo</h1>
-          <p class="lede">A web demo that shows OpenClaw orchestration, LiteLLM model routing, SambaNova inference, and execution across System A and System B.</p>
-        </div>
         <section class="status-card" aria-labelledby="platform-health-title">
           <div class="section-title" id="platform-health-title">Platform health</div>
           <p class="status-note">Component reachability. Run counts and route details live in the architecture panel.</p>
@@ -25,6 +20,11 @@
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemB"></span>System B (GNR / offload-worker)</div>
           </div>
         </section>
+        <div>
+          <div class="eyebrow">Xeon + OpenClaw + SambaNova</div>
+          <h1>Agentic Intelligence Demo</h1>
+          <p class="lede">A web demo that shows OpenClaw orchestration, LiteLLM model routing, SambaNova inference, and execution across System A and System B.</p>
+        </div>
       </aside>
       <main class="main">
         <section class="hero">
@@ -34,28 +34,32 @@
             <p>Choose one of the scenarios below. OpenClaw coordinates the run, LiteLLM routes the model call, SambaNova performs inference, and the task executes on System A or System B — the walkthrough lights up each step.</p>
           </div>
           <div class="hero-actions">
-            <button class="ghost" data-action="status">Live status</button>
-            <button class="primary" id="run-demo">Run walkthrough</button>
+            <button class="ghost" data-action="status" title="Light up every node and route in the architecture diagram so you can see the full stack at a glance.">Stack overview</button>
+            <button class="primary" id="run-demo">Run demo</button>
             <button class="ghost" data-action="reset">Reset demo</button>
           </div>
         </section>
 
-        <section class="cards">
-          <button class="scenario-card" data-scenario="terminal-agent">
-            <span class="tag">Demo scenario</span>
-            <h3>Terminal Agent</h3>
-            <p>Live engineering task with OpenClaw orchestration on the primary CWF path.</p>
-          </button>
-          <button class="scenario-card" data-scenario="market-research">
-            <span class="tag">Demo scenario</span>
-            <h3>Market Research</h3>
-            <p>Research workflow with SambaNova-backed inference and GNR offload visibility.</p>
-          </button>
-          <button class="scenario-card" data-scenario="large-build-test">
-            <span class="tag">Demo scenario</span>
-            <h3>Large Build/Test</h3>
-            <p>Heavy execution flow with routing, queueing, and handoff visibility across the stack.</p>
-          </button>
+        <section class="cards-section" aria-label="Demo scenarios">
+          <button class="cards-nav cards-nav-prev" type="button" aria-label="Show previous scenarios" data-cards-scroll="prev">‹</button>
+          <div class="cards" id="scenario-cards">
+            <button class="scenario-card" data-scenario="terminal-agent">
+              <span class="tag">Demo scenario</span>
+              <h3>Terminal Agent</h3>
+              <p>Live engineering task with OpenClaw orchestration on the primary CWF path.</p>
+            </button>
+            <button class="scenario-card" data-scenario="market-research">
+              <span class="tag">Demo scenario</span>
+              <h3>Market Research</h3>
+              <p>Research workflow with SambaNova-backed inference and GNR offload visibility.</p>
+            </button>
+            <button class="scenario-card" data-scenario="large-build-test">
+              <span class="tag">Demo scenario</span>
+              <h3>Large Build/Test</h3>
+              <p>Heavy execution flow with routing, queueing, and handoff visibility across the stack.</p>
+            </button>
+          </div>
+          <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
         </section>
 
         <section class="architecture panel">
@@ -89,8 +93,8 @@
                 <span class="arch-badge">2 backends</span>
               </div>
               <div class="arch-router-fanout" aria-hidden="true">
-                <span class="fanout-arrow fanout-arrow-up">⇢</span>
-                <span class="fanout-arrow fanout-arrow-down">⇣</span>
+                <span class="fanout-arrow fanout-arrow-up">↗</span>
+                <span class="fanout-arrow fanout-arrow-down">↘</span>
               </div>
               <div class="arch-router-targets">
                 <div class="arch-node arch-router-target" data-node="sambanova">
@@ -110,7 +114,7 @@
               <div class="system-head">
                 <div>
                   <div class="system-title">System A</div>
-                  <div class="system-subtitle">primary — agents spawn here</div>
+                  <div class="system-subtitle">Xeon CWF — agent pool</div>
                 </div>
                 <div class="system-capacity">
                   <span class="capacity-label">capacity</span>
@@ -120,8 +124,9 @@
               <div class="capacity-bar" role="progressbar" aria-label="System A vCPU utilization" aria-valuemin="0" aria-valuemax="512" aria-valuenow="0">
                 <div id="sys-a-bar-fill" class="capacity-bar-fill" style="width: 0%"></div>
               </div>
+              <div class="agent-pool-label">Agents pool</div>
               <div class="agent-list" id="sys-a-agents" aria-live="polite">
-                <div class="agent-row-empty">agents: (idle — select a scenario)</div>
+                <div class="agent-row-empty">no agents (idle — select a scenario)</div>
               </div>
             </div>
 
@@ -135,7 +140,7 @@
               <div class="system-head">
                 <div>
                   <div class="system-title">System B</div>
-                  <div class="system-subtitle">heavy + services</div>
+                  <div class="system-subtitle">GNR — agent pool + services</div>
                 </div>
                 <div class="system-capacity">
                   <span class="capacity-label">capacity</span>
@@ -157,10 +162,10 @@
                   <span class="service-status" data-status="idle">idle</span>
                 </div>
               </div>
-              <div class="offload-landing">
-                <div class="offload-label">Offload landing</div>
+              <div class="agent-pool">
+                <div class="agent-pool-label">Agents pool <span class="agent-pool-hint">(direct spawn or offload from System A)</span></div>
                 <div class="offload-list" id="sys-b-offload" aria-live="polite">
-                  <div class="agent-row-empty">no offloaded workers</div>
+                  <div class="agent-row-empty">no agents on this system</div>
                 </div>
               </div>
             </div>
@@ -175,7 +180,7 @@
                 <div class="section-subtitle">Watch the agent work in real time</div>
               </div>
             </div>
-            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run walkthrough" submits a real shell task via the control-plane and shows worker stdout. Otherwise the panel falls back to the scripted walkthrough.</div>
+            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run demo" submits a real shell task via the control-plane and shows worker stdout. Otherwise the panel falls back to the scripted walkthrough.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -200,7 +205,7 @@
               <div class="panel-head">
                 <div>
                   <div class="section-title">Tool activity</div>
-                  <div class="section-subtitle">Show which tools are being used during the run</div>
+                  <div class="section-subtitle">Each tool call, API call, and subagent dispatch as it happens</div>
                 </div>
               </div>
               <div id="tool-activity" class="tool-activity" role="status" aria-live="polite">
@@ -240,6 +245,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260424c"></script>
+    <script src="./app.js?v=20260425a"></script>
   </body>
 </html>

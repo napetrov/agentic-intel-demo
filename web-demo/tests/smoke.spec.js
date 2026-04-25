@@ -14,7 +14,7 @@ test('page loads with expected landmarks', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   await expect(page.locator('h2')).toContainText(/scenario/i);
   await expect(page.locator('#run-demo')).toBeVisible();
-  await expect(page.locator('#run-demo')).toContainText(/walkthrough/i);
+  await expect(page.locator('#run-demo')).toContainText(/run demo/i);
 });
 
 test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
