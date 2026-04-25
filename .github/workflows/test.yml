@@ -178,7 +178,15 @@ jobs:
           [ -n "$ref" ] && [ "$ref" != "None" ] || (echo "no result_ref produced"; exit 1)
           url=$(curl -sf "http://127.0.0.1:8080/api/artifacts/$ref" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')
-          curl -sf "$url" | head -c 80 | grep -q '"echo"'
+          # Capture the artifact body to a file rather than piping curl
+          # into `head | grep`. With `set -o pipefail`, a downstream
+          # head/grep that closes its stdin early sends SIGPIPE to curl,
+          # which then exits 23 ("Failed writing data") and propagates
+          # as the pipeline's failure even though both head and grep
+          # succeeded. Capturing once + testing the file avoids that.
+          curl -sf "$url" -o /tmp/artifact.json
+          head -c 80 /tmp/artifact.json
+          grep -q '"echo"' /tmp/artifact.json
       - name: dump logs on failure
         if: failure()
         run: |
