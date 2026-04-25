@@ -20,6 +20,7 @@ These values are set explicitly in k8s manifests — never auto-assigned.
 |---------|-----------|----------|---------|---------|
 | Control Plane API | platform | **31000** | HTTP | deploy scripts, smoke tests |
 | LiteLLM proxy | inference | **31400** | HTTP | external model call tests |
+| Flowise (alt orchestrator) | agents | **31300** | HTTP | optional flow-builder UI; see `docs/flowise-integration.md` |
 
 ## In-cluster only (ClusterIP, not NodePort)
 

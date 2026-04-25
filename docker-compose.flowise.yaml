@@ -1,0 +1,70 @@
+# Optional overlay that adds Flowise as an alternate orchestrator alongside
+# the base docker-compose.yaml stack.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.flowise.yaml up --build
+#   open http://localhost:3000   # Flowise UI (login with FLOWISE_USERNAME/PASSWORD)
+#
+# Flowise is positioned as an optional alt to OpenClaw for users who want a
+# visual flow-builder front-end. It calls the same LiteLLM gateway and the
+# same control-plane offload/artifact endpoints, so flows are portable
+# between this single-host bring-up and the k8s deploy.
+#
+# Defaults:
+#   - Auth is REQUIRED. The container will not start unless FLOWISE_USERNAME
+#     and FLOWISE_PASSWORD are set (see .env or shell). Demo defaults exist
+#     in the variables below but should not be reused in shared environments.
+#   - Persistence: a named volume (flowise-data) holds the sqlite DB and any
+#     uploaded credentials/flows. Delete the volume to reset.
+#   - Network: shares the compose default network so it can reach
+#     control-plane:8080 by service name. The host port is bound to
+#     127.0.0.1 only — do not publish to the LAN without changing the auth
+#     defaults and disabling DEBUG.
+
+services:
+  flowise:
+    image: flowiseai/flowise:2.2.7
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # Auth (required). These are injected from the shell / .env; the
+      # placeholders below intentionally fail fast if unset.
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:?set FLOWISE_USERNAME in .env}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:?set FLOWISE_PASSWORD in .env}
+
+      # Persistence — sqlite under /root/.flowise (mounted to volume below).
+      DATABASE_PATH: /root/.flowise
+      APIKEY_PATH: /root/.flowise
+      SECRETKEY_PATH: /root/.flowise
+      LOG_PATH: /root/.flowise/logs
+      BLOB_STORAGE_PATH: /root/.flowise/storage
+
+      # Encryption key for stored credentials. Generate once and pin in .env.
+      FLOWISE_SECRETKEY_OVERWRITE: ${FLOWISE_SECRETKEY_OVERWRITE:?set FLOWISE_SECRETKEY_OVERWRITE in .env}
+
+      # Wire flows at the openai-compatible LiteLLM gateway. In compose the
+      # control-plane and offload-worker reach LiteLLM via their own envs;
+      # here Flowise can hit it directly. When LiteLLM isn't running locally
+      # (this base compose ships without it), point flows at the control
+      # plane's mock provider or set LITELLM_BASE_URL to a remote endpoint.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://litellm:4000}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-demo-not-a-real-key}
+
+      # Endpoints that flow nodes can call for offload / artifact retrieval.
+      CONTROL_PLANE_BASE_URL: http://control-plane:8080
+
+      # Disable telemetry and debug noise by default.
+      DISABLE_FLOWISE_TELEMETRY: "true"
+      DEBUG: "false"
+    volumes:
+      - flowise-data:/root/.flowise
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/ping || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  flowise-data:
