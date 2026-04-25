@@ -66,13 +66,45 @@ Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source
 
 ## Local bring-up (laptop)
 For a single-host demo without Kubernetes, the repo ships a
-`docker-compose.yaml` that brings up MinIO, the offload-worker, the control
-plane, and the static web UI with an `/api` reverse proxy:
+`docker-compose.yaml` that brings up MinIO, the agent-stub, the
+offload-worker, the control plane, and the static web UI with an `/api`
+reverse proxy:
 
 ```bash
 docker compose up --build
 # open http://localhost:8080 — "Run walkthrough" submits a real shell task
-# via the control plane and renders the worker stdout in the demo UI.
+# via the control plane and renders the worker stdout in the demo UI. The
+# "Agent command" panel only works once this stack is up.
+```
+
+Ports bound on `127.0.0.1`: `8080` (web UI + `/api` proxy), `8090`
+(control-plane, debug), `9000` (MinIO S3 API), `9001` (MinIO console). Make
+sure those are free, or override them via the env (the optional Flowise /
+OpenWebUI overlays add `3000` / `3030`).
+
+Verify the stack came up before clicking through the UI:
+
+```bash
+docker compose ps                      # agent-stub / offload-worker / control-plane
+                                       # should be "healthy"; minio is "running" (no
+                                       # healthcheck) and minio-init exits 0 after
+                                       # creating the bucket
+curl -fsS http://localhost:8080/api/health   # control-plane via the nginx /api proxy
+curl -fsS http://localhost:8080/api/ready    # 200 once dependencies are wired
+```
+
+Optional overrides go in a `.env` file at the repo root (see
+`.env.example`): `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`,
+`OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN` (point `agent_invoke`
+at a remote OpenClaw instead of the in-compose `agent-stub`),
+`LITELLM_BASE_URL`, `SAMBANOVA_PROBE_URL`. Anything left unset falls back
+to the bundled stub or stays "unwired" in the Platform health rail.
+
+Teardown:
+
+```bash
+docker compose down            # stop containers, keep the MinIO volume
+docker compose down -v         # also drop the minio-data volume
 ```
 
 ### Local bring-up without Docker
@@ -80,13 +112,20 @@ docker compose up --build
 When container registries (quay.io, docker.io, ghcr.io) aren't reachable —
 restricted networks, sandboxes, air-gapped CI — `scripts/dev-up.sh` brings
 up the same four services from a Python venv, with `moto[server]` standing
-in for MinIO:
+in for MinIO. Requires `python3` (3.10+) with the `venv` module and a
+POSIX shell (Linux / macOS).
 
 ```bash
 ./scripts/dev-up.sh        # creates .dev-up/venv + starts everything
 # open http://127.0.0.1:8080 — same UI, same /api/* contract
 ./scripts/dev-down.sh      # stops everything
 ```
+
+This path binds `127.0.0.1` ports `8080` (web proxy), `8090`
+(control-plane), `8001` (agent-stub), `8002` (offload-worker), and `9000`
+(moto S3). Override any of them via `WEB_DEMO_PORT`, `CONTROL_PLANE_PORT`,
+`AGENT_STUB_PORT`, `OFFLOAD_WORKER_PORT`, `MOTO_PORT` before running
+`dev-up.sh`.
 
 State (venv, logs, pid files) lives under `.dev-up/`. To target a real
 LiteLLM/SambaNova endpoint, export `LITELLM_BASE_URL` /
