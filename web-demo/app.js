@@ -49,7 +49,36 @@ const scenarios = {
       ['Command completed', 'Command batch finishes; artifacts collected in the local session pod.'],
       ['Answer generated', 'Engineering summary delivered; capacity returned to the pool.']
     ],
-    result: `Terminal Agent\n\nSystem A spawns one 4 vCPU agent (regular task footprint).\nLiteLLM routes inference to SambaNova.\nSystem B services stay idle — no offload needed.\n\nUser-visible outcome:\n- engineering summary\n- live route narrative\n- command evidence`
+    result: [
+      'artifacts/demo-terminal/scenario-audit.md',
+      '─────────────────────────────────────────',
+      'Scenario audit — repo-structure-audit-and-fixup',
+      '',
+      'Guided scenarios found (3)',
+      '  • agents/scenarios/terminal-agent',
+      '  • agents/scenarios/market-research',
+      '  • agents/scenarios/large-build-test',
+      '',
+      'Reusable task families (2)',
+      '  • agents/tasks/shell-workflow',
+      '  • agents/tasks/research-synthesis',
+      '',
+      'Config files referenced (4)',
+      '  • config/litellm/config.yaml',
+      '  • config/openclaw/instance.yaml',
+      '  • config/flowise/flow-terminal-agent.json',
+      '  • catalog/scenarios.yaml',
+      '',
+      'Mismatches detected (2)',
+      '  • catalog/scenarios.yaml: market-research → flow.md path drifts',
+      '  • docs/repo-layout.md still references legacy/ (removed)',
+      '',
+      'Validation',
+      '  test -f artifacts/demo-terminal/scenario-audit.md         → ok',
+      '  grep -q "Final summary" artifacts/.../scenario-audit.md   → ok',
+      '',
+      'Final summary: PASS — 3/3 scenarios catalogued, 2 follow-ups flagged.'
+    ].join('\n')
   },
   'market-research': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
@@ -97,7 +126,37 @@ const scenarios = {
       ['Synthesis', 'SambaNova via LiteLLM summarizes the combined findings.'],
       ['Result ready', 'Research brief delivered; subagent and eRAG wind down.']
     ],
-    result: `Market Research\n\nSystem A spawns one 4 vCPU agent (regular task footprint).\nThe MR agent spawns a 4 vCPU pandas subagent on System B for analytics offload.\neRAG service activates for retrieval; Enterprise Inference stays idle.\n\nUser-visible outcome:\n- market snapshot\n- risks and opportunities\n- why this route was chosen`
+    result: [
+      'artifacts/demo-research/market-brief.md',
+      '─────────────────────────────────────────',
+      'Market research brief — AI meeting notes for SMBs',
+      '',
+      'Scope',
+      '  Recommend the first SMB segment (1–50 staff) for an AI meeting-notes',
+      '  product, given a 6-month go-to-market window.',
+      '',
+      'Evaluation dimensions',
+      '  1. willingness-to-pay   2. meetings/week',
+      '  3. tool-stack fit       4. compliance overhead',
+      '',
+      'Findings (pandas subagent on System B, 4 vCPU)',
+      '  segment             WTP    meet/wk  stack  compliance',
+      '  professional svcs   $$$     22       high     low',
+      '  boutique agencies   $$      14       high     low',
+      '  local healthcare    $$$     19       med      HIGH',
+      '  field services      $        6       low      low',
+      '',
+      'Conclusion',
+      '  Lead with professional services (legal, accounting, consulting):',
+      '  highest WTP × meeting volume, low compliance drag.',
+      '',
+      'Next action',
+      '  Pilot with 12 firms via existing CRM partner.',
+      '  Revisit healthcare in v2 after HIPAA work.',
+      '',
+      'Why this route — eRAG retrieved 4 source docs; pandas offload to',
+      'System B did the segmentation roll-up; SambaNova synthesized the brief.'
+    ].join('\n')
   },
   'large-build-test': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova', 'ent-inference-route'],
@@ -146,7 +205,34 @@ const scenarios = {
       ['Results assembled', 'Artifacts bundled and summary drafted.'],
       ['Result ready', 'Build/test status and route decision delivered; slot releases back to the pool.']
     ],
-    result: `Large Build/Test\n\nSystem A spawns one 16 vCPU agent (large-profile slot).\nLiteLLM lights the Enterprise Inference SLM route alongside SambaNova.\nNo subagent spawn — the heavy work fits on A.\n\nUser-visible outcome:\n- execution status\n- route decision\n- result summary`
+    result: [
+      'artifacts/demo-build/build-test-summary.md',
+      '─────────────────────────────────────────',
+      'Build/test summary — large profile (16 vCPU on System A)',
+      '',
+      'Preflight',
+      '  toolchain: python 3.11.7, gcc 12.3, cmake 3.27   → ok',
+      '  workspace clean: yes      |   cache hit: 64%',
+      '',
+      'Build',
+      '  $ make -j16',
+      '  412 targets   →   exit 0   in 1m41s',
+      '',
+      'Tests',
+      '  $ pytest -q',
+      '  142 passed, 0 failed, 3 skipped   in 38s',
+      '  slowest:',
+      '    test_offload_relay.py::test_artifact_roundtrip   4.81s',
+      '    test_litellm_route.py::test_sambanova_primary    3.20s',
+      '    test_probe.py::test_unconfigured_neutral         2.04s',
+      '',
+      'Inference route share',
+      '  SambaNova (primary):   78% of tokens',
+      '  Ent. Inference SLM:    22% (fallback for code-completion)',
+      '',
+      'Final: PASS — exit 0, 142/142 passing.',
+      'Artifacts: build.log, test.xml, summary.md → artifacts/demo-build/'
+    ].join('\n')
   }
 };
 
@@ -418,8 +504,8 @@ function applyPlanned(key) {
   renderToolActivity(buildScenarioToolActivity(scenario, 'planned'));
   commandLogEl.textContent = 'Press "Run demo" to execute this scenario and stream the live command log.';
   renderMetrics(scenario.metrics);
-  result.textContent = scenario.result;
-  result.className = 'result';
+  result.textContent = `Press "Run demo" to render the ${key} artifact here.`;
+  result.className = 'result empty-state';
   renderConsole(scenario.console);
 }
 
@@ -571,8 +657,9 @@ function runSimulatedWalkthrough(scenarioKey) {
     : -1;
 
   commandLogEl.textContent = '';
-  result.textContent = `Walkthrough: ${scenario.result.split('\n')[0]}`;
-  result.className = 'result';
+  const phaseTotal = phases.length;
+  result.textContent = `Drafting artifact… [0/${phaseTotal}]`;
+  result.className = 'result empty-state';
 
   phases.forEach((phase, idx) => {
     runTimers.push(setTimeout(() => {
@@ -588,6 +675,7 @@ function runSimulatedWalkthrough(scenarioKey) {
           .join(', ') || '—',
         Artifacts: phase.artifacts
       });
+      result.textContent = `Drafting artifact… [${idx + 1}/${phaseTotal}: ${phase.label}]`;
       if (idx === subagentPhaseIdx) {
         applyRunning(scenarioKey, { includeSubagentNow: true });
       }
@@ -597,6 +685,7 @@ function runSimulatedWalkthrough(scenarioKey) {
   const totalDuration = phases.length * phaseDurationMs;
   runTimers.push(setTimeout(() => {
     result.textContent = scenario.result;
+    result.className = 'result';
     renderToolActivity(buildScenarioToolActivity(scenario, 'done'));
     restoreRunButton();
   }, totalDuration));
@@ -613,8 +702,8 @@ async function runLiveWalkthrough(scenarioKey) {
   applyRunning(scenarioKey, { includeSubagentNow: false });
 
   commandLogEl.textContent = `$ POST /api/offload {task_type:"shell", scenario:"${scenarioKey}"}\n`;
-  result.textContent = `Live run: ${scenarioKey}`;
-  result.className = 'result';
+  result.textContent = `Awaiting worker stdout for ${scenarioKey}…`;
+  result.className = 'result empty-state';
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'active' }
   ]);
@@ -692,7 +781,28 @@ async function runLiveWalkthrough(scenarioKey) {
     return;
   }
 
-  const inline = status.result;
+  // When the worker punts the result to MinIO we get result_ref instead of
+  // an inline result. Fetch the artifact JSON so the verdict reflects the
+  // real exit_code — otherwise exitCode stays null and a non-zero exit
+  // hidden inside the artifact would silently render as PASS.
+  let inline = status.result;
+  if ((!inline || typeof inline !== 'object' || !('exit_code' in inline)) && status.result_ref) {
+    try {
+      const presigned = await fetchJson(`${API_BASE}/artifacts/${status.result_ref}`);
+      if (!stillCurrent()) return;
+      const artifactResp = await fetch(presigned.url);
+      if (!stillCurrent()) return;
+      if (artifactResp.ok) {
+        inline = await artifactResp.json();
+      } else {
+        commandLogEl.textContent += `\n[warn] artifact fetch HTTP ${artifactResp.status}`;
+      }
+    } catch (err) {
+      if (!stillCurrent()) return;
+      commandLogEl.textContent += `\n[warn] artifact fetch failed: ${err.message}`;
+    }
+  }
+
   const stdout = (inline && typeof inline === 'object' && 'stdout' in inline)
     ? inline.stdout
     : (status.result_ref
@@ -702,10 +812,11 @@ async function runLiveWalkthrough(scenarioKey) {
     ? inline.exit_code
     : null;
 
-  // Treat null exit_code as success when the result was punted to MinIO
-  // (artifact-backed completion). Only an explicit non-zero exit_code is a
-  // failure. status==="completed" already implies the worker reported ok.
-  const shellSucceeded = exitCode === null || exitCode === 0;
+  // Only mark success when exit_code is explicitly 0, or when there's no
+  // artifact metadata at all (truly nothing to inspect). With a result_ref
+  // present, an unknown exit_code means the artifact fetch failed — don't
+  // optimistically render PASS.
+  const shellSucceeded = exitCode === 0 || (exitCode === null && !status.result_ref);
 
   commandLogEl.textContent += `\n--- worker stdout ---\n${stdout}`;
   if (exitCode !== null) {
@@ -729,10 +840,38 @@ async function runLiveWalkthrough(scenarioKey) {
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
   });
-  result.textContent = shellSucceeded
-    ? `Live run complete (exit ${exitCode === null ? 'n/a' : '0'}). job_id=${submit.job_id}`
-    : `Live run finished with exit_code=${exitCode}. job_id=${submit.job_id}`;
+  result.textContent = renderLiveArtifact({
+    scenarioKey,
+    jobId: submit.job_id,
+    stdout,
+    exitCode,
+    elapsedMs,
+    route,
+    succeeded: shellSucceeded,
+    resultRef: status.result_ref || null
+  });
+  result.className = 'result';
   finish();
+}
+
+function renderLiveArtifact({ scenarioKey, jobId, stdout, exitCode, elapsedMs, route, succeeded, resultRef }) {
+  const elapsed = elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—';
+  const exit = exitCode === null ? 'n/a' : String(exitCode);
+  const verdict = succeeded ? 'PASS' : 'FAIL';
+  const trimmed = (stdout || '').trimEnd() || '(no stdout)';
+  const lines = [
+    `artifacts/live/${scenarioKey}/${jobId}.txt`,
+    '─────────────────────────────────────────',
+    `Live worker artifact — ${scenarioKey}`,
+    '',
+    `job_id    ${jobId}`,
+    `route     ${route}`,
+    `exit      ${exit}`,
+    `elapsed   ${elapsed}`,
+  ];
+  if (resultRef) lines.push(`stored    ${resultRef}`);
+  lines.push('', '--- worker stdout ---', trimmed, '', `Final: ${verdict}`);
+  return lines.join('\n');
 }
 
 runDemoBtn.addEventListener('click', () => {
