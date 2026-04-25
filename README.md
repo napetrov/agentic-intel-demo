@@ -75,9 +75,14 @@ docker compose up --build
 ```
 
 `task_type=shell` is fully self-contained on this path. `task_type=agent_invoke`
-is left unconfigured locally (no OpenClaw running); set `OPENCLAW_GATEWAY_URL`
-and `OPENCLAW_GATEWAY_TOKEN` in your shell before `compose up` to point the
-worker at a remote OpenClaw gateway.
+is also wired locally: an `agent-stub` container stands in for the OpenClaw
+gateway and exposes `POST /tools/invoke` with a small allow-listed tool set
+(`shell`, `read_file`, `list_files`, `summarize`, `echo`, plus a `command`
+classifier). The web UI exposes an "Agent command" input that submits free-form
+text through `agent_invoke` and renders the agent's chosen tool, trace, and
+output. To target a real remote OpenClaw instead of the stub, set
+`OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in your shell before
+`docker compose up`.
 
 ## Scripts
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.

@@ -6,14 +6,16 @@
 # Stack:
 #   minio          (S3-compatible artifact store)
 #   minio-init     (one-shot: create the demo-artifacts bucket)
+#   agent-stub     (local stand-in for the OpenClaw gateway: /tools/invoke)
 #   offload-worker (System B: executes shell/echo/pandas/sklearn/agent_invoke)
 #   control-plane  (System A: forwards to offload-worker, presigns artifacts)
 #   web-demo       (nginx static UI + reverse proxy to control-plane on /api/*)
 #
 # This compose path is independent of the operator-managed Kubernetes path —
-# `agent_invoke` is left unconfigured here (no OpenClaw running locally) and
-# returns an "unconfigured" error if invoked. The web UI uses `task_type=shell`
-# end-to-end, which is fully self-contained.
+# `agent_invoke` here forwards to the local agent-stub instead of a real
+# OpenClaw instance, so the "agent ran a command" path is exercised
+# end-to-end without external dependencies. To target a remote OpenClaw
+# instead, set OPENCLAW_GATEWAY_URL/_TOKEN before `compose up`.
 
 services:
   minio:
@@ -64,6 +66,19 @@ services:
         echo "[minio-init] bucket demo-artifacts ready"
     restart: "no"
 
+  agent-stub:
+    build:
+      context: ./runtimes/agent-stub
+    volumes:
+      # Read-only workspace for the agent's read_file/list_files tools. The
+      # stub never writes to /workspace; mounting ro makes that explicit.
+      - ./demo-workspace:/workspace:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0) if urllib.request.urlopen(\"http://localhost:8080/health\",timeout=2).status==200 else sys.exit(1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   offload-worker:
     build:
       context: ./runtimes/offload-worker
@@ -73,10 +88,10 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio-dummy-secret-1234}
       MINIO_BUCKET: demo-artifacts
       SCENARIO_SCRIPTS_DIR: /scenarios
-      # Leave OPENCLAW_GATEWAY_URL empty — agent_invoke will return a
-      # configuration error here. Set OPENCLAW_GATEWAY_URL/_TOKEN in your
-      # shell before `compose up` to enable it against a remote OpenClaw.
-      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-}
+      # Default points at the in-compose agent-stub so `agent_invoke` works
+      # locally end-to-end. Override OPENCLAW_GATEWAY_URL in your shell
+      # before `compose up` to target a remote OpenClaw instance instead.
+      OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://agent-stub:8080}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
     volumes:
       # Mount scenarios read-only so the worker container cannot rewrite the
@@ -85,6 +100,8 @@ services:
     depends_on:
       minio-init:
         condition: service_completed_successfully
+      agent-stub:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0) if urllib.request.urlopen(\"http://localhost:8080/health\",timeout=2).status==200 else sys.exit(1)'"]
       interval: 5s

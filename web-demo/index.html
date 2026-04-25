@@ -40,6 +40,27 @@
           </div>
         </section>
 
+        <section class="agent-console panel">
+          <div class="panel-head">
+            <div>
+              <div class="section-title">Agent command</div>
+              <div class="section-subtitle">Send a free-form command to the agent gateway and watch it pick a tool</div>
+            </div>
+          </div>
+          <div class="panel-note">Submits <code>task_type=agent_invoke</code> through <code>/api/offload</code>; the agent gateway classifies the input (shell / read_file / list_files / summarize / echo) and runs it. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, <code>read AGENTS.md</code>, or <code>summarize OpenClaw orchestrates agentic execution on Intel CPUs.</code></div>
+          <form id="agent-command-form" class="agent-command-form" autocomplete="off">
+            <input
+              id="agent-command-input"
+              class="agent-command-input"
+              type="text"
+              placeholder="e.g. whoami   |   list .   |   read AGENTS.md"
+              aria-label="Agent command"
+            />
+            <button type="submit" id="agent-command-submit" class="primary">Run agent command</button>
+          </form>
+          <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
+        </section>
+
         <section class="cards">
           <button class="scenario-card" data-scenario="terminal-agent">
             <span class="tag">Demo scenario</span>
@@ -240,6 +261,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260424c"></script>
+    <script src="./app.js?v=20260425d"></script>
   </body>
 </html>
