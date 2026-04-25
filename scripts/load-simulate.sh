@@ -60,9 +60,17 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 2
 fi
 
-# jq is optional — the script falls back to raw output if it's missing.
+# jq is optional for the one-shot path (the response is just printed),
+# but watch mode needs to compute the pending count to know when to
+# exit. Rather than reimplement JSON-parsing in shell, require jq
+# explicitly when -w is used so the failure mode is loud instead of
+# "the loop never terminates".
 HAVE_JQ=0
 if command -v jq >/dev/null 2>&1; then HAVE_JQ=1; fi
+if [ "$WATCH" = 1 ] && [ "$HAVE_JQ" != 1 ]; then
+  echo "load-simulate.sh: -w (watch mode) requires 'jq' on PATH" >&2
+  exit 2
+fi
 
 payload=$(printf '{"scenario":"%s","profile":"%s","count":%d}' "$SCENARIO" "$PROFILE" "$COUNT")
 echo "[load-simulate] POST $CONTROL_PLANE_URL/sessions/batch  body=$payload"

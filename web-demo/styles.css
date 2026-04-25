@@ -800,6 +800,7 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .status-pill.status-running { color: var(--cyan); }
 .status-pill.status-completed { color: var(--green); }
 .status-pill.status-failed { color: var(--orange); }
+.status-pill.status-deleting { color: var(--muted); }
 
 @media (max-width: 1024px) {
   .shell, .workspace, .cards { grid-template-columns: 1fr; }

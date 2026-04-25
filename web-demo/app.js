@@ -1297,7 +1297,15 @@ const multiSessionClear = document.getElementById('multi-session-clear');
 // Tracks the session_ids this browser session asked the backend to
 // spawn. The control plane shows ALL sessions, but the table only shows
 // ones we created so two demo viewers don't crowd each other's tables.
+//
+// `hasSpawnedHere` flips true the first time this tab spawns anything
+// and stays true forever after. Without this flag, "Clear list" would
+// empty trackedSessionIds and the next refresh would flip back to
+// "show all sessions" — which in a shared demo immediately repopulates
+// the table with whatever other viewers are doing, defeating the
+// per-tab isolation.
 const trackedSessionIds = new Set();
+let hasSpawnedHere = false;
 const TERMINAL_STATUSES = new Set(['Completed', 'Failed']);
 
 let multiSessionPollTimer = null;
@@ -1380,9 +1388,12 @@ async function refreshMultiSession() {
     if (multiSessionBackend) {
       multiSessionBackend.textContent = `backend: ${body.backend || 'unknown'}`;
     }
-    // Filter to sessions this tab tracks, but if we've never spawned any,
-    // show everything so a demo viewer who joins mid-run still sees state.
-    const records = trackedSessionIds.size
+    // Filter to sessions this tab tracks. The flag (not the set's
+    // current size) gates this: once a tab has spawned anything, it
+    // stays in "show only mine" mode even after Clear list, otherwise a
+    // shared demo would re-show every other viewer's sessions on the
+    // very next refresh.
+    const records = hasSpawnedHere
       ? all.filter((r) => trackedSessionIds.has(r.session_id))
       : all;
     renderMultiSessionRows(records);
@@ -1423,6 +1434,7 @@ async function spawnSessionBatch(scenario, profile, count) {
     });
     const created = Array.isArray(body && body.sessions) ? body.sessions : [];
     created.forEach((rec) => trackedSessionIds.add(rec.session_id));
+    if (created.length) hasSpawnedHere = true;
     const errored = body && body.by_status && body.by_status._error;
     if (errored) {
       setMultiSessionStatus(

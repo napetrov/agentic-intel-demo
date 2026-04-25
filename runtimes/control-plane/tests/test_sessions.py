@@ -173,6 +173,63 @@ def test_status_failed_when_failed_condition_true():
     assert msg == "job failed"
 
 
+def test_status_completed_preserves_started_at(monkeypatch):
+    """CodeRabbit nitpick: terminal Jobs still have status.start_time set
+    by the controller; reporting None hides session-duration data the UI
+    needs."""
+    start = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 4, 25, 12, 5, 0, tzinfo=timezone.utc)
+    job = _job(
+        conditions=[{"type": "Complete", "status": "True", "last_transition_time": end}],
+        start_time=start,
+    )
+    status, started, completed, _ = sm.KubeSessionBackend._status_from_job(job, pods=[])
+    assert status == sm.STATUS_COMPLETED
+    assert started == start.timestamp()
+    assert completed == end.timestamp()
+
+
+def test_status_failed_preserves_started_at():
+    start = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 4, 25, 12, 5, 0, tzinfo=timezone.utc)
+    job = _job(
+        conditions=[{"type": "Failed", "status": "True", "last_transition_time": end}],
+        start_time=start,
+    )
+    _, started, completed, _ = sm.KubeSessionBackend._status_from_job(job, pods=[])
+    assert started == start.timestamp()
+    assert completed == end.timestamp()
+
+
+# ---- Template env-substitution (CodeRabbit critical review feedback) -----
+
+
+def test_interpolate_resolves_allow_listed_env_vars(monkeypatch):
+    monkeypatch.setenv("SESSION_IMAGE", "registry.local/agent:v1")
+    monkeypatch.setenv("AWS_REGION", "us-east-2")
+    raw = "image: ${SESSION_IMAGE}\nregion: ${AWS_REGION}\n"
+    out = sm.KubeSessionBackend._interpolate(raw)
+    assert "registry.local/agent:v1" in out
+    assert "us-east-2" in out
+    assert "${" not in out
+
+
+def test_interpolate_leaves_unknown_placeholders_alone():
+    """Anything outside the allow-list stays as a literal so a template
+    can carry intentional ${...} text without being mangled."""
+    raw = "x: ${NOT_IN_ALLOW_LIST}\n"
+    assert sm.KubeSessionBackend._interpolate(raw) == raw
+
+
+def test_interpolate_missing_env_becomes_empty(monkeypatch):
+    """Mirrors envsubst / Bash semantics — missing variable expands to
+    empty so the operator sees a Pod fail with empty config rather than
+    a confusing parse error."""
+    monkeypatch.delenv("SESSION_IMAGE", raising=False)
+    raw = "image: ${SESSION_IMAGE}\n"
+    assert sm.KubeSessionBackend._interpolate(raw) == "image: \n"
+
+
 # ----------------------------- /sessions endpoints ---------------------------
 
 
@@ -207,6 +264,26 @@ def test_create_rejects_unknown_profile(client):
     r = client.post("/sessions", json={"scenario": "x", "profile": "huge"})
     assert r.status_code == 400
     assert "unknown profile" in r.json()["detail"]
+
+
+def test_create_rejects_session_id_above_k8s_label_limit(client):
+    """Codex/CodeRabbit P-major: session_id + "-job" must fit in 63 chars."""
+    too_long = "s" * 60  # 60 + len("-job") = 64 > 63
+    r = client.post("/sessions", json={"scenario": "x", "session_id": too_long})
+    assert r.status_code == 422  # pydantic max_length validator
+
+
+def test_create_rejects_scenario_above_k8s_label_limit(client):
+    too_long = "s" * 64
+    r = client.post("/sessions", json={"scenario": too_long})
+    assert r.status_code == 422
+
+
+def test_create_accepts_session_id_at_k8s_label_limit(client):
+    """Boundary check: exactly 59 chars must succeed."""
+    at_limit = "s" * 59
+    r = client.post("/sessions", json={"scenario": "x", "session_id": at_limit})
+    assert r.status_code == 201, r.text
 
 
 def test_batch_creates_n_sessions(client):

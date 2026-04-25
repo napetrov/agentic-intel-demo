@@ -196,9 +196,11 @@ class LocalSessionBackend:
         with self._lock:
             if session_id not in self._records:
                 return False
-            # Mark Deleting briefly so the UI sees the transition, then
-            # drop. A real backend would wait for the Job to terminate.
-            self._records[session_id].status = STATUS_DELETING
+            # The local backend has no real teardown work to wait on, so
+            # we drop the record directly. (An earlier draft set
+            # STATUS_DELETING here, but that transition was never
+            # observable — the dict entry was removed in the same locked
+            # section.)
             del self._records[session_id]
             return True
 
@@ -261,6 +263,39 @@ class KubeSessionBackend:
         self._session_image = session_image
         self._ttl = ttl_seconds_after_finished
 
+    # Env vars the template can reference as ${NAME}. Anything not in this
+    # allow-list is left verbatim so the template can carry literal `${...}`
+    # text on purpose. Kept narrow because the substituted values land in
+    # Pod env / image fields where a typo silently produces a broken Pod.
+    _SUBSTITUTABLE_ENV_VARS = (
+        "SESSION_IMAGE",
+        "AWS_REGION",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "BEDROCK_MODEL_ID",
+    )
+
+    @classmethod
+    def _interpolate(cls, raw: str) -> str:
+        """Expand ${NAME} references for the allow-listed env vars.
+
+        Used on the raw ConfigMap text before yaml.safe_load() so the
+        Job that lands in the cluster has concrete values, not literal
+        '${...}' placeholders. A missing env var becomes an empty string
+        — the same fallback Bash and envsubst use — so an operator who
+        forgets to set one sees a Pod failing on empty config rather
+        than a confusing parse error.
+        """
+        import re
+
+        def repl(match):
+            name = match.group(1)
+            if name not in cls._SUBSTITUTABLE_ENV_VARS:
+                return match.group(0)  # leave unknown placeholders alone
+            return os.environ.get(name, "")
+
+        return re.sub(r"\$\{([A-Z0-9_]+)\}", repl, raw)
+
     def _load_template(self) -> dict:
         # Loaded fresh on every create() so an operator edit (kubectl
         # edit configmap session-job-template) takes effect for the next
@@ -274,6 +309,10 @@ class KubeSessionBackend:
             raise RuntimeError(
                 f"ConfigMap {self._template_configmap!r} missing key 'job.yaml'"
             )
+        # Resolve ${...} placeholders before parsing so the loaded spec
+        # already contains concrete strings — otherwise the agent Pod
+        # gets env vars whose values are literal `${AWS_REGION}` etc.
+        raw = self._interpolate(raw)
         import yaml  # local import: yaml is a kubernetes-package dep
         spec = yaml.safe_load(raw)
         if not isinstance(spec, dict):
@@ -358,6 +397,13 @@ class KubeSessionBackend:
                 return obj.get(key, default)
             return getattr(obj, key, default)
 
+        # Pull start_time once — terminal Jobs (Complete/Failed) still
+        # have it set by the controller, and the UI uses it to compute
+        # session duration. Returning None for those would hide useful
+        # signal even though the data is right there in the status.
+        start_time = _get(st, "start_time") or _get(st, "startTime")
+        started_ts = start_time.timestamp() if hasattr(start_time, "timestamp") else None
+
         conditions = _get(st, "conditions") or []
         for cond in conditions:
             ctype = _get(cond, "type")
@@ -365,17 +411,15 @@ class KubeSessionBackend:
             if ctype == "Complete" and cstatus == "True":
                 completed_at = _get(cond, "last_transition_time") or _get(cond, "lastTransitionTime")
                 ts = completed_at.timestamp() if hasattr(completed_at, "timestamp") else None
-                return STATUS_COMPLETED, None, ts, _get(cond, "message")
+                return STATUS_COMPLETED, started_ts, ts, _get(cond, "message")
             if ctype == "Failed" and cstatus == "True":
                 completed_at = _get(cond, "last_transition_time") or _get(cond, "lastTransitionTime")
                 ts = completed_at.timestamp() if hasattr(completed_at, "timestamp") else None
-                return STATUS_FAILED, None, ts, _get(cond, "message") or "job failed"
+                return STATUS_FAILED, started_ts, ts, _get(cond, "message") or "job failed"
 
         active = _get(st, "active") or 0
         if active > 0 or pods:
-            start_time = _get(st, "start_time") or _get(st, "startTime")
-            ts = start_time.timestamp() if hasattr(start_time, "timestamp") else None
-            return STATUS_RUNNING, ts, None, None
+            return STATUS_RUNNING, started_ts, None, None
         return STATUS_PENDING, None, None, None
 
     def _record_for_job(

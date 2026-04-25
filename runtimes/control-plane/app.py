@@ -354,14 +354,26 @@ _session_backend: SessionBackend = make_backend()
 logger.info("session backend: %s", _session_backend.name)
 
 
+# K8s DNS-1035 labels (used for Job names) cap at 63 chars; KubeSessionBackend
+# appends "-job" (4 chars) to session_id when forming the Job name, so the
+# bound here is 59. `scenario` becomes a label value (max 63 chars). These
+# limits matter even when SESSION_BACKEND=local: a request that succeeds
+# locally should also succeed against the kube backend, otherwise demo
+# viewers hit an inconsistency the moment they switch backends.
+_K8S_LABEL_MAX = 63
+_SESSION_ID_MAX = _K8S_LABEL_MAX - len("-job")  # 59
+
+
 class SessionCreateRequest(BaseModel):
-    scenario: str = Field(min_length=1)
+    scenario: str = Field(min_length=1, max_length=_K8S_LABEL_MAX)
     profile: str = Field(default=DEFAULT_PROFILE)
-    session_id: Optional[str] = Field(default=None, max_length=64)
+    session_id: Optional[str] = Field(default=None, max_length=_SESSION_ID_MAX)
 
 
 class SessionBatchRequest(BaseModel):
-    scenario: str = Field(min_length=1)
+    # No session_id field on batch — ids are auto-generated, and the
+    # generator (sess- + 10 hex chars) is well under the limit.
+    scenario: str = Field(min_length=1, max_length=_K8S_LABEL_MAX)
     profile: str = Field(default=DEFAULT_PROFILE)
     # gt=0: zero sessions is a no-op the client could just not send.
     count: int = Field(gt=0)
