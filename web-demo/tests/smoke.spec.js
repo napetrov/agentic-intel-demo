@@ -21,6 +21,10 @@ test('each scenario card populates tool activity with at least 3 rows', async ({
   await page.goto(BASE_URL + '/');
   for (const scenario of SCENARIOS) {
     await page.locator(`[data-scenario="${scenario}"]`).click();
+    // Selecting a scenario must NOT preload command output — the log stays
+    // on the placeholder until the user explicitly clicks Run demo.
+    await expect(page.locator('#command-log')).toContainText(/press "run demo"/i);
+    await expect(page.locator('#command-log')).not.toContainText(/openclaw demo run/i);
     await expectToolRowsAtLeast(page, 3, `scenario ${scenario} should produce >=3 tool rows`);
     await expect(page.locator('#result')).not.toHaveText(/waiting/i);
   }

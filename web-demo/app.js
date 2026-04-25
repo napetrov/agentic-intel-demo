@@ -197,6 +197,7 @@ let liveBackendAvailable = false;
 
 let currentScenario = null;
 let runTimers = [];
+let liveRunId = 0;
 const originalRunLabel = runDemoBtn.textContent;
 
 sysATotalEl.textContent = SYSTEM_A_TOTAL_VCPU;
@@ -226,6 +227,11 @@ function restoreRunButton() {
 
 function cancelRun() {
   clearRunTimers();
+  // Invalidate any in-flight live walkthrough so late /api/offload poll
+  // responses can't overwrite the new mode (Stack overview / Reset / new
+  // scenario). runLiveWalkthrough checks `myRunId === liveRunId` after each
+  // await and bails out early when this counter advances.
+  liveRunId += 1;
   restoreRunButton();
 }
 
@@ -370,13 +376,14 @@ function buildScenarioToolActivity(scenario, defaultStatus) {
   if (!scenario || !Array.isArray(scenario.toolActivity)) return [];
   return scenario.toolActivity.map((row) => ({
     ...row,
+    name: row.name || row.tool,
     status: row.status || defaultStatus
   }));
 }
 
 function renderMetrics(entries) {
   metricsEl.innerHTML = Object.entries(entries).map(([k, v]) => `
-    <div class="metric-card"><span class="metric-label">${k}</span><span class="metric-value">${v}</span></div>
+    <div class="metric-card"><span class="metric-label">${escapeHtml(k)}</span><span class="metric-value">${escapeHtml(v == null ? '' : v)}</span></div>
   `).join('');
 }
 
@@ -488,9 +495,19 @@ function updateCardsNav() {
   if (!scenarioCardsEl) return;
   const max = scenarioCardsEl.scrollWidth - scenarioCardsEl.clientWidth;
   const overflowing = max > 4;
+  const atStart = scenarioCardsEl.scrollLeft <= 4;
+  const atEnd = scenarioCardsEl.scrollLeft >= max - 4;
+
+  // Desktop CSS only switches the cards container into horizontal-scroll mode
+  // when this class is present, so the overflow detection here drives the
+  // visual layout as well as the nav buttons.
+  scenarioCardsEl.classList.toggle('cards-overflow', overflowing);
+
   cardsNavButtons.forEach((btn) => {
-    btn.classList.toggle('cards-nav-disabled', !overflowing);
-    btn.disabled = !overflowing;
+    const isPrev = btn.dataset.cardsScroll === 'prev';
+    const disabled = !overflowing || (isPrev ? atStart : atEnd);
+    btn.classList.toggle('cards-nav-disabled', disabled);
+    btn.disabled = disabled;
   });
 }
 
@@ -584,8 +601,6 @@ function runSimulatedWalkthrough(scenarioKey) {
     restoreRunButton();
   }, totalDuration));
 }
-
-let liveRunId = 0;
 
 async function runLiveWalkthrough(scenarioKey) {
   const scenario = scenarios[scenarioKey];
