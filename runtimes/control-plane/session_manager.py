@@ -415,8 +415,15 @@ class KubeSessionBackend:
         session_id: Optional[str] = None,
     ) -> SessionRecord:
         sid = session_id or _new_session_id()
-        spec, job_name = self._render_job(sid, scenario, profile)
+        # Wrap the template-read AND the Job create in the same translator.
+        # _render_job() calls _load_template() which does a ConfigMap GET —
+        # if that fails (missing ConfigMap, RBAC denied, API outage) we want
+        # the caller to see a backend error (502), not an unhandled 500.
+        # ValueError / RuntimeError from _render_job (unknown profile,
+        # malformed template) keep their own semantics and bubble up
+        # untouched.
         try:
+            spec, job_name = self._render_job(sid, scenario, profile)
             self._batch.create_namespaced_job(namespace=self._namespace, body=spec)
         except self._client.exceptions.ApiException as exc:
             raise RuntimeError(

@@ -25,7 +25,7 @@ from urllib.parse import urlsplit, urlunsplit
 import boto3
 import httpx
 from botocore.client import Config as BotoConfig
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 # Ensure sibling modules in this directory resolve when app.py is loaded
@@ -427,11 +427,24 @@ def create_session(req: SessionCreateRequest) -> SessionResponse:
 
 
 @app.post("/sessions/batch", response_model=SessionListResponse, status_code=201)
-def create_session_batch(req: SessionBatchRequest) -> SessionListResponse:
+def create_session_batch(
+    req: SessionBatchRequest, response: Response
+) -> SessionListResponse:
     """Create N sessions in one shot. Used by the load-simulator and the
     "Spawn N concurrent sessions" panel in the web UI. Each session gets
-    its own auto-generated id; partial failure (some succeed, one fails)
-    returns 502 with the partial list so the caller can clean up."""
+    its own auto-generated id.
+
+    Status codes:
+      201 — every requested session was created
+      207 — partial success: some sessions created, then the loop bailed.
+            Body still carries the successfully-created sessions plus an
+            `_error: 1` marker in `by_status` so the caller can clean up.
+            207 (rather than 201) so HTTP-status-only callers (curl,
+            shell scripts, automation) don't treat partial as success.
+      502 — total failure: zero sessions were created. Returned as a
+            JSON body so the caller learns *why* (vs a bare HTTPException
+            stripping context).
+    """
     if req.count > SESSION_BATCH_MAX:
         raise HTTPException(
             status_code=400,
@@ -451,23 +464,20 @@ def create_session_batch(req: SessionBatchRequest) -> SessionListResponse:
             error = str(exc)
             break
         created.append(rec)
-    response = SessionListResponse(
+    by_status = _summarize_status(created)
+    if error is not None:
+        # Mark partial failure in both the body (for the JS client which
+        # already inspects `_error`) and the HTTP status (for clients
+        # that only check status). Total failure becomes a hard 502 so
+        # `curl -f` and similar tooling exit non-zero.
+        by_status = {**by_status, "_error": 1}
+        response.status_code = 502 if not created else 207
+    return SessionListResponse(
         backend=_session_backend.name,
         total=len(created),
-        by_status=_summarize_status(created),
+        by_status=by_status,
         sessions=[_record_to_response(r) for r in created],
     )
-    if error is not None:
-        # Surface the partial result via the response body — FastAPI's
-        # HTTPException would drop the list of successfully-created
-        # sessions, leaving the caller to garbage-collect blindly.
-        return SessionListResponse(
-            backend=response.backend,
-            total=response.total,
-            by_status={**response.by_status, "_error": 1},
-            sessions=response.sessions,
-        )
-    return response
 
 
 def _summarize_status(records) -> dict[str, int]:

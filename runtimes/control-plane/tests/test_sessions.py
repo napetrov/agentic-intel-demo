@@ -256,3 +256,111 @@ def test_delete_session(client):
 def test_get_unknown_session_returns_404(client):
     r = client.get("/sessions/sess-doesnotexist")
     assert r.status_code == 404
+
+
+# ---- /sessions/batch partial-failure semantics (Codex P1 review feedback) ----
+
+
+class _FlakyBackend:
+    """Backend that succeeds for the first `succeed_n` calls then raises.
+
+    Used to verify that /sessions/batch returns the right HTTP status on
+    partial / total failure without depending on a real kube cluster.
+    """
+    name = "flaky"
+
+    def __init__(self, succeed_n: int, exc: Exception):
+        self.succeed_n = succeed_n
+        self.exc = exc
+        self.calls = 0
+        self._records: list[sm.SessionRecord] = []
+
+    def create(self, scenario, profile, session_id=None):
+        self.calls += 1
+        if self.calls > self.succeed_n:
+            raise self.exc
+        rec = sm.SessionRecord(
+            session_id=f"sess-flaky-{self.calls}",
+            scenario=scenario,
+            profile=profile,
+            status=sm.STATUS_PENDING,
+            created_at=time.time(),
+            backend=self.name,
+        )
+        self._records.append(rec)
+        return rec
+
+    def get(self, session_id):
+        return next((r for r in self._records if r.session_id == session_id), None)
+
+    def list(self):
+        return list(self._records)
+
+    def delete(self, session_id):
+        return False
+
+
+def test_batch_returns_207_on_partial_failure(monkeypatch):
+    # Two succeed, third raises — should be 207 with two sessions in body.
+    backend = _FlakyBackend(succeed_n=2, exc=RuntimeError("kube quota exceeded"))
+    monkeypatch.setattr(cp_app, "_session_backend", backend)
+    tc = TestClient(cp_app.app)
+    r = tc.post(
+        "/sessions/batch",
+        json={"scenario": "x", "profile": "small", "count": 3},
+    )
+    assert r.status_code == 207, r.text
+    body = r.json()
+    assert body["total"] == 2
+    assert body["by_status"].get("_error") == 1
+    assert len(body["sessions"]) == 2
+
+
+def test_batch_returns_502_on_total_failure(monkeypatch):
+    # First call already raises — zero sessions created → hard 502.
+    backend = _FlakyBackend(succeed_n=0, exc=RuntimeError("kube unreachable"))
+    monkeypatch.setattr(cp_app, "_session_backend", backend)
+    tc = TestClient(cp_app.app)
+    r = tc.post(
+        "/sessions/batch",
+        json={"scenario": "x", "profile": "small", "count": 3},
+    )
+    assert r.status_code == 502, r.text
+    body = r.json()
+    assert body["total"] == 0
+    assert body["by_status"].get("_error") == 1
+    assert body["sessions"] == []
+
+
+# ---- KubeSessionBackend translates template-read ApiException (Codex P2) ----
+
+
+class _FakeApiException(Exception):
+    def __init__(self, status, reason):
+        self.status = status
+        self.reason = reason
+
+
+def test_kube_create_wraps_template_read_apiexception():
+    """_render_job() runs before the create_namespaced_job try/except — if
+    _load_template's ConfigMap GET fails (RBAC / missing CM), the raw
+    ApiException must NOT escape; it should be wrapped as RuntimeError so
+    the FastAPI handler returns 502 instead of an unhandled 500.
+    """
+    # Bypass __init__ (which needs a real kubeconfig) and stub just the
+    # surface the create() path touches.
+    backend = sm.KubeSessionBackend.__new__(sm.KubeSessionBackend)
+    fake_client = SimpleNamespace(exceptions=SimpleNamespace(ApiException=_FakeApiException))
+    backend._client = fake_client
+    backend._namespace = "agents"
+    backend._session_image = None
+    backend._ttl = 600
+
+    def boom(*a, **kw):
+        raise _FakeApiException(status=403, reason="Forbidden")
+
+    backend._load_template = boom  # type: ignore[method-assign]
+    backend._batch = SimpleNamespace(create_namespaced_job=lambda **_: None)
+
+    with pytest.raises(RuntimeError, match="failed to create session Job"):
+        backend.create(scenario="x", profile="small")
