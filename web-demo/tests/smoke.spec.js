@@ -14,13 +14,17 @@ test('page loads with expected landmarks', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   await expect(page.locator('h2')).toContainText(/scenario/i);
   await expect(page.locator('#run-demo')).toBeVisible();
-  await expect(page.locator('#run-demo')).toContainText(/walkthrough/i);
+  await expect(page.locator('#run-demo')).toContainText(/run demo/i);
 });
 
 test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   for (const scenario of SCENARIOS) {
     await page.locator(`[data-scenario="${scenario}"]`).click();
+    // Selecting a scenario must NOT preload command output — the log stays
+    // on the placeholder until the user explicitly clicks Run demo.
+    await expect(page.locator('#command-log')).toContainText(/press "run demo"/i);
+    await expect(page.locator('#command-log')).not.toContainText(/openclaw demo run/i);
     await expectToolRowsAtLeast(page, 3, `scenario ${scenario} should produce >=3 tool rows`);
     await expect(page.locator('#result')).not.toHaveText(/waiting/i);
   }

@@ -4,7 +4,7 @@ const SYSTEM_B_TOTAL_VCPU = 100;
 const scenarios = {
   'terminal-agent': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
-    primary: { name: 'Terminal agent', vcpu: 128 },
+    primary: { name: 'Terminal agent', vcpu: 4 },
     subagent: null,
     services: { erag: false, 'ent-inference': false },
     crossSystemArrow: false,
@@ -19,7 +19,7 @@ const scenarios = {
       'enterprise inference': 'available as alternate route',
       'model route': 'LiteLLM → SambaNova',
       'session scope': 'isolated per user',
-      'placement': 'System A — 128/512 vCPU',
+      'placement': 'System A — 4/512 vCPU',
       'artifact view': 'engineering summary'
     },
     metrics: {
@@ -30,20 +30,31 @@ const scenarios = {
       Tools: 'exec, read',
       Artifacts: '2'
     },
+    toolActivity: [
+      { icon: '💻', tool: 'terminal', value: 'openclaw demo run terminal-agent --isolated' },
+      { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
+      { icon: '📖', tool: 'read_file', value: 'agents/scenarios/terminal-agent/terminal-bench-reference.md' },
+      { icon: '💻', tool: 'terminal', value: './scripts/session-bootstrap.sh --scenario terminal-agent' },
+      { icon: '🔎', tool: 'search_files', value: 'demo-workspace/BOOTSTRAP.md' },
+      { icon: '💻', tool: 'terminal', value: 'git status --short' },
+      { icon: '💻', tool: 'terminal', value: './scripts/smoke-test-operator-instance.sh --profile terminal-agent' },
+      { icon: '💻', tool: 'terminal', value: './scripts/demo-terminal-workflow.sh --emit-trace' },
+      { icon: '📝', tool: 'summarize', value: 'engineering summary → result panel' }
+    ],
     commandLog: `$ openclaw demo run terminal-agent --isolated\nrequest accepted\nsession_id=demo-term-0420 sandbox=created profile=engineering\n\n$ sed -n '1,40p' agents/scenarios/terminal-agent/terminal-bench-reference.md\n# Terminal Agent Demo — Reference Task Spec\n### Name\nrepo-structure-audit-and-fixup\n### Objective\nInspect the repo and produce a structured scenario/task inventory.\n\n$ ./scripts/session-bootstrap.sh --scenario terminal-agent\n[bootstrap] workspace mounted at /workspace-intel-dev/agentic-intel-demo\n[bootstrap] tools registered: exec, read, summarize\n[bootstrap] isolated temp dir: /tmp/demo-term-0420\n[check] demo-workspace/BOOTSTRAP.md loaded\n[check] scenario prompt loaded\n\n$ ./scripts/route-task.sh --scenario terminal-agent\n[classifier] workload=interactive engineering\n[inference] provider=litellm/sambanova\n[executor] target=system-a\n[decision] use primary CWF path\n\n$ git status --short\n M web-demo/app.js\n M web-demo/index.html\n M web-demo/styles.css\n\n$ ./scripts/smoke-test-operator-instance.sh --profile terminal-agent\n[step] validating shell access\n[step] validating repo context\n[step] validating writable artifact dir\n[ok] shell access confirmed\n[ok] repo context confirmed\n[ok] artifact dir ready\n\n$ ./scripts/demo-terminal-workflow.sh --emit-trace\n[1/6] inspect workspace layout\n[2/6] read task brief\n[3/6] run command batch\n[4/6] collect stdout/stderr\n[5/6] package artifacts\n[6/6] render operator summary\nworkflow complete`,
     timeline: [
-      ['Task received', 'OpenClaw accepts the request; System A reserves a 128 vCPU slice of the pool.'],
+      ['Task received', 'OpenClaw accepts the request; System A reserves a 4 vCPU slot for the agent.'],
       ['Workspace prepared', 'Session pod mounted on System A. Tools registered: exec, read, summarize.'],
       ['Command running', 'Terminal workflow executes directly on System A; no offload needed.'],
       ['Command completed', 'Command batch finishes; artifacts collected in the local session pod.'],
       ['Answer generated', 'Engineering summary delivered; capacity returned to the pool.']
     ],
-    result: `Terminal Agent\n\nSystem A spawns one 128 vCPU agent (¼ of the pool).\nLiteLLM routes inference to SambaNova.\nSystem B services stay idle — no offload needed.\n\nUser-visible outcome:\n- engineering summary\n- live route narrative\n- command evidence`
+    result: `Terminal Agent\n\nSystem A spawns one 4 vCPU agent (regular task footprint).\nLiteLLM routes inference to SambaNova.\nSystem B services stay idle — no offload needed.\n\nUser-visible outcome:\n- engineering summary\n- live route narrative\n- command evidence`
   },
   'market-research': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
-    primary: { name: 'Market Research agent', vcpu: 128 },
-    subagent: { name: 'pandas subagent (spawned by MR)', vcpu: 25, spawnDelayMs: 2400 },
+    primary: { name: 'Market Research agent', vcpu: 4 },
+    subagent: { name: 'pandas subagent (spawned by MR)', vcpu: 4, spawnDelayMs: 2400 },
     services: { erag: true, 'ent-inference': false },
     crossSystemArrow: true,
     console: {
@@ -57,7 +68,7 @@ const scenarios = {
       'enterprise inference': 'idle for this scenario',
       'model route': 'LiteLLM → SambaNova',
       'session scope': 'isolated per user',
-      'placement': 'System A 128/512 + System B 25/100 (subagent)',
+      'placement': 'System A 4/512 + System B 4/100 (subagent)',
       'artifact view': 'research brief'
     },
     metrics: {
@@ -68,19 +79,29 @@ const scenarios = {
       Tools: 'read, summarize',
       Artifacts: '1'
     },
+    toolActivity: [
+      { icon: '💻', tool: 'terminal', value: 'openclaw demo run market-research --isolated' },
+      { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
+      { icon: '📖', tool: 'read_file', value: 'agents/scenarios/market-research/report-task.md' },
+      { icon: '🔎', tool: 'search_files', value: 'demo-inputs/market-research/' },
+      { icon: '🌐', tool: 'api_call', value: 'GET /v1/erag/query?topic=market-map' },
+      { icon: '🤖', tool: 'spawn_subagent', value: 'pandas analytics → System B (4 vCPU)' },
+      { icon: '🐍', tool: 'execute_code', value: "import pandas as pd; df.groupby('segment').agg(...)" },
+      { icon: '📝', tool: 'summarize', value: 'research brief → result panel' }
+    ],
     commandLog: `$ openclaw demo run market-research --isolated\nrequest accepted\nsession_id=demo-research-0420 sandbox=created profile=research\n\n$ sed -n '1,40p' agents/scenarios/market-research/report-task.md\n# Market Research Demo Task\nObjective: recommend which SMB segment to target first for an AI meeting notes product.\nInputs: synthetic repo data under demo-inputs/market-research/.\n\n$ ./scripts/session-bootstrap.sh --scenario market-research\n[bootstrap] workspace mounted\n[bootstrap] retrieval cache ready (eRAG)\n[bootstrap] summarize tool ready\n[check] research prompt loaded\n\n$ ./scripts/route-task.sh --scenario market-research\n[classifier] workload=research synthesis\n[inference] provider=litellm/sambanova\n[executor] primary=system-a\n[executor] subagent=system-b (pandas analytics)\n[decision] spawn cross-system subagent for offload analytics\n\n$ ./scripts/research-brief.sh --topic market-map --emit-sources\n[1/5] normalize request\n[2/5] gather source snippets via eRAG\n[3/5] dispatch pandas subagent to System B\n[4/5] synthesize summary\n[5/5] assemble brief\nbrief complete`,
     timeline: [
-      ['Input accepted', 'OpenClaw accepts the scenario; MR agent takes 128 vCPU on System A.'],
-      ['Subagent spawned', 'MR agent dispatches a 25 vCPU pandas subagent to System B; eRAG activates for retrieval.'],
+      ['Input accepted', 'OpenClaw accepts the scenario; MR agent takes 4 vCPU on System A.'],
+      ['Subagent spawned', 'MR agent dispatches a 4 vCPU pandas subagent to System B; eRAG activates for retrieval.'],
       ['Analytics offload', 'pandas subagent crunches data on System B while MR continues on A.'],
       ['Synthesis', 'SambaNova via LiteLLM summarizes the combined findings.'],
       ['Result ready', 'Research brief delivered; subagent and eRAG wind down.']
     ],
-    result: `Market Research\n\nSystem A spawns one 128 vCPU agent (¼ of the pool).\nThe MR agent spawns a 25 vCPU pandas subagent on System B for analytics offload.\neRAG service activates for retrieval; Enterprise Inference stays idle.\n\nUser-visible outcome:\n- market snapshot\n- risks and opportunities\n- why this route was chosen`
+    result: `Market Research\n\nSystem A spawns one 4 vCPU agent (regular task footprint).\nThe MR agent spawns a 4 vCPU pandas subagent on System B for analytics offload.\neRAG service activates for retrieval; Enterprise Inference stays idle.\n\nUser-visible outcome:\n- market snapshot\n- risks and opportunities\n- why this route was chosen`
   },
   'large-build-test': {
     orchestrationActive: ['openclaw', 'litellm', 'sambanova', 'ent-inference-route'],
-    primary: { name: 'Build/Test', vcpu: 512 },
+    primary: { name: 'Build/Test', vcpu: 16 },
     subagent: null,
     services: { erag: false, 'ent-inference': true },
     crossSystemArrow: false,
@@ -95,26 +116,37 @@ const scenarios = {
       'enterprise inference': 'active — SLM route lit',
       'model route': 'LiteLLM → SambaNova + Ent. Inference (SLM)',
       'session scope': 'isolated per user',
-      'placement': 'System A 512/512 (pool full)',
+      'placement': 'System A 16/512 (large profile)',
       'artifact view': 'build/test summary'
     },
     metrics: {
       Elapsed: '26.7s',
       Tokens: '4,960',
       Model: 'SambaNova + Ent. Inference SLM',
-      Route: 'OpenClaw → System A (full)',
+      Route: 'OpenClaw → System A (large slot)',
       Tools: 'exec, read, summarize',
       Artifacts: '3'
     },
-    commandLog: `$ openclaw demo run large-build-test --burst\nrequest accepted\nsession_id=demo-build-0420 profile=burst workload=heavy\n\n$ sed -n '1,40p' agents/scenarios/large-build-test/build-task.md\n# Large Build/Test Demo Task\nObjective: run a larger build/test workflow with explicit large-profile framing and concrete evidence.\n\n$ ./scripts/session-bootstrap.sh --scenario large-build-test\n[bootstrap] heavy profile enabled\n[bootstrap] artifact dir prepared\n[bootstrap] summary writer ready\n\n$ ./scripts/queue-reserve.sh --profile large-build\nqueue slot reserved\nprimary lane=system-a (512 vCPU — pool fully reserved)\ninference routes=SambaNova,Ent.Inference SLM\n\n$ ./scripts/route-task.sh --scenario large-build-test\n[classifier] workload=heavy build/test\n[inference] primary=litellm/sambanova\n[inference] alternate=ent. inference SLM\n[executor] placement=system-a (full pool)\n\n$ ./scripts/run-large-build-test.sh --emit-artifacts\n[1/5] load build graph\n[2/5] reserve compile lane\n[3/5] run compile on system-a (full pool)\n[4/5] summarize via SambaNova; fall back to SLM where needed\n[5/5] assemble build/test package\nflow complete`,
-    timeline: [
-      ['Input accepted', 'OpenClaw accepts the heavy workload; System A reserves the full 512 vCPU pool.'],
-      ['Orchestration', 'Build/test classified as large profile; Enterprise Inference SLM route lights up.'],
-      ['Compile + test', 'Compile runs on System A (pool full); LiteLLM splits inference between SambaNova and SLM.'],
-      ['Results assembled', 'Artifacts bundled and summary drafted.'],
-      ['Result ready', 'Build/test status and route decision delivered; pool releases back to idle.']
+    toolActivity: [
+      { icon: '💻', tool: 'terminal', value: 'openclaw demo run large-build-test --burst' },
+      { icon: '📖', tool: 'read_file', value: 'agents/scenarios/large-build-test/build-task.md' },
+      { icon: '💻', tool: 'terminal', value: './scripts/queue-reserve.sh --profile large-build' },
+      { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
+      { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → Ent. Inference SLM)' },
+      { icon: '💻', tool: 'terminal', value: './scripts/run-large-build-test.sh --emit-artifacts' },
+      { icon: '🔨', tool: 'compile', value: 'system-a (16 vCPU slot)' },
+      { icon: '🧪', tool: 'test_suite', value: 'pytest -q' },
+      { icon: '📝', tool: 'summarize', value: 'build/test summary → result panel' }
     ],
-    result: `Large Build/Test\n\nSystem A spawns one agent that takes the entire 512 vCPU pool.\nLiteLLM lights the Enterprise Inference SLM route alongside SambaNova.\nNo subagent spawn — the heavy work fits on A.\n\nUser-visible outcome:\n- execution status\n- route decision\n- result summary`
+    commandLog: `$ openclaw demo run large-build-test --burst\nrequest accepted\nsession_id=demo-build-0420 profile=burst workload=heavy\n\n$ sed -n '1,40p' agents/scenarios/large-build-test/build-task.md\n# Large Build/Test Demo Task\nObjective: run a larger build/test workflow with explicit large-profile framing and concrete evidence.\n\n$ ./scripts/session-bootstrap.sh --scenario large-build-test\n[bootstrap] heavy profile enabled\n[bootstrap] artifact dir prepared\n[bootstrap] summary writer ready\n\n$ ./scripts/queue-reserve.sh --profile large-build\nqueue slot reserved\nprimary lane=system-a (16 vCPU — large-profile slot)\ninference routes=SambaNova,Ent.Inference SLM\n\n$ ./scripts/route-task.sh --scenario large-build-test\n[classifier] workload=heavy build/test\n[inference] primary=litellm/sambanova\n[inference] alternate=ent. inference SLM\n[executor] placement=system-a (large slot)\n\n$ ./scripts/run-large-build-test.sh --emit-artifacts\n[1/5] load build graph\n[2/5] reserve compile lane\n[3/5] run compile on system-a (16 vCPU slot)\n[4/5] summarize via SambaNova; fall back to SLM where needed\n[5/5] assemble build/test package\nflow complete`,
+    timeline: [
+      ['Input accepted', 'OpenClaw accepts the heavy workload; System A reserves a 16 vCPU large-profile slot.'],
+      ['Orchestration', 'Build/test classified as large profile; Enterprise Inference SLM route lights up.'],
+      ['Compile + test', 'Compile runs on System A (16 vCPU slot); LiteLLM splits inference between SambaNova and SLM.'],
+      ['Results assembled', 'Artifacts bundled and summary drafted.'],
+      ['Result ready', 'Build/test status and route decision delivered; slot releases back to the pool.']
+    ],
+    result: `Large Build/Test\n\nSystem A spawns one 16 vCPU agent (large-profile slot).\nLiteLLM lights the Enterprise Inference SLM route alongside SambaNova.\nNo subagent spawn — the heavy work fits on A.\n\nUser-visible outcome:\n- execution status\n- route decision\n- result summary`
   }
 };
 
@@ -165,6 +197,7 @@ let liveBackendAvailable = false;
 
 let currentScenario = null;
 let runTimers = [];
+let liveRunId = 0;
 const originalRunLabel = runDemoBtn.textContent;
 
 sysATotalEl.textContent = SYSTEM_A_TOTAL_VCPU;
@@ -194,6 +227,11 @@ function restoreRunButton() {
 
 function cancelRun() {
   clearRunTimers();
+  // Invalidate any in-flight live walkthrough so late /api/offload poll
+  // responses can't overwrite the new mode (Stack overview / Reset / new
+  // scenario). runLiveWalkthrough checks `myRunId === liveRunId` after each
+  // await and bails out early when this counter advances.
+  liveRunId += 1;
   restoreRunButton();
 }
 
@@ -252,7 +290,7 @@ function agentRowHtml(name, vcpu, state) {
 
 function renderSystemA(scenario, phase) {
   if (!scenario || phase === 'idle') {
-    sysAAgentsEl.innerHTML = '<div class="agent-row-empty">agents: (idle — select a scenario)</div>';
+    sysAAgentsEl.innerHTML = '<div class="agent-row-empty">no agents (idle — select a scenario)</div>';
     renderCapacity(0);
     return;
   }
@@ -264,12 +302,12 @@ function renderSystemA(scenario, phase) {
 
 function renderOffload(scenario, phase, includeSubagent) {
   if (!scenario || !scenario.subagent || phase === 'idle') {
-    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no offloaded workers</div>';
+    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no agents on this system</div>';
     renderCapacityB(0);
     return;
   }
   if (!includeSubagent) {
-    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no offloaded workers (yet)</div>';
+    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">subagent planned (will spawn during run)</div>';
     renderCapacityB(0);
     return;
   }
@@ -289,17 +327,63 @@ function renderConsole(entries) {
   `).join('');
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function truncateValue(value, max) {
+  const str = String(value);
+  return str.length > max ? str.slice(0, max - 1) + '…' : str;
+}
+
 function renderToolActivity(rows) {
-  toolActivityEl.innerHTML = rows.map((row) => `
-    <div class="tool-row${row.empty ? ' empty' : ''}">
-      ${row.empty ? row.label : `<span class="tool-name">${row.name}</span><span class="tool-status">${row.status}</span>`}
-    </div>
-  `).join('');
+  toolActivityEl.innerHTML = rows.map((row) => {
+    if (row.empty) {
+      return `<div class="tool-row empty">${escapeHtml(row.label || '')}</div>`;
+    }
+    if (row.tool) {
+      const icon = row.icon ? `<span class="tool-icon">${escapeHtml(row.icon)}</span>` : '';
+      const status = row.status
+        ? `<span class="tool-status" data-status="${escapeHtml(row.status)}">${escapeHtml(row.status)}</span>`
+        : '';
+      const value = row.value !== undefined && row.value !== null
+        ? `<span class="tool-value">"${escapeHtml(truncateValue(row.value, 80))}"</span>`
+        : '';
+      return `
+        <div class="tool-row tool-row-rich" data-status="${escapeHtml(row.status || 'planned')}">
+          <span class="tool-head">${icon}<span class="tool-name">${escapeHtml(row.tool)}:</span></span>
+          ${value}
+          ${status}
+        </div>
+      `;
+    }
+    // legacy { name, status } shape used by Stack overview / live runs
+    return `
+      <div class="tool-row" data-status="${escapeHtml(row.status || '')}">
+        <span class="tool-name">${escapeHtml(row.name || '')}</span>
+        <span class="tool-status">${escapeHtml(row.status || '')}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildScenarioToolActivity(scenario, defaultStatus) {
+  if (!scenario || !Array.isArray(scenario.toolActivity)) return [];
+  return scenario.toolActivity.map((row) => ({
+    ...row,
+    name: row.name || row.tool,
+    status: row.status || defaultStatus
+  }));
 }
 
 function renderMetrics(entries) {
   metricsEl.innerHTML = Object.entries(entries).map(([k, v]) => `
-    <div class="metric-card"><span class="metric-label">${k}</span><span class="metric-value">${v}</span></div>
+    <div class="metric-card"><span class="metric-label">${escapeHtml(k)}</span><span class="metric-value">${escapeHtml(v == null ? '' : v)}</span></div>
   `).join('');
 }
 
@@ -312,7 +396,7 @@ function applyIdle() {
   renderSystemA(null, 'idle');
   renderOffload(null, 'idle', false);
   setCrossArrow(false);
-  renderToolActivity([{ empty: true, label: 'Select a scenario to view expected tool usage.' }]);
+  renderToolActivity([{ empty: true, label: 'Select a scenario to see the tool calls, API calls, and subagents it will use.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
   renderMetrics({ Model: '—', Route: '—', Tools: '—', Artifacts: '—' });
   result.textContent = 'Waiting for scenario selection.';
@@ -331,12 +415,8 @@ function applyPlanned(key) {
   renderSystemA(scenario, 'planned');
   renderOffload(scenario, 'planned', false);
   setCrossArrow(false);
-  renderToolActivity([
-    { name: 'read', status: 'planned' },
-    { name: 'exec', status: key === 'market-research' ? 'optional' : 'planned' },
-    { name: 'summarize', status: 'planned' }
-  ]);
-  commandLogEl.textContent = scenario.commandLog;
+  renderToolActivity(buildScenarioToolActivity(scenario, 'planned'));
+  commandLogEl.textContent = 'Press "Run demo" to execute this scenario and stream the live command log.';
   renderMetrics(scenario.metrics);
   result.textContent = scenario.result;
   result.className = 'result';
@@ -367,27 +447,29 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
   cancelRun();
   currentScenario = null;
-  setDataMode('Live status');
+  setDataMode('Stack overview');
   setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
   setServiceState({ erag: true, 'ent-inference': true });
   renderSystemA(null, 'idle');
   renderOffload(null, 'idle', false);
   setCrossArrow(false);
   renderToolActivity([
-    { name: 'status probe', status: 'active' },
-    { name: 'routing check', status: 'active' }
+    { icon: '🩺', tool: 'health_probe', value: 'GET /api/health', status: 'active' },
+    { icon: '🩺', tool: 'ready_probe', value: 'GET /api/ready', status: 'active' },
+    { icon: '🌐', tool: 'router_check', value: 'LiteLLM /v1/models', status: 'active' },
+    { icon: '🌐', tool: 'router_check', value: 'Enterprise Inference SLM', status: 'active' }
   ]);
-  commandLogEl.textContent = 'Status mode shows stack availability only. It does not prove a real task execution happened.';
+  commandLogEl.textContent = 'Stack overview mode: every node and route in the diagram is lit up so you can see the full architecture. No scenario is being executed.';
   renderMetrics({
     Model: 'LiteLLM → SambaNova / Ent. Inference',
     Route: 'stack overview',
     Tools: 'status probes',
     Artifacts: '0'
   });
-  result.textContent = 'Live architecture status for the demo stack.';
+  result.textContent = 'Stack overview: every component reachable, no scenario running.';
   result.className = 'result';
   renderConsole({
-    mode: 'live status',
+    mode: 'stack overview',
     'openclaw version': '2026.4.15',
     orchestrator: 'OpenClaw',
     'orchestration alt': 'Flowise (optional)',
@@ -397,7 +479,7 @@ document.querySelector('[data-action="status"]').addEventListener('click', () =>
     'enterprise inference': 'reachable',
     'model route': 'LiteLLM → SambaNova / Ent. Inference',
     'session scope': 'isolated per user',
-    'placement': 'stack overview',
+    'placement': 'no scenario active',
     'artifact view': 'status only'
   });
 });
@@ -406,12 +488,47 @@ document.querySelector('[data-action="reset"]').addEventListener('click', () => 
   applyIdle();
 });
 
+const scenarioCardsEl = document.getElementById('scenario-cards');
+const cardsNavButtons = document.querySelectorAll('[data-cards-scroll]');
+
+function updateCardsNav() {
+  if (!scenarioCardsEl) return;
+  const max = scenarioCardsEl.scrollWidth - scenarioCardsEl.clientWidth;
+  const overflowing = max > 4;
+  const atStart = scenarioCardsEl.scrollLeft <= 4;
+  const atEnd = scenarioCardsEl.scrollLeft >= max - 4;
+
+  // Desktop CSS only switches the cards container into horizontal-scroll mode
+  // when this class is present, so the overflow detection here drives the
+  // visual layout as well as the nav buttons.
+  scenarioCardsEl.classList.toggle('cards-overflow', overflowing);
+
+  cardsNavButtons.forEach((btn) => {
+    const isPrev = btn.dataset.cardsScroll === 'prev';
+    const disabled = !overflowing || (isPrev ? atStart : atEnd);
+    btn.classList.toggle('cards-nav-disabled', disabled);
+    btn.disabled = disabled;
+  });
+}
+
+cardsNavButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (!scenarioCardsEl) return;
+    const direction = btn.dataset.cardsScroll === 'prev' ? -1 : 1;
+    const step = Math.max(220, Math.floor(scenarioCardsEl.clientWidth * 0.6));
+    scenarioCardsEl.scrollBy({ left: direction * step, behavior: 'smooth' });
+  });
+});
+
+if (scenarioCardsEl) {
+  scenarioCardsEl.addEventListener('scroll', updateCardsNav, { passive: true });
+  window.addEventListener('resize', updateCardsNav);
+  updateCardsNav();
+}
+
 function buildWalkthroughPhases(scenario) {
   const lines = (scenario.commandLog || '').split('\n');
-  const toolNames = (scenario.metrics.Tools || '')
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const richTools = Array.isArray(scenario.toolActivity) ? scenario.toolActivity : [];
   const timeline = (scenario.timeline && scenario.timeline.length)
     ? scenario.timeline
     : [['Walkthrough', 'Scenario replay']];
@@ -419,17 +536,17 @@ function buildWalkthroughPhases(scenario) {
   const chunkSize = Math.ceil(lines.length / phaseCount);
   const parsedArtifacts = Number(scenario.metrics.Artifacts);
   const artifactTotal = Number.isFinite(parsedArtifacts) ? parsedArtifacts : phaseCount;
+  const toolPerPhase = Math.max(1, Math.ceil(richTools.length / phaseCount));
 
   return timeline.map((entry, idx) => {
     const chunk = lines.slice(idx * chunkSize, (idx + 1) * chunkSize).join('\n');
-    const tools = toolNames.map((name, toolIdx) => {
+    const activeBoundary = (idx + 1) * toolPerPhase;
+    const tools = richTools.map((tool, toolIdx) => {
       let status = 'queued';
-      const progress = idx / Math.max(1, phaseCount - 1);
-      const toolProgress = toolIdx / Math.max(1, toolNames.length - 1);
-      if (progress >= toolProgress) status = 'active';
-      if (progress > toolProgress + 1 / Math.max(1, toolNames.length)) status = 'done';
-      if (idx === phaseCount - 1 && toolIdx < toolNames.length - 1) status = 'done';
-      return { name, status };
+      if (toolIdx < activeBoundary - toolPerPhase) status = 'done';
+      else if (toolIdx < activeBoundary) status = 'active';
+      if (idx === phaseCount - 1) status = 'done';
+      return { ...tool, status };
     });
     return {
       label: entry[0],
@@ -465,7 +582,10 @@ function runSimulatedWalkthrough(scenarioKey) {
       renderMetrics({
         Model: model,
         Route: `${route} · ${phase.label}`,
-        Tools: phase.tools.map((tool) => tool.name).join(', ') || '—',
+        Tools: phase.tools
+          .filter((tool) => tool.status === 'active' || tool.status === 'done')
+          .map((tool) => tool.tool)
+          .join(', ') || '—',
         Artifacts: phase.artifacts
       });
       if (idx === subagentPhaseIdx) {
@@ -477,16 +597,10 @@ function runSimulatedWalkthrough(scenarioKey) {
   const totalDuration = phases.length * phaseDurationMs;
   runTimers.push(setTimeout(() => {
     result.textContent = scenario.result;
-    renderToolActivity([
-      { name: 'read', status: 'done' },
-      { name: scenarioKey === 'market-research' ? 'pandas (subagent on B)' : 'exec', status: 'done' },
-      { name: 'summarize', status: 'done' }
-    ]);
+    renderToolActivity(buildScenarioToolActivity(scenario, 'done'));
     restoreRunButton();
   }, totalDuration));
 }
-
-let liveRunId = 0;
 
 async function runLiveWalkthrough(scenarioKey) {
   const scenario = scenarios[scenarioKey];
@@ -501,7 +615,9 @@ async function runLiveWalkthrough(scenarioKey) {
   commandLogEl.textContent = `$ POST /api/offload {task_type:"shell", scenario:"${scenarioKey}"}\n`;
   result.textContent = `Live run: ${scenarioKey}`;
   result.className = 'result';
-  renderToolActivity([{ name: 'offload submit', status: 'active' }]);
+  renderToolActivity([
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'active' }
+  ]);
   renderMetrics({
     Model: model,
     Route: `${route} · submitting`,
@@ -533,7 +649,10 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!stillCurrent()) return;
 
   commandLogEl.textContent += `job_id=${submit.job_id} status=${submit.status}\n`;
-  renderToolActivity([{ name: 'offload poll', status: 'active' }]);
+  renderToolActivity([
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'done' },
+    { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'active' }
+  ]);
   renderMetrics({
     Model: model,
     Route: `${route} · ${submit.status}`,
@@ -598,9 +717,9 @@ async function runLiveWalkthrough(scenarioKey) {
     ? Math.max(0, (status.completed_at - status.submitted_at) * 1000)
     : null;
   renderToolActivity([
-    { name: 'offload submit', status: 'done' },
-    { name: 'offload poll', status: 'done' },
-    { name: 'shell exec', status: shellSucceeded ? 'done' : 'error' }
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'done' },
+    { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'done' },
+    { icon: '💻', tool: 'shell_exec', value: `worker stdout (exit=${exitCode === null ? 'n/a' : exitCode})`, status: shellSucceeded ? 'done' : 'error' }
   ]);
   renderMetrics({
     Model: model,
