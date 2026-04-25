@@ -1017,13 +1017,14 @@ async function fetchJson(url, init) {
 
 function setHealthDot(el, state, detail) {
   if (!el) return;
-  el.classList.remove('ok', 'warn', 'down', 'idle');
+  el.classList.remove('ok', 'warn', 'down', 'idle', 'unknown');
   el.classList.add(state);
   const labels = {
     ok: 'healthy',
     warn: 'degraded',
     down: 'unreachable',
-    idle: 'not configured'
+    idle: 'not configured',
+    unknown: 'reachability unknown'
   };
   el.setAttribute('aria-label', labels[state] || state);
   if (detail) {
@@ -1074,7 +1075,17 @@ async function probeBackend() {
   }
   liveBackendAvailable = cpHealthy && workerReady;
   setHealthDot(healthDots.systemA, cpHealthy ? 'ok' : 'down');
-  setHealthDot(healthDots.systemB, workerReady ? 'ok' : (cpHealthy ? 'warn' : 'down'));
+  // System B / OpenClaw / LiteLLM / SambaNova all sit behind the control
+  // plane — we can only probe them through it. When the relay is down we
+  // genuinely don't know their state, so show "unknown" (gray) instead of
+  // "unreachable" (red). Red on those rows would imply we'd confirmed
+  // they're broken, which we haven't.
+  const cpDownTip = 'Control plane unreachable — cannot probe upstream';
+  if (cpHealthy) {
+    setHealthDot(healthDots.systemB, workerReady ? 'ok' : 'warn');
+  } else {
+    setHealthDot(healthDots.systemB, 'unknown', cpDownTip);
+  }
   // OpenClaw / LiteLLM / SambaNova are probed honestly via the control
   // plane. When a probe URL isn't configured the dot stays neutral
   // ("not configured") instead of mirroring the relay's health.
@@ -1100,9 +1111,9 @@ async function probeBackend() {
       sambanova && sambanova.detail ? sambanova.detail : (sambanova && sambanova.target) || ''
     );
   } else {
-    setHealthDot(healthDots.openclaw, 'down');
-    setHealthDot(healthDots.litellm, 'down');
-    setHealthDot(healthDots.sambanova, 'down');
+    setHealthDot(healthDots.openclaw, 'unknown', cpDownTip);
+    setHealthDot(healthDots.litellm, 'unknown', cpDownTip);
+    setHealthDot(healthDots.sambanova, 'unknown', cpDownTip);
   }
   runDemoBtn.title = liveBackendAvailable
     ? 'Live backend detected — runs a real shell scenario via /api/offload.'
