@@ -69,13 +69,16 @@ run "$KUBECTL" get crd openclawinstances.openclaw.rocks
 run "$KUBECTL" -n "$OPERATOR_NAMESPACE" rollout status \
   "$OPERATOR_DEPLOYMENT" --timeout=60s
 
-# 2. Apply the instance manifest. Idempotent.
-run "$KUBECTL" apply -f "$INSTANCE_MANIFEST"
+# 2. Apply the instance manifest. Idempotent. Pin the namespace explicitly so
+#    the apply lands where wait/probe/teardown expect it, even if the manifest
+#    omits metadata.namespace and the current kube-context default differs.
+run "$KUBECTL" apply -n "$INSTANCE_NAMESPACE" -f "$INSTANCE_MANIFEST"
 
 # 3. Wait for Ready. Try the canonical Ready condition first; if the operator
 #    in this version does not surface it, fall back to a phase-based poll.
 wait_ready() {
   local deadline=$(( $(date +%s) + READY_TIMEOUT_SECONDS ))
+  local phase=""
   echo "[smoke-test-operator-instance] waiting for $INSTANCE_NAME to become Ready"
   if "$KUBECTL" wait \
       --for=condition=Ready \
@@ -86,7 +89,6 @@ wait_ready() {
   fi
   echo "[smoke-test-operator-instance] Ready condition not surfaced; falling back to .status.phase poll"
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    local phase
     phase="$("$KUBECTL" get openclawinstance "$INSTANCE_NAME" \
               -n "$INSTANCE_NAMESPACE" \
               -o jsonpath='{.status.phase}' 2>/dev/null || true)"
@@ -102,7 +104,7 @@ wait_ready() {
     esac
     sleep 5
   done
-  echo "[smoke-test-operator-instance] timeout waiting for Ready (last phase=$phase)" >&2
+  echo "[smoke-test-operator-instance] timeout waiting for Ready (last phase=${phase:-unknown})" >&2
   return 1
 }
 

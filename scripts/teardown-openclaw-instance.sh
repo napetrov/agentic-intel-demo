@@ -58,22 +58,25 @@ fi
 
 # 1. Delete the CR. The operator owns gateway/service/pod cleanup via
 #    OwnerReferences, so this is the only step that should normally be needed.
-run_allow_fail "$KUBECTL" delete openclawinstance "$INSTANCE_NAME" \
+#    Hard-fail on delete errors (timeout/finalizer/RBAC) so callers like
+#    smoke-test-operator-instance.sh do not report success while the
+#    instance is still present.
+run "$KUBECTL" delete openclawinstance "$INSTANCE_NAME" \
   -n "$INSTANCE_NAMESPACE" \
   --ignore-not-found \
   --wait=true \
   --timeout="${WAIT_TIMEOUT_SECONDS}s"
 
-# 2. Verify the CR is gone.
+# 2. Verify the CR is gone. Hard-fail if a finalizer left it behind.
 if [ "$APPLY" = "1" ]; then
   if "$KUBECTL" get openclawinstance "$INSTANCE_NAME" -n "$INSTANCE_NAMESPACE" \
         >/dev/null 2>&1; then
-    echo "[teardown-openclaw-instance] WARNING: $INSTANCE_NAME still present" >&2
+    echo "[teardown-openclaw-instance] $INSTANCE_NAME still present after delete" >&2
     echo "                              check finalizers:" >&2
     echo "                              kubectl get openclawinstance $INSTANCE_NAME -n $INSTANCE_NAMESPACE -o yaml" >&2
-  else
-    echo "[teardown-openclaw-instance] CR deleted."
+    exit 1
   fi
+  echo "[teardown-openclaw-instance] CR deleted."
 fi
 
 # 3. Optional: drop leftover PVCs that the operator labels for this instance.
