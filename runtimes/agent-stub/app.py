@@ -41,9 +41,13 @@ logger = logging.getLogger("agent-stub")
 WORKSPACE_DIR = Path(os.environ.get("AGENT_WORKSPACE_DIR", "/workspace")).resolve()
 
 # Hard cap on the shell tool. Each command is one allow-listed binary plus
-# bounded args; no shell metacharacters, no pipelines.
+# bounded args; no shell metacharacters, no pipelines. Path-taking binaries
+# (cat/ls/head/wc) are deliberately *not* on this list — they let the agent
+# escape the /workspace boundary via absolute paths (e.g. `cat /etc/passwd`).
+# Use the dedicated `read_file` / `list_files` tools instead, which resolve
+# paths under WORKSPACE_DIR.
 SHELL_ALLOWLIST = frozenset({
-    "whoami", "date", "uname", "pwd", "echo", "ls", "cat", "head", "wc",
+    "whoami", "date", "uname", "pwd", "echo",
 })
 SHELL_TIMEOUT_SECONDS = float(os.environ.get("AGENT_SHELL_TIMEOUT_SECONDS", "10"))
 SHELL_MAX_OUTPUT_BYTES = int(os.environ.get("AGENT_SHELL_MAX_OUTPUT", "8192"))
@@ -201,7 +205,12 @@ def _tool_read_file(args: dict[str, Any]) -> dict[str, Any]:
     max_bytes = int(args.get("max_bytes", 4096))
     if max_bytes <= 0 or max_bytes > 65536:
         raise ValueError("max_bytes must be in (0, 65536]")
-    data = target.read_bytes()[:max_bytes]
+    # Bounded read: don't pull the whole file into memory just to slice it.
+    # Read max_bytes+1 so we can detect truncation without a stat() race.
+    with target.open("rb") as fh:
+        raw = fh.read(max_bytes + 1)
+    truncated = len(raw) > max_bytes
+    data = raw[:max_bytes]
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -209,7 +218,7 @@ def _tool_read_file(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "path": str(target.relative_to(WORKSPACE_DIR)),
         "bytes": len(data),
-        "truncated": target.stat().st_size > len(data),
+        "truncated": truncated,
         "content": text,
     }
 

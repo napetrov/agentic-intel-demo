@@ -715,11 +715,19 @@ async function runAgentCommand(text) {
   setAgentStatus(`submitting "${text}"…`, 'pending');
   appendAgentLog(`$ POST /api/offload {task_type:"agent_invoke", tool:"command", text:${JSON.stringify(text)}}`);
 
+  // Deadline guards the entire submit+poll flow. Each fetchJson call gets
+  // an explicit timeout derived from the remaining budget; without this,
+  // fetchJson's 60s default could let one stalled request blow past the
+  // advertised 30s window.
+  const deadline = Date.now() + 30_000;
+  const remainingMs = () => Math.max(0, deadline - Date.now());
+
   let submit;
   try {
     submit = await fetchJson(`${API_BASE}/offload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      timeoutMs: remainingMs(),
       body: JSON.stringify({
         task_type: 'agent_invoke',
         payload: { tool: 'command', args: { text } },
@@ -737,11 +745,15 @@ async function runAgentCommand(text) {
   // The control-plane forwards synchronously, so the first GET typically
   // already returns terminal. Poll briefly to stay correct if that ever
   // becomes async.
-  const deadline = Date.now() + 30_000;
   let status = null;
   while (Date.now() < deadline) {
+    const callTimeout = remainingMs();
+    if (callTimeout <= 0) break;
     try {
-      status = await fetchJson(`${API_BASE}/offload/${submit.job_id}`);
+      status = await fetchJson(
+        `${API_BASE}/offload/${submit.job_id}`,
+        { timeoutMs: callTimeout }
+      );
     } catch (err) {
       setAgentStatus(`poll failed: ${err.message}`, 'error');
       appendAgentLog(`[error] poll failed: ${err.message}`);

@@ -501,12 +501,13 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .agent-command-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: stretch;
 }
 .agent-command-input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 220px;
+  min-width: 160px;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
@@ -520,7 +521,10 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   border-color: var(--cyan);
   box-shadow: 0 0 0 2px rgba(69, 226, 213, 0.25);
 }
-.agent-command-form .primary { white-space: nowrap; }
+.agent-command-form .primary { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 640px) {
+  .agent-command-form .primary { flex: 1 1 100%; }
+}
 .agent-command-status {
   margin-top: 10px;
   font-size: 12px;

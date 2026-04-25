@@ -82,7 +82,7 @@ classifier). The web UI exposes an "Agent command" input that submits free-form
 text through `agent_invoke` and renders the agent's chosen tool, trace, and
 output. To target a real remote OpenClaw instead of the stub, set
 `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in your shell before
-`compose up`.
+`docker compose up`.
 
 ## Scripts
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.

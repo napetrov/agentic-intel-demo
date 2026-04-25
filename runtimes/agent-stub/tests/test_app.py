@@ -4,9 +4,11 @@ import sys
 from pathlib import Path
 
 # Point the workspace at the repo root so read_file/list_files have real
-# files to work against without needing a writable scratch dir.
+# files to work against without needing a writable scratch dir. Use direct
+# assignment (not setdefault) so an externally-set AGENT_WORKSPACE_DIR can't
+# point the test suite at a workspace where README.md is missing.
 REPO_ROOT = Path(__file__).resolve().parents[3]
-os.environ.setdefault("AGENT_WORKSPACE_DIR", str(REPO_ROOT))
+os.environ["AGENT_WORKSPACE_DIR"] = str(REPO_ROOT)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -54,6 +56,19 @@ def test_shell_tool_rejects_unlisted_binary():
     assert "not allowed" in body["error"]
 
 
+def test_shell_tool_does_not_allow_cat_for_path_reads():
+    # Path-taking binaries are deliberately off the shell allow-list to
+    # prevent escape from /workspace via absolute paths. Use the read_file
+    # tool instead.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "shell", "args": {"command": "cat /etc/passwd"}},
+    )
+    body = r.json()
+    assert body["status"] == "error"
+    assert "not allowed" in body["error"]
+
+
 def test_shell_tool_rejects_metacharacters():
     r = client.post(
         "/tools/invoke",
@@ -84,6 +99,21 @@ def test_read_file_rejects_traversal():
     body = r.json()
     assert body["status"] == "error"
     assert "escapes workspace" in body["error"]
+
+
+def test_read_file_truncates_at_max_bytes():
+    # Use a known-larger file; README.md is several KB. With max_bytes=64 we
+    # should get exactly 64 bytes back and truncated=True, without ever
+    # loading the full file into memory.
+    r = client.post(
+        "/tools/invoke",
+        json={"tool": "read_file", "args": {"path": "README.md", "max_bytes": 64}},
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    assert body["result"]["bytes"] == 64
+    assert body["result"]["truncated"] is True
+    assert len(body["result"]["content"]) <= 64
 
 
 def test_list_files_tool():
