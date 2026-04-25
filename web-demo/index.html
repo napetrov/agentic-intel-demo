@@ -189,6 +189,20 @@
           </div>
         </section>
 
+        <section class="panel services-panel" id="services-panel" hidden>
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title">Service launchers</div>
+              <div class="section-subtitle">Open the live UI of each running service. Cards auto-hide when the service isn't reachable.</div>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost small" id="services-hide" type="button" title="Hide this panel; restore via Reset demo">Hide panel</button>
+            </div>
+          </div>
+          <div class="services-grid" id="services-grid" role="list"></div>
+          <p class="panel-note" id="services-empty" hidden>No optional services reachable. Start them with <code>docker compose --profile authoring up</code> (Flowise / OpenWebUI), or open MinIO directly at <code>:9001</code>.</p>
+        </section>
+
         <section class="workspace">
           <div class="panel logs-panel logs-panel-main">
             <div class="panel-head">
@@ -262,6 +276,6 @@
         </section>
       </main>
     </div>
-    <script src="./app.js?v=20260425d"></script>
+    <script src="./app.js?v=20260425e"></script>
   </body>
 </html>

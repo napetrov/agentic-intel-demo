@@ -1,0 +1,52 @@
+# Optional overlay that adds OpenWebUI as a direct chat surface for the
+# local SLM (or any OpenAI-compatible endpoint) alongside the base
+# docker-compose.yaml stack.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.openwebui.yaml up --build
+#   open http://localhost:3030    # OpenWebUI
+#
+# OpenWebUI is positioned as an "is the model actually running?" surface —
+# useful for showing the local Qwen3-4B served by vLLM / routed via LiteLLM,
+# independent of the scenario-driven portal flow.
+#
+# Defaults:
+#   - WEBUI_AUTH: signup is disabled. The first browser visit becomes the
+#     admin user. The host port binds to 127.0.0.1 only — do not publish to
+#     the LAN without enabling auth.
+#   - Persistence: a named volume (open-webui-data) holds the sqlite DB and
+#     uploaded credentials. Delete the volume to reset.
+#   - Backend: OPENAI_API_BASE_URL defaults to the LiteLLM service name; if
+#     LiteLLM isn't running in this compose, set OPEN_WEBUI_OPENAI_BASE in
+#     your shell to point at a remote endpoint, or leave unset and configure
+#     the backend from inside OpenWebUI's settings UI.
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    environment:
+      # OpenAI-compatible backend. Defaults to LiteLLM by service name so
+      # when both overlays + LiteLLM are running this just works; override
+      # for a remote backend.
+      OPENAI_API_BASE_URL: ${OPEN_WEBUI_OPENAI_BASE:-http://litellm:4000/v1}
+      OPENAI_API_KEY: ${OPEN_WEBUI_OPENAI_KEY:-sk-demo-not-a-real-key}
+
+      # Auth: keep the WebUI's own login disabled in this single-host bring-
+      # up. First visitor becomes admin; tighten before exposing beyond
+      # localhost.
+      WEBUI_AUTH: "false"
+      ENABLE_SIGNUP: "false"
+
+      # Disable telemetry / model-card pulls that hit the network on boot.
+      DISABLE_TELEMETRY: "true"
+    volumes:
+      - open-webui-data:/app/backend/data
+    ports:
+      - "127.0.0.1:3030:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  open-webui-data:

@@ -142,5 +142,10 @@ services:
       # browser; bind to localhost so it isn't published to the LAN by default.
       - "127.0.0.1:8080:8080"
 
+  # Optional visual surfaces (Flowise, OpenWebUI) live in overlay files —
+  # see docker-compose.flowise.yaml and docker-compose.openwebui.yaml. The
+  # web demo's "Service launchers" panel auto-detects whichever ones happen
+  # to be running and hides the rest.
+
 volumes:
   minio-data:
