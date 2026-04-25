@@ -763,15 +763,77 @@ async function runAgentCommand(text) {
   }
 
   // offload-worker's agent_invoke wraps the gateway response under
-  // result.response (or .response_text if the body wasn't JSON).
-  const wrapper = status.result || {};
-  const agentPayload = wrapper.response || wrapper.response_text || wrapper;
+  // result.response (or .response_text if the body wasn't JSON). When the
+  // wrapped response is larger than the worker's inline cutoff (4 KB) it's
+  // pushed to MinIO and we get result_ref instead of result — common for
+  // `read <large file>` or verbose summaries.
+  let agentPayload = null;
+  if (status.result) {
+    const wrapper = status.result;
+    agentPayload = wrapper.response || wrapper.response_text || wrapper;
+  } else if (status.result_ref) {
+    agentPayload = await fetchArtifactPayload(status.result_ref);
+    if (!agentPayload) {
+      // fetchArtifactPayload already logged the failure mode; surface a
+      // clear final status instead of falsely claiming "agent returned ok".
+      setAgentStatus(
+        `agent finished, but response is stored as artifact ${status.result_ref} (fetch failed)`,
+        'warn'
+      );
+      return;
+    }
+  } else {
+    appendAgentLog(`[agent] empty response (no inline result, no artifact ref)`);
+    setAgentStatus(`agent returned no payload (job ${submit.job_id})`, 'warn');
+    return;
+  }
+
   renderAgentResult(agentPayload);
+
+  // Surface gateway-level errors honestly: when the agent itself reported
+  // status="error" (e.g. read on a missing file), the badge must reflect
+  // that. The log already shows the error; don't end with "agent returned ok".
+  const isAgentError = agentPayload && agentPayload.status === 'error';
   const chosen = agentPayload && agentPayload.result && agentPayload.result.chosen_tool;
-  setAgentStatus(
-    chosen ? `agent ran ${chosen} (job ${submit.job_id})` : `agent returned ok (job ${submit.job_id})`,
-    'ok'
-  );
+  if (isAgentError) {
+    setAgentStatus(
+      `agent error: ${agentPayload.error || 'see log'} (job ${submit.job_id})`,
+      'error'
+    );
+  } else {
+    setAgentStatus(
+      chosen ? `agent ran ${chosen} (job ${submit.job_id})` : `agent returned ok (job ${submit.job_id})`,
+      'ok'
+    );
+  }
+}
+
+async function fetchArtifactPayload(ref) {
+  // Two hops: control-plane presigns a MinIO URL, then we fetch the JSON
+  // from MinIO directly. The MinIO fetch crosses origins (web on :8080,
+  // MinIO on :9000); if CORS isn't configured the browser will block it,
+  // which is why we degrade to a clear status message instead of crashing.
+  appendAgentLog(`[agent result stored as artifact ${ref}; fetching…]`);
+  let presigned;
+  try {
+    presigned = await fetchJson(`${API_BASE}/artifacts/${encodeURIComponent(ref)}`);
+  } catch (err) {
+    appendAgentLog(`[error] artifact presign failed: ${err.message}`);
+    return null;
+  }
+  try {
+    const r = await fetch(presigned.url);
+    if (!r.ok) {
+      appendAgentLog(`[error] artifact fetch HTTP ${r.status}`);
+      return null;
+    }
+    const wrapper = await r.json();
+    return wrapper.response || wrapper.response_text || wrapper;
+  } catch (err) {
+    appendAgentLog(`[error] artifact fetch failed: ${err.message} (CORS on MinIO?)`);
+    appendAgentLog(`  retrieve manually: curl "${presigned.url}"`);
+    return null;
+  }
 }
 
 if (agentForm) {
