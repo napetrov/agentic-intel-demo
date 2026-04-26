@@ -1151,8 +1151,22 @@ async function fetchJson(url, init) {
   try {
     const r = await fetch(url, { ...opts, signal: ctrl.signal });
     if (!r.ok) {
-      const text = await r.text().catch(() => '');
-      throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+      // Static-only deployments (python http.server, generic CDNs) answer
+      // with HTML 404 pages; surfacing that body verbatim renders raw
+      // markup in the UI. Strip HTML/whitespace-only bodies so the
+      // message is just "HTTP <status> <statusText>".
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      let detail = '';
+      if (!ct.includes('html')) {
+        const text = await r.text().catch(() => '');
+        const trimmed = text.trim();
+        if (trimmed && !trimmed.startsWith('<')) {
+          detail = `: ${trimmed.slice(0, 200)}`;
+        }
+      }
+      const err = new Error(`HTTP ${r.status}${r.statusText ? ' ' + r.statusText : ''}${detail}`);
+      err.status = r.status;
+      throw err;
     }
     return await r.json();
   } finally {
@@ -1404,9 +1418,26 @@ async function refreshMultiSession() {
     const anyPending = records.some((r) => !TERMINAL_STATUSES.has(r.status));
     scheduleMultiSessionPoll(anyPending ? 1000 : 5000);
   } catch (err) {
-    if (multiSessionBackend) multiSessionBackend.textContent = 'backend: unreachable';
-    setMultiSessionStatus(`Session list fetch failed: ${err.message}`, 'error');
-    scheduleMultiSessionPoll(5000);
+    // 404 on /api/sessions means there's no control-plane behind the page
+    // (Tier 0 static-only deployment — python http.server, plain nginx,
+    // CDN). That's expected, not a failure: report it neutrally and back
+    // off polling. Any other error stays loud so a real outage is visible.
+    const noBackend = err && err.status === 404;
+    if (multiSessionBackend) {
+      multiSessionBackend.textContent = noBackend ? 'backend: not detected' : 'backend: unreachable';
+    }
+    if (noBackend) {
+      setMultiSessionStatus(
+        'Backend not detected — session lifecycle needs the control-plane (run `docker compose up` from the repo root).',
+        'warn'
+      );
+      renderMultiSessionRows([]);
+      renderMultiSessionSummary([], null);
+      scheduleMultiSessionPoll(15000);
+    } else {
+      setMultiSessionStatus(`Session list fetch failed: ${err.message}`, 'error');
+      scheduleMultiSessionPoll(5000);
+    }
   } finally {
     multiSessionPolling = false;
   }
