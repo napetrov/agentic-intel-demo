@@ -201,13 +201,14 @@ Telegram ingress.
 
 ### Hardware and network requirements
 
-Sized for the demo as shipped — System B's vLLM pod alone reserves
-16 CPU / 32Gi for the Qwen3-4B context window.
+System A sizing depends on which scenarios you actually run; System B's
+vLLM pod alone reserves 16 CPU / 32Gi for the Qwen3-4B context window.
 
 | Host | Min CPU | Min RAM | Min disk | Notes |
 |------|---------|---------|----------|-------|
-| System A | 4 cores | 8 GiB | 40 GiB | runs operator + LiteLLM + session pods. Session-pod profiles `small`/`medium`/`large` from `config/pod-profiles/profiles.yaml` need headroom on top — `large` alone is 32 CPU / 64Gi. |
-| System B | 20 cores | 40 GiB | 80 GiB | vLLM 16/32 + offload-worker 4/4 + MinIO + headroom. Drop to a smaller model in `scripts/setup-system-b-vllm-local.sh` if you need to fit on less. |
+| System A — base bring-up | 4 cores | 8 GiB | 40 GiB | operator + LiteLLM + `small`/`medium` session profiles. Enough for `terminal_agent` and `market_research`. |
+| System A — full scenario coverage | 36+ cores | 72+ GiB | 40 GiB | `large_build_test` runs on the `large` session profile (32 CPU / 64Gi from `config/pod-profiles/profiles.yaml`); System A also needs operator + LiteLLM headroom on top. Either size the host accordingly or downgrade `large_build_test` to a smaller pod profile. |
+| System B | 20 cores | 40 GiB | 80 GiB | vLLM 16/32 + offload-worker 4/4 + MinIO + headroom. Drop to a smaller model / shorter `--max-model-len` in `scripts/setup-system-b-vllm-local.sh` if you need to fit on less. |
 
 Network reachability that must be open between the two hosts (NodePorts
 from `docs/port-map.md`):
@@ -410,7 +411,7 @@ see `docs/reproducibility.md` "Recovery / reset".
 | vLLM OOM / restart loop on System B | `kubectl --context system-b logs -n inference deploy/vllm --previous` for `CUDA out of memory` or process kill. | Reduce `--max-model-len` or switch to a smaller model in `scripts/setup-system-b-vllm-local.sh` (Qwen3-4B at 32768 reserves ~24Gi; drop to 8192 to fit in less). Re-run the script with `APPLY=1`. |
 | `offload-worker` 5xx, `result_ref` not produced | `kubectl --context system-b logs -n system-b deploy/offload-worker --tail=200`. | Usually MinIO bucket missing — `MINIO_ROOT_USER=... MINIO_ROOT_PASSWORD=... ./scripts/create-minio-bucket.sh` recreates `demo-artifacts` idempotently. |
 | MinIO bucket lost / artifacts purged | `mc ls local/demo-artifacts` from inside the cluster. | Re-create with the script above. Old `result_ref` URLs from prior sessions become 404; the demo recovers by re-running the offload step. |
-| CRD apply fails with `metadata.annotations: Too long` | `kubectl get events -A | grep openclawinstances`. | Use the server-side path baked into `scripts/install-openclaw-operator.sh` (`MODE=server-side-crd`, the default); see `docs/operator-runbook.md` "Working recovery strategy". |
+| CRD apply fails with `metadata.annotations: Too long` | `kubectl get events -A \| grep openclawinstances`. | Use the server-side path baked into `scripts/install-openclaw-operator.sh` (`MODE=server-side-crd`, the default); see `docs/operator-runbook.md` "Working recovery strategy". |
 
 ## Where to look next
 

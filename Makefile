@@ -96,13 +96,27 @@ tier2-teardown: ## Tier 2: operator-owned teardown of the demo OpenClawInstance 
 # --- Quality gates ----------------------------------------------------------
 
 .PHONY: lint
-lint: ## Run repo-local lint suite (matches .github/workflows/lint.yml)
+lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
 	@echo "[lint] bash -n on scripts/"
 	@find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+	@echo "[lint] shellcheck (advisory; warnings only — matches CI)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+	  shellcheck -S warning scripts/*.sh scripts/**/*.sh || true; \
+	else \
+	  echo "  shellcheck not installed; skipping (apt-get install shellcheck)"; \
+	fi
 	@echo "[lint] python -m py_compile"
-	@find . -path ./.git -prune -o -path ./.dev-up -prune -o -name '*.py' -print | xargs -r python3 -m py_compile
+	@find . -path ./.git -prune -o -path ./.dev-up -prune -o -name '*.py' -print \
+	  | while IFS= read -r f; do python3 -m py_compile "$$f"; done
+	@echo "[lint] ruff check (advisory; F + E9 — matches CI)"
+	@if command -v ruff >/dev/null 2>&1; then \
+	  ruff check --select=F,E9 runtimes/ scripts/ || true; \
+	else \
+	  echo "  ruff not installed; skipping (pip install ruff)"; \
+	fi
 	@echo "[lint] node --check on web-demo/*.js"
-	@find web-demo -maxdepth 2 -name '*.js' -print | xargs -r -n1 node --check
+	@find web-demo -maxdepth 2 -name '*.js' -print \
+	  | while IFS= read -r f; do node --check "$$f"; done
 
 .PHONY: test
 test: ## Run unit tests (offload-worker + control-plane)

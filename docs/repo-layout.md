@@ -7,13 +7,16 @@ agentic-intel-demo/
 │
 ├── docs/
 │   ├── architecture.md          # full architecture breakdown
-│   ├── mvp-plan.md              # phased implementation plan
+│   ├── demo-setup.md            # tiered bring-up (Tier 0/1/2), hardware, telegram, recovery
+│   ├── operator-runbook.md      # operator install + recovery (canonical Tier 2 path)
+│   ├── operator-gap-analysis.md # operator-first gaps still open
 │   ├── reusable-components.md   # what to reuse, what to build
 │   ├── repo-layout.md           # this file
-│   ├── open-questions.md        # decisions and unknowns
 │   ├── reproducibility.md       # how to redeploy from scratch
 │   ├── port-map.md              # fixed NodePort values + k3s install params
-│   └── single-node-validation.md # how to validate on onedal-build first
+│   ├── single-node-validation.md # how to validate on onedal-build first
+│   └── archive/
+│       └── mvp-plan.md          # archived; pre-operator/pre-vLLM phased plan
 │
 ├── config/
 │   ├── versions.yaml            # all component version pins
@@ -96,16 +99,24 @@ agentic-intel-demo/
 │
 └── scripts/
     ├── install-openclaw-operator.sh
+    ├── create-operator-secrets.sh
     ├── apply-operator-chat-config.sh
     ├── check-operator-prereqs.sh
     ├── smoke-test-operator-instance.sh
-    ├── setup-system-b-vllm.sh
+    ├── teardown-openclaw-instance.sh
+    ├── setup-system-b-vllm.sh        # historical SSH-into-onedal-build path
+    ├── setup-system-b-vllm-local.sh  # canonical: kubectl/helm vLLM bring-up
     ├── check-system-b-vllm.sh
+    ├── load-offload-worker-image.sh
     ├── cleanup-system-a.sh
     ├── create-minio-bucket.sh
     ├── ci-scenario-slice.py
     ├── validate-demo-templates.py
     ├── telegram-send-menu.py
+    ├── dev-up.sh                     # FastAPI venv runtimes (no Docker)
+    ├── dev-down.sh
+    ├── dev_web_proxy.py
+    ├── load-simulate.sh
     ├── test-litellm-sambanova.sh
     └── test-sambanova-direct.sh
 ```

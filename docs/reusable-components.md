@@ -28,12 +28,26 @@ This document lists what to reuse as-is, what to configure, and what to build mi
 - **Notes**: supports local SLM + cloud backends, retry logic, cost tracking
 
 ### vLLM (canonical local SLM)
-- **What**: high-performance inference server, OpenAI-compatible
+- **What**: high-performance inference server, OpenAI-compatible.
 - **Repo**: https://github.com/vllm-project/vllm
-- **Use for**: local SLM on System B (the path actually wired into
-  LiteLLM, the offload tests, and CI).
-- **Deploy**: `scripts/setup-system-b-vllm-local.sh` (kubectl/helm) —
-  see `docs/demo-setup.md` Tier 2 step 2.
+- **Use for**: local SLM on System B — the canonical path wired into
+  `k8s/system-a/litellm.yaml` for Tier 2 bring-up.
+- **CI coverage**: not directly validated by repo CI. The
+  `tier1-scenario-slice` and `tier2-offload-smoke` jobs exercise the
+  control-plane → offload-worker → MinIO path, not vLLM itself. Bring
+  vLLM up by hand on a real System B host before relying on it.
+- **Deploy**: `scripts/setup-system-b-vllm-local.sh` (kubectl/helm).
+  Required inputs the script does **not** default:
+  - `CHART_REPO` (`https://github.com/<your-org>/Enterprise-Inference.git`
+    or another Helm chart that exposes the same values shape) and
+    `CHART_REF` (tag or commit SHA — pinning floating refs is a
+    reproducibility bug).
+  - `KUBECTL` (e.g. `kubectl --context system-b`) so the install lands
+    on the right cluster.
+  - HuggingFace token if your model id requires gated download.
+  - Any chart-specific Helm values overrides (resources, NodePort,
+    `--max-model-len`) — defaults assume 16 CPU / 32Gi / 32768 ctx.
+  See `docs/demo-setup.md` Tier 2 step 2.
 - **Model**: `Qwen/Qwen3-4B-Instruct-2507` at 32768 ctx, 16 CPU / 32Gi.
   Pinned in `config/versions.yaml`.
 - **API**: NodePort 30434, `/v1` is OpenAI-compatible.

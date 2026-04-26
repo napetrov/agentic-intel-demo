@@ -50,16 +50,31 @@ kubectl --kubeconfig k3s-b.yaml get nodes  # one node Ready
 
 ## Step 2 — Deploy System B services first
 
-### vLLM
+### vLLM (fitted profile for an 8 vCPU host)
+
+`scripts/setup-system-b-vllm-local.sh` defaults to 16 CPU / 32Gi / 32768
+context, which won't schedule on this host. Override the resource and
+context env knobs explicitly:
+
 ```bash
 APPLY=1 \
   CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \
   CHART_REF=<tag|sha> \
+  CPU=4 \
+  MEMORY=12Gi \
+  MAX_MODEL_LEN=8192 \
+  MAX_BATCHED_TOKENS=2048 \
+  MAX_NUM_SEQS=8 \
+  KV_CACHE_SPACE=2 \
   KUBECTL="kubectl --context system-b" \
   ./scripts/setup-system-b-vllm-local.sh
 # Wait for Running, then verify (OpenAI-compatible):
 curl http://localhost:30434/v1/models
 ```
+
+Tune up if `onedal-build` has more than the 8 vCPU / 32 GB baseline; the
+full Tier 2 profile is documented in `docs/demo-setup.md` "Hardware and
+network requirements".
 
 ### MinIO
 ```bash
