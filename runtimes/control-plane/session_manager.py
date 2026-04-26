@@ -175,10 +175,16 @@ class LocalSessionBackend:
     # (which would complicate uvicorn worker counts and shutdown). The
     # advance is idempotent — calling _advance() twice on the same record
     # is a no-op once it reaches a terminal state.
+    #
+    # Ordering: when the state changes, the durable write happens BEFORE
+    # the in-memory mutation is published. _persist needs the new field
+    # values, so we mutate `rec` in place, snapshot the originals, persist,
+    # and roll back on failure. Without the rollback a SQLite hiccup would
+    # leave the cache showing state that disappears on the next restart.
     def _advance(self, rec: SessionRecord, now: float) -> None:
         if rec.status in TERMINAL_STATUSES or rec.status == STATUS_DELETING:
             return
-        prev_status = rec.status
+        snapshot = (rec.status, rec.started_at, rec.completed_at, rec.message)
         elapsed = now - rec.created_at
         if rec.status == STATUS_PENDING and elapsed >= self.PENDING_SECONDS:
             rec.status = STATUS_RUNNING
@@ -190,8 +196,12 @@ class LocalSessionBackend:
             rec.status = STATUS_COMPLETED
             rec.completed_at = rec.created_at + self.PENDING_SECONDS + self.RUNNING_SECONDS
             rec.message = f"simulated {rec.scenario} run completed"
-        if rec.status != prev_status:
-            self._persist(rec)
+        if rec.status != snapshot[0]:
+            try:
+                self._persist(rec)
+            except Exception:
+                rec.status, rec.started_at, rec.completed_at, rec.message = snapshot
+                raise
 
     def create(
         self,
@@ -219,8 +229,11 @@ class LocalSessionBackend:
                 memory_request=specs["memory_request"],
                 message="simulated session created (local backend)",
             )
-            self._records[sid] = rec
+            # Durable write first — if SQLite barfs, the in-memory cache
+            # stays empty and the caller sees the failure instead of a
+            # session that exists in memory but vanishes on restart.
             self._persist(rec)
+            self._records[sid] = rec
             return rec
 
     def get(self, session_id: str) -> Optional[SessionRecord]:
@@ -239,6 +252,13 @@ class LocalSessionBackend:
             # Sorted oldest-first so the UI table grows downward.
             return sorted(self._records.values(), key=lambda r: r.created_at)
 
+    def close(self) -> None:
+        """Release the underlying SQLite handle. Tests use this to keep
+        tmp-path teardown clean on platforms that don't free open files
+        eagerly. Production code holds the backend for the whole process
+        lifetime and never calls this."""
+        self._store.close()
+
     def delete(self, session_id: str) -> bool:
         with self._lock:
             if session_id not in self._records:
@@ -248,8 +268,11 @@ class LocalSessionBackend:
             # STATUS_DELETING here, but that transition was never
             # observable — the dict entry was removed in the same locked
             # section.)
-            del self._records[session_id]
+            # Drop from disk before cache so a SQLite failure leaves both
+            # views consistent (record still present in both) instead of
+            # resurrecting the session on the next process restart.
             self._store.pop(session_id, None)
+            del self._records[session_id]
             return True
 
 

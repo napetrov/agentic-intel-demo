@@ -129,9 +129,12 @@ services:
       SAMBANOVA_PROBE_URL: ${SAMBANOVA_PROBE_URL:-}
       # Durable registry paths — the volume below maps to /var/lib/control-plane
       # so a compose restart preserves issued result_refs and the
-      # /sessions table. Override JOBS_DB_PATH=:memory: to opt out.
-      JOBS_DB_PATH: /var/lib/control-plane/jobs.db
-      SESSIONS_DB_PATH: /var/lib/control-plane/sessions.db
+      # /sessions table. Use Compose's ${VAR:-default} interpolation so a
+      # shell override (e.g. JOBS_DB_PATH=:memory: docker compose up)
+      # actually reaches the container; a hard-coded value would silently
+      # ignore the shell.
+      JOBS_DB_PATH: ${JOBS_DB_PATH:-/var/lib/control-plane/jobs.db}
+      SESSIONS_DB_PATH: ${SESSIONS_DB_PATH:-/var/lib/control-plane/sessions.db}
     volumes:
       - control-plane-data:/var/lib/control-plane
     depends_on:

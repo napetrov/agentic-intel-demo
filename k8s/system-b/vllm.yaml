@@ -69,6 +69,17 @@ spec:
       labels:
         app: vllm
     spec:
+      # Pod-level hardening. readOnlyRootFilesystem is intentionally NOT
+      # set on the container below — vLLM downloads model weights to
+      # ~/.cache/huggingface on first run, which lives on the root fs.
+      # Add an emptyDir + HF_HOME mount if you want to flip it on.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vllm
           # NOTE: pin a real tag against your stand. `latest` is here so
@@ -76,6 +87,12 @@ spec:
           # validated default. See the file header for context.
           image: vllm/vllm-openai:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
           args:
             - --model
             - $(MODEL_ID)

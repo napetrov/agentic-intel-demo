@@ -192,3 +192,12 @@ class SqliteJsonStore:
     def close(self) -> None:
         with self.lock:
             self._conn.close()
+
+    # Context-manager support so tests can write `with SqliteJsonStore(...)
+    # as s:` instead of try/finally. Production code does not use this —
+    # the store is held by app.py for the lifetime of the process.
+    def __enter__(self) -> "SqliteJsonStore":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()

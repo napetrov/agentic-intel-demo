@@ -40,12 +40,14 @@ EOF
 if [ "${OPENCLAW_OPERATOR_REF}" = "main" ]; then
   echo "[install-openclaw-operator] WARNING: OPENCLAW_OPERATOR_REF=main is not reproducible." >&2
   echo "                            Set OPENCLAW_OPERATOR_REF=<tag|commit-sha> to pin it." >&2
-elif [ -z "${OPENCLAW_OPERATOR_REF_VERIFIED:-}" ]; then
-  # The default (v0.30.0) is the latest upstream release at repo-pin
-  # time but has not been re-validated against this demo on every bump.
-  # Set OPENCLAW_OPERATOR_REF_VERIFIED=1 (or pin a different ref you've
-  # tested) to silence this notice. Tracked as gap #1 in
-  # docs/operator-gap-analysis.md.
+elif [ "${OPENCLAW_OPERATOR_REF}" = "v0.30.0" ] && [ -z "${OPENCLAW_OPERATOR_REF_VERIFIED:-}" ]; then
+  # v0.30.0 is the candidate default — latest upstream release at
+  # repo-pin time, not re-validated against this demo on every bump.
+  # Only print the notice when the user is actually on that default;
+  # an explicit override (any non-default ref) is treated as a
+  # deliberate choice and stays silent. Set
+  # OPENCLAW_OPERATOR_REF_VERIFIED=1 once you've validated v0.30.0
+  # on your stand. Tracked as gap #1 in docs/operator-gap-analysis.md.
   echo "[install-openclaw-operator] NOTE: using upstream candidate ref ${OPENCLAW_OPERATOR_REF}." >&2
   echo "                            Validate against your stand and either set" >&2
   echo "                            OPENCLAW_OPERATOR_REF_VERIFIED=1 or pin OPENCLAW_OPERATOR_REF=<tag>." >&2

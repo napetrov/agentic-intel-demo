@@ -64,9 +64,10 @@ if [ -z "$CHART_REPO" ] || [[ "$CHART_REPO" == *"<your-org>"* ]]; then
        kubectl --context system-b apply -f k8s/system-b/vllm.yaml
 
      The static path doesn't accept the chart's full knob set (just
-     model id, context length, and resources via env). Pinned to a
-     CPU-friendly upstream image — see comments in the YAML before
-     promoting past dry-run.
+     model id, context length, and resources via env) and currently
+     references the CUDA-first vllm/vllm-openai:latest image — swap
+     to a CPU-tuned image (or a pinned tag you trust) before
+     promoting past dry-run. See the YAML's header for caveats.
 EOF
   exit 64
 fi
