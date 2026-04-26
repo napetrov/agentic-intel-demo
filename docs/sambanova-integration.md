@@ -8,11 +8,15 @@ LiteLLM has a documented `sambanova/` provider path, and the LiteLLM proxy confi
 
 ```yaml
 model_list:
-  - model_name: deepseek-sambanova
+  - model_name: sambanova
     litellm_params:
       model: sambanova/DeepSeek-V3.1
       api_key: os.environ/SAMBANOVA_API_KEY
 ```
+
+The canonical alias is `sambanova` (matching `default`, `fast`, `reasoning`
+in the rest of the stack); referenced as `litellm/sambanova` from
+`operator-chat-config.template.json` and `examples/openclawinstance-intel-demo.yaml`.
 
 ## Why this should work
 
@@ -30,7 +34,7 @@ LiteLLM documents a native `sambanova/` provider route, so using LiteLLM is clea
 
 The repo now includes:
 - `SAMBANOVA_API_KEY` in `k8s/shared/intel-demo-operator-secrets.yaml.template`
-- LiteLLM route `deepseek-sambanova` in `k8s/system-a/litellm.yaml`
+- LiteLLM route `sambanova` in `k8s/system-a/litellm.yaml`
 - `SAMBANOVA_API_KEY` env handling via the LiteLLM Deployment env or a k8s Secret (the earlier shell-wrapper setup path has been removed)
 - direct and LiteLLM smoke-test scripts for SambaNova
 
@@ -58,7 +62,7 @@ LiteLLM validation after deploy:
 curl -sS http://<SYSTEM_A_IP>:31400/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "deepseek-sambanova",
+    "model": "sambanova",
     "messages": [
       {"role": "user", "content": "Hello from LiteLLM"}
     ]

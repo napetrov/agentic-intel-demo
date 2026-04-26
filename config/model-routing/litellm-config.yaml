@@ -1,32 +1,48 @@
-# LiteLLM routing configuration
-# Deploy as ConfigMap, mount at /app/config.yaml
+# LiteLLM routing configuration (template)
+#
+# This file documents the canonical model aliases the rest of the stack
+# expects. The deployed config lives in
+# k8s/system-a/litellm.yaml's `litellm-config` ConfigMap; keep this
+# template and that ConfigMap in sync.
+#
+# Canonical aliases (referenced by operator-chat-config.template.json,
+# examples/openclawinstance-intel-demo.yaml, and
+# k8s/system-a/session-pod-template.yaml):
+#   fast       — System B vLLM (Qwen3-4B), low-latency
+#   default    — same backend, longer timeout, Bedrock fallback
+#   reasoning  — Bedrock Claude Sonnet
+#   sambanova  — SambaNova DeepSeek
+#
+# Substitute SYSTEM_B_VLLM_ENDPOINT (e.g. http://<system-b-ip>:30434/v1)
+# before applying.
 
 model_list:
-  # Local SLM on System B via ollama
   - model_name: fast
     litellm_params:
-      model: ollama/qwen2.5:7b-instruct
-      api_base: "http://SYSTEM_B_IP:30434"
+      model: openai/Qwen/Qwen3-4B-Instruct-2507
+      api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
+      api_key: none
 
   - model_name: default
     litellm_params:
-      model: ollama/qwen2.5:7b-instruct
-      api_base: "http://SYSTEM_B_IP:30434"
-      timeout: 10
-    # fallback to cloud if local times out
+      model: openai/Qwen/Qwen3-4B-Instruct-2507
+      api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
+      api_key: none
+      timeout: 30
     fallbacks: [reasoning]
 
-  # Cloud model for heavy reasoning
   - model_name: reasoning
     litellm_params:
-      model: openai/gpt-4o          # or anthropic/claude-sonnet-4-5
-      api_key: os.environ/OPENAI_API_KEY
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      api_key: os.environ/AWS_BEARER_TOKEN_BEDROCK
+      aws_region_name: os.environ/AWS_REGION
+      timeout: 60
 
-  - model_name: code
+  - model_name: sambanova
     litellm_params:
-      model: ollama/qwen2.5:7b-instruct
-      api_base: "http://SYSTEM_B_IP:30434"
-    fallbacks: [reasoning]
+      model: sambanova/DeepSeek-V3.1
+      api_key: os.environ/SAMBANOVA_API_KEY
+      timeout: 60
 
 router_settings:
   routing_strategy: simple-shuffle

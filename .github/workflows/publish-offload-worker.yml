@@ -1,0 +1,61 @@
+name: publish-offload-worker
+
+# Build and publish runtimes/offload-worker as a container image to GHCR.
+# Triggers:
+#   - push to main             -> publishes :main + :sha-<short>
+#   - tag push v*              -> publishes :<tag> + :latest
+#   - manual workflow_dispatch -> publishes :manual-<sha>
+#
+# The image is referenced by k8s/system-b/offload-worker.yaml as
+# ghcr.io/<owner>/agentic-intel-demo/offload-worker:main by default.
+#
+# To consume the published image without manual auth, GHCR packages must
+# be public. Set the package visibility under
+#   github.com/<owner>/agentic-intel-demo/pkgs/container/agentic-intel-demo%2Foffload-worker
+# to Public after the first publish.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "runtimes/offload-worker/**"
+      - ".github/workflows/publish-offload-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/offload-worker
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/offload-worker
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false

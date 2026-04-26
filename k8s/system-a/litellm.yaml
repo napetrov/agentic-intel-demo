@@ -10,28 +10,35 @@ metadata:
   namespace: inference
 data:
   config.yaml: |
+    # Canonical aliases used by the rest of the stack:
+    #   litellm/fast       — System B vLLM (Qwen3-4B), low-latency
+    #   litellm/default    — same backend, longer timeout
+    #   litellm/reasoning  — Bedrock Claude Sonnet
+    #   litellm/sambanova  — SambaNova DeepSeek
+    # operator-chat-config.template.json, examples/openclawinstance-intel-demo.yaml,
+    # and session-pod-template.yaml all reference these names.
     model_list:
-      - model_name: system-b-vllm-qwen3-4b-fast
+      - model_name: fast
         litellm_params:
           model: openai/Qwen/Qwen3-4B-Instruct-2507
           api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
           api_key: none
 
-      - model_name: system-b-vllm-qwen3-4b-default
+      - model_name: default
         litellm_params:
           model: openai/Qwen/Qwen3-4B-Instruct-2507
           api_base: "${SYSTEM_B_VLLM_ENDPOINT}"
           api_key: none
           timeout: 30
 
-      - model_name: aws-bedrock-claude-sonnet
+      - model_name: reasoning
         litellm_params:
           model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
           api_key: os.environ/AWS_BEARER_TOKEN_BEDROCK
           aws_region_name: os.environ/AWS_REGION
           timeout: 60
 
-      - model_name: sambanova-deepseek-v3-1
+      - model_name: sambanova
         litellm_params:
           model: sambanova/DeepSeek-V3.1
           api_key: os.environ/SAMBANOVA_API_KEY
@@ -64,14 +71,29 @@ spec:
             - containerPort: 4000
               name: http
           env:
+            # AWS_REGION is non-sensitive — keep as plain env from envsubst
+            # so it can be overridden per environment without touching the
+            # Secret. Defaults to us-east-2 when unset.
             - name: AWS_REGION
               value: "${AWS_REGION}"
-            - name: AWS_BEARER_TOKEN_BEDROCK
-              value: "${AWS_BEARER_TOKEN_BEDROCK}"
-            - name: SAMBANOVA_API_KEY
-              value: "${SAMBANOVA_API_KEY}"
             - name: CLAUDE_CODE_USE_BEDROCK
               value: "1"
+            # Sensitive values come from the litellm-secrets Secret in the
+            # `inference` namespace. Materialize it via:
+            #   AWS_BEARER_TOKEN_BEDROCK=... SAMBANOVA_API_KEY=... \
+            #     APPLY=1 ./scripts/create-operator-secrets.sh
+            # which creates litellm-secrets in `inference` alongside the
+            # main intel-demo-operator-secrets in `default`.
+            - name: AWS_BEARER_TOKEN_BEDROCK
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: AWS_BEARER_TOKEN_BEDROCK
+            - name: SAMBANOVA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: SAMBANOVA_API_KEY
           volumeMounts:
             - name: litellm-config
               mountPath: /app/config.yaml

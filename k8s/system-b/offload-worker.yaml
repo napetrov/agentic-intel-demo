@@ -20,8 +20,18 @@ spec:
     spec:
       containers:
         - name: offload-worker
-          image: docker.io/library/demo-offload-worker:latest
-          imagePullPolicy: Never
+          # Default to the GHCR image published by
+          # .github/workflows/publish-offload-worker.yml on every main-branch
+          # push. For local k3s/k3d testing without GHCR access, build +
+          # load the image with scripts/load-offload-worker-image.sh and
+          # then sed this manifest to use the local tag, e.g.:
+          #   sed -e 's|ghcr.io/napetrov/agentic-intel-demo/offload-worker:main|demo-offload-worker:latest|' \
+          #       -e 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|' \
+          #     k8s/system-b/offload-worker.yaml | kubectl apply -f -
+          # The CI tier2-offload-smoke job in .github/workflows/test.yml
+          # uses exactly that sed pattern.
+          image: ghcr.io/napetrov/agentic-intel-demo/offload-worker:main
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:

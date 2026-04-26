@@ -34,7 +34,7 @@ control-plane, then summarizes the returned stdout/stderr.
 3. **Chat Model: ChatOpenAI**
    - Credential: `litellm-openai`
    - Base URL: `${LITELLM_BASE_URL}`
-   - Model name: `system-b-vllm-qwen3-4b-default`
+   - Model name: `default`
    - System prompt:
      > You are the terminal-agent demo guide. When the user asks to run
      > the demo, call the `run_scenario` tool with no arguments. When the
