@@ -44,7 +44,7 @@ This document lists what to reuse as-is, what to configure, and what to build mi
     reproducibility bug).
   - `KUBECTL` (e.g. `kubectl --context system-b`) so the install lands
     on the right cluster.
-  - HuggingFace token if your model id requires gated download.
+  - HuggingFace token if your model id is gated.
   - Any chart-specific Helm values overrides (resources, NodePort,
     `--max-model-len`) — defaults assume 16 CPU / 32Gi / 32768 ctx.
   See `docs/demo-setup.md` Tier 2 step 2.

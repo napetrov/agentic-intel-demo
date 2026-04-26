@@ -101,7 +101,8 @@ lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
 	@find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 	@echo "[lint] shellcheck (advisory; warnings only — matches CI)"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	  shellcheck -S warning scripts/*.sh scripts/**/*.sh || true; \
+	  find scripts -type f -name '*.sh' -print0 \
+	    | xargs -0 shellcheck -S warning || true; \
 	else \
 	  echo "  shellcheck not installed; skipping (apt-get install shellcheck)"; \
 	fi
