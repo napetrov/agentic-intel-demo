@@ -195,10 +195,6 @@ Telegram ingress.
 - A reachable upstream `openclaw-operator` ref pinned via
   `OPENCLAW_OPERATOR_REF`.
 
-Full list of values you need to gather (`OPENCLAW_OPERATOR_REF`,
-`BEDROCK_MODEL_ID`, `system_b_node_ip`, …) lives in
-`docs/reproducibility.md` under "Values to fill in".
-
 ### Bring-up order
 
 The exact list of values you need to gather first
