@@ -80,8 +80,13 @@ tier2-operator-install: ## Tier 2: install openclaw-operator on system-a (set OP
 	  ./scripts/install-openclaw-operator.sh
 
 .PHONY: tier2-instance-apply
-tier2-instance-apply: ## Tier 2: apply examples/openclawinstance-intel-demo.yaml on system-a
-	$(SYSTEM_A_KUBECTL) apply -f examples/openclawinstance-intel-demo.yaml
+tier2-instance-apply: ## Tier 2: apply examples/openclawinstance-intel-demo.yaml on system-a (APPLY=1 to apply)
+	@if [ "$(APPLY)" = "1" ]; then \
+	  $(SYSTEM_A_KUBECTL) apply -f examples/openclawinstance-intel-demo.yaml; \
+	else \
+	  echo "+ $(SYSTEM_A_KUBECTL) apply -f examples/openclawinstance-intel-demo.yaml"; \
+	  echo "  (dry-run; set APPLY=1 to actually apply)"; \
+	fi
 
 .PHONY: tier2-smoke
 tier2-smoke: ## Tier 2: smoke-test the operator instance lifecycle on system-a (APPLY=1 to actually run)
