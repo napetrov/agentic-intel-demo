@@ -31,7 +31,6 @@ the Python standard library + PyYAML.
 from __future__ import annotations
 
 import sys
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable

@@ -290,9 +290,9 @@ def test_probe_unconfigured_target_returns_unconfigured(monkeypatch):
 def _stub_httpx_get(monkeypatch, handler):
     transport = httpx.MockTransport(handler)
 
-    def fake_get(url, *, timeout=None):
+    def fake_get(url, *, headers=None, timeout=None):
         with httpx.Client(transport=transport) as c:
-            return c.get(url, timeout=timeout)
+            return c.get(url, headers=headers, timeout=timeout)
 
     monkeypatch.setattr(cp_app.httpx, "get", fake_get)
 

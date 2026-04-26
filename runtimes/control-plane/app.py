@@ -87,6 +87,13 @@ PROBE_PATHS: dict[str, str] = {
     "litellm": os.environ.get("LITELLM_PROBE_PATH", "/health/liveliness"),
     "sambanova": os.environ.get("SAMBANOVA_PROBE_PATH", "/"),
 }
+# Optional bearer tokens for endpoints that require auth even for a cheap
+# liveness/model-list probe. Values are never returned to the browser; the
+# public /probe response exposes only the logical target name.
+PROBE_BEARER_TOKENS: dict[str, str] = {
+    "litellm": os.environ.get("LITELLM_API_KEY", ""),
+    "sambanova": os.environ.get("SAMBANOVA_API_KEY", ""),
+}
 PROBE_TIMEOUT_SECONDS = _parse_env_number("PROBE_TIMEOUT_SECONDS", "2.5", float)
 
 
@@ -202,8 +209,12 @@ def probe_dependency(name: str) -> dict[str, Any]:
     # future caller (e.g. an admin endpoint) can opt into a sanitized
     # URL instead of the bare name.
     _safe_probe_target(url)
+    headers = {}
+    bearer_token = PROBE_BEARER_TOKENS.get(name, "")
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     try:
-        r = httpx.get(url, timeout=PROBE_TIMEOUT_SECONDS)
+        r = httpx.get(url, headers=headers, timeout=PROBE_TIMEOUT_SECONDS)
         r.raise_for_status()
     except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
         # httpx.HTTPError covers connect/read/timeout/non-2xx;

@@ -112,7 +112,7 @@ lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
 	  echo "  shellcheck not installed; skipping (apt-get install shellcheck)"; \
 	fi
 	@echo "[lint] python -m py_compile"
-	@find . -path ./.git -prune -o -path ./.dev-up -prune -o -name '*.py' -print \
+	@find . -path ./.git -prune -o -path ./.dev-up -prune -o -path ./.test-venv -prune -o -name '*.py' -print \
 	  | while IFS= read -r f; do python3 -m py_compile "$$f"; done
 	@echo "[lint] ruff check (advisory; F + E9 — matches CI)"
 	@if command -v ruff >/dev/null 2>&1; then \
@@ -126,9 +126,11 @@ lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
 
 .PHONY: test
 test: ## Run unit tests (offload-worker + control-plane)
-	python3 -m pip install -q fastapi pydantic boto3 pytest httpx
-	python3 -m pytest runtimes/offload-worker/tests/ -q -k 'echo or health or invalid'
-	python3 -m pytest runtimes/control-plane/tests/ -q
+	python3 -m venv .test-venv
+	.test-venv/bin/python -m pip install -q --upgrade pip
+	.test-venv/bin/python -m pip install -q fastapi pydantic boto3 pytest httpx
+	.test-venv/bin/python -m pytest runtimes/offload-worker/tests/ -q -k 'echo or health or invalid'
+	.test-venv/bin/python -m pytest runtimes/control-plane/tests/ -q
 
 .PHONY: validate-templates
 validate-templates: ## Validate scenarios + architecture templates against the specs

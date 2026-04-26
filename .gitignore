@@ -9,6 +9,7 @@ kubeconfig*
 __pycache__/
 *.pyc
 node_modules/
+.test-venv/
 web-demo/test-results/
 web-demo/playwright-report/
 web-demo/package-lock.json

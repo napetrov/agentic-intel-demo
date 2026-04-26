@@ -479,7 +479,7 @@ def _classify_rules(text: str) -> dict[str, Any]:
         return {
             "tool": "read_file",
             "args": {"path": path},
-            "rationale": f"verb 'read'/'show'/'cat' followed by path",
+            "rationale": "verb 'read'/'show'/'cat' followed by path",
         }
     if low.startswith(("ls", "list ", "list")):
         rest = text.split(None, 1)[1].strip() if " " in text else "."

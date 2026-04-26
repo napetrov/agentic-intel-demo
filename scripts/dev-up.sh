@@ -21,6 +21,18 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Load optional local deployment overrides (probe URLs, API keys, ports).
+# Keep this before defaults are materialized so exported shell variables still
+# win over .env values. The file is deliberately not echoed because it may
+# contain provider keys.
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/.env"
+  set +a
+fi
+
 STATE_DIR="${DEV_UP_STATE_DIR:-$REPO_ROOT/.dev-up}"
 VENV_DIR="${DEV_UP_VENV_DIR:-$STATE_DIR/venv}"
 LOG_DIR="$STATE_DIR/logs"
@@ -225,7 +237,11 @@ else
       MINIO_BUCKET="$MINIO_BUCKET" \
       OPENCLAW_GATEWAY_URL="${OPENCLAW_GATEWAY_URL:-http://127.0.0.1:$AGENT_STUB_PORT}" \
       LITELLM_BASE_URL="${LITELLM_BASE_URL:-}" \
+      LITELLM_PROBE_PATH="${LITELLM_PROBE_PATH:-/health/liveliness}" \
+      LITELLM_API_KEY="${LITELLM_API_KEY:-}" \
       SAMBANOVA_PROBE_URL="${SAMBANOVA_PROBE_URL:-}" \
+      SAMBANOVA_PROBE_PATH="${SAMBANOVA_PROBE_PATH-/}" \
+      SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
       nohup "$UVICORN" app:app --host 127.0.0.1 --port "$CONTROL_PLANE_PORT" \
       >"$LOG_DIR/control-plane.log" 2>&1 &
     echo $! >"$PID_DIR/control-plane.pid"
@@ -246,7 +262,7 @@ else
     cd "$REPO_ROOT/scripts"
     WEB_DEMO_DIR="$REPO_ROOT/web-demo" \
       CONTROL_PLANE_URL="http://127.0.0.1:$CONTROL_PLANE_PORT" \
-      nohup "$UVICORN" dev_web_proxy:app --host 127.0.0.1 --port "$WEB_DEMO_PORT" \
+      nohup "$UVICORN" dev_web_proxy:app --host "${WEB_DEMO_HOST:-127.0.0.1}" --port "$WEB_DEMO_PORT" \
       >"$LOG_DIR/web-demo.log" 2>&1 &
     echo $! >"$PID_DIR/web-demo.pid"
   )
