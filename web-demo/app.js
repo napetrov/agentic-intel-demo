@@ -1462,9 +1462,13 @@ async function refreshMultiSession() {
     renderMultiSessionSummary(records, body.backend);
 
     // Mirror the session list into the System A agent pool so the operator
-    // sees rows + capacity bar move when fan-out spawns Jobs. Filtering
-    // already excluded other tabs' sessions, so this view is per-tab.
-    lastSessionRecords = records;
+    // sees rows + capacity bar move when fan-out spawns Jobs. Always filter
+    // by trackedSessionIds — `records` is the *table*'s view, which falls
+    // back to "all sessions" when this tab has never spawned (so a fresh
+    // viewer can see the shared backend at a glance). The pool/capacity bar
+    // must stay strictly per-tab so other viewers' Jobs don't inflate
+    // capacity for someone who hasn't spawned anything yet.
+    lastSessionRecords = records.filter((r) => trackedSessionIds.has(r.session_id));
     redrawSystemA();
 
     // Slow polling once everything settles; speed back up when a new
