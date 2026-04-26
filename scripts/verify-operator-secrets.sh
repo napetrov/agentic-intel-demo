@@ -59,6 +59,15 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then
   probe_kubectl_cmd "$SYSTEM_B_KUBECTL"
 fi
 
+# python3 parses the Secret key set (without ever reading values).
+# Without this preflight a missing python3 would silently leave $keys
+# empty in check_secret(), producing false "MISSING keys" reports
+# instead of pointing at the real dependency problem.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[verify-operator-secrets] python3 not on PATH — required to parse Secret key sets safely" >&2
+  exit 127
+fi
+
 FAIL=0
 
 ok()   { printf '  [ok]    %s\n' "$1"; }

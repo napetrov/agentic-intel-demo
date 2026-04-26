@@ -74,6 +74,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# wait_pf_http <pid> <url> [tries=20]
+#   Probe a backgrounded port-forward without the `sleep 2 && curl`
+#   race. Returns 0 only while $pid is alive AND the URL answers 2xx.
+wait_pf_http() {
+  local pid="$1" url="$2" tries="${3:-20}"
+  local i=0
+  while [ "$i" -lt "$tries" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    i=$((i+1))
+    sleep 0.5
+  done
+  return 1
+}
+
 if ! "${KC[@]}" -n "$CONTROL_PLANE_NAMESPACE" get svc "$CONTROL_PLANE_SVC" >/dev/null 2>&1; then
   echo "[smoke-test-offload-k8s] svc/$CONTROL_PLANE_SVC missing in ns/$CONTROL_PLANE_NAMESPACE" >&2
   echo "                         apply k8s/system-a/control-plane-offload.yaml first." >&2
@@ -84,7 +103,11 @@ LOCAL_PORT="${LOCAL_PORT:-18091}"
 "${KC[@]}" -n "$CONTROL_PLANE_NAMESPACE" port-forward "svc/$CONTROL_PLANE_SVC" \
   "$LOCAL_PORT:$CONTROL_PLANE_PORT" >/dev/null 2>&1 &
 cleanup_pid="$!"
-sleep 2
+if ! wait_pf_http "$cleanup_pid" "http://127.0.0.1:$LOCAL_PORT/health"; then
+  echo "[smoke-test-offload-k8s] port-forward to svc/$CONTROL_PLANE_SVC did not become ready" >&2
+  echo "                         (process dead, port already bound, or /health unreachable)" >&2
+  exit 1
+fi
 
 session_id="smoke-$(date +%s)-$$"
 

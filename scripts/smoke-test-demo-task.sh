@@ -85,6 +85,33 @@ FAIL=0
 ok()   { printf '  [ok]    %s\n' "$1"; }
 fail() { printf '  [FAIL]  %s\n' "$1"; FAIL=$((FAIL+1)); }
 
+# wait_pf_http <pid> <url> [tries=20]
+#   Probe a URL behind a backgrounded port-forward without the
+#   `sleep 2 && curl` race. Returns 0 only if the URL answers 2xx
+#   while the port-forward is still alive.
+#
+#   - `kill -0 $pid` short-circuits to failure if port-forward died
+#     (RBAC denial, port already bound, service vanished). Otherwise
+#     a stray local listener could answer the curl and we'd report
+#     a false pass.
+#   - 0.5s delay × 20 ≈ 10s budget; matches the previous `sleep 2`
+#     ceiling for healthy clusters but tolerates slower kubelets.
+wait_pf_http() {
+  local pid="$1" url="$2" tries="${3:-20}"
+  local i=0
+  while [ "$i" -lt "$tries" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    i=$((i+1))
+    sleep 0.5
+  done
+  return 1
+}
+
 cleanup_pids=()
 cleanup() {
   for pid in "${cleanup_pids[@]}"; do
@@ -116,12 +143,12 @@ if [ "$SKIP_GATEWAY" != "1" ]; then
   else
     "${KC[@]}" -n "$INSTANCE_NAMESPACE" port-forward "svc/$svc" \
       "$GATEWAY_PORT:$GATEWAY_PORT" >/dev/null 2>&1 &
-    cleanup_pids+=("$!")
-    sleep 2
-    if curl -fsS --max-time 5 "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null; then
+    pf_pid="$!"
+    cleanup_pids+=("$pf_pid")
+    if wait_pf_http "$pf_pid" "http://127.0.0.1:$GATEWAY_PORT/healthz"; then
       ok "gateway /healthz 200 (svc/$svc)"
     else
-      fail "gateway /healthz did not return 200 (svc/$svc)"
+      fail "gateway /healthz did not return 200 (svc/$svc; port-forward dead or unreachable)"
     fi
   fi
 else
@@ -140,8 +167,14 @@ if [ "$SKIP_LITELLM" != "1" ]; then
   if "${KC[@]}" -n "$LITELLM_NAMESPACE" get svc litellm >/dev/null 2>&1; then
     "${KC[@]}" -n "$LITELLM_NAMESPACE" port-forward svc/litellm \
       "$LITELLM_PORT:$LITELLM_PORT" >/dev/null 2>&1 &
-    cleanup_pids+=("$!")
-    sleep 2
+    pf_pid="$!"
+    cleanup_pids+=("$pf_pid")
+    # LiteLLM exposes /health on the same port; wait for it before
+    # POSTing /v1/chat/completions so a dead/dying port-forward fails
+    # fast instead of blowing the curl --max-time budget.
+    if ! wait_pf_http "$pf_pid" "http://127.0.0.1:$LITELLM_PORT/health"; then
+      fail "litellm port-forward did not reach /health (alias=$LITELLM_ALIAS)"
+    fi
     payload="$(printf '{"model":"%s","messages":[{"role":"user","content":"reply with the single word: ok"}]}' "$LITELLM_ALIAS")"
     body="$(curl -fsS --max-time 30 \
               -H 'content-type: application/json' \
@@ -178,8 +211,11 @@ if [ "$SKIP_TELEGRAM" != "1" ]; then
   # operator typically mounts it as a ConfigMap on the gateway pod
   # (label openclaw.rocks/component=gateway), or stamps it onto
   # OpenClawInstance.status. We don't know upstream's exact contract,
-  # so try ConfigMap → Pod → Status, in that order, and report the
-  # first hit.
+  # so try ConfigMap → Status, in that order, and report the first
+  # hit. (A pod-exec fallback would let us read the file straight
+  # from /etc/openclaw inside the gateway container, but that needs
+  # `kubectl exec` permission and a known mount path — out of scope
+  # for a read-only smoke.)
   cm="$("${KC[@]}" get cm -n "$INSTANCE_NAMESPACE" \
          -l "openclaw.rocks/instance=$INSTANCE_NAME" \
          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
