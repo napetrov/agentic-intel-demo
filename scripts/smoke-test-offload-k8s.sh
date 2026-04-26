@@ -51,9 +51,10 @@ if [ "$APPLY" != "1" ]; then
 
 Dry-run: with APPLY=1 the live sequence is:
   1. port-forward the control-plane service on System A
-  2. POST /offload {task_type:"echo", payload:{hello:"world"}, session_id:"smoke-..."}
-  3. expect HTTP 200 with status=completed and a non-empty result_ref
-  4. fetch /artifacts/{result_ref} and confirm payload round-trips
+  2. POST /offload with a >4KB echo payload (forces MinIO storage)
+  3. GET /offload/{job_id}; expect a non-empty result_ref
+  4. GET /artifacts/{result_ref} → presigned URL → fetch URL → verify the
+     marker round-trips through MinIO
 EOF
   exit 0
 fi
@@ -84,9 +85,29 @@ cleanup_pid="$!"
 sleep 2
 
 session_id="smoke-$(date +%s)-$$"
-payload="$(printf '{"task_type":"echo","payload":{"hello":"world","session":"%s"},"session_id":"%s"}' "$session_id" "$session_id")"
 
-echo "[1/3] POST /offload (session_id=$session_id)"
+# Build a payload large enough to force the offload-worker to store the
+# result in MinIO instead of returning it inline. The worker's threshold
+# is 4 KB on the JSON-encoded result (runtimes/offload-worker/app.py).
+# A ~6 KB ASCII filler comfortably crosses that boundary regardless of
+# JSON-encoding overhead, while staying small enough not to slow the
+# smoke test.
+filler="$(printf 'x%.0s' $(seq 1 6144))"
+marker="smoke-marker-$session_id"
+payload="$(python3 -c '
+import json, os, sys
+print(json.dumps({
+    "task_type": "echo",
+    "payload": {
+        "marker": os.environ["MARKER"],
+        "filler": os.environ["FILLER"],
+        "session": os.environ["SESSION_ID"],
+    },
+    "session_id": os.environ["SESSION_ID"],
+}))
+' MARKER="$marker" FILLER="$filler" SESSION_ID="$session_id")"
+
+echo "[1/4] POST /offload (session_id=$session_id, payload≈${#payload}B → forces MinIO storage)"
 response="$(curl -fsS --max-time "$OFFLOAD_TIMEOUT_SECONDS" \
               -H 'content-type: application/json' \
               -d "$payload" \
@@ -96,14 +117,14 @@ if [ -z "$response" ]; then
   exit 1
 fi
 
-job_id="$(printf '%s' "$response" | python3 -c '
-import json, sys
-obj = json.loads(sys.stdin.read())
+job_id="$(RESPONSE="$response" python3 -c '
+import json, os, sys
+obj = json.loads(os.environ.get("RESPONSE") or "{}")
 print(obj.get("job_id", ""))
 ')"
-status="$(printf '%s' "$response" | python3 -c '
-import json, sys
-obj = json.loads(sys.stdin.read())
+status="$(RESPONSE="$response" python3 -c '
+import json, os, sys
+obj = json.loads(os.environ.get("RESPONSE") or "{}")
 print(obj.get("status", ""))
 ')"
 
@@ -114,26 +135,63 @@ if [ -z "$job_id" ] || [ "$status" != "completed" ]; then
 fi
 echo "  [ok] job_id=$job_id status=$status"
 
-echo "[2/3] GET /offload/$job_id"
+echo "[2/4] GET /offload/$job_id  (expect non-empty result_ref because payload >4KB)"
 status_body="$(curl -fsS --max-time 10 "http://127.0.0.1:$LOCAL_PORT/offload/$job_id" 2>/dev/null || true)"
-result_ref="$(printf '%s' "$status_body" | python3 -c '
-import json, sys
-obj = json.loads(sys.stdin.read() or "{}")
-print(obj.get("result_ref", ""))
+result_ref="$(STATUS_BODY="$status_body" python3 -c '
+import json, os, sys
+obj = json.loads(os.environ.get("STATUS_BODY") or "{}")
+print(obj.get("result_ref") or "")
 ')"
 if [ -z "$result_ref" ]; then
-  echo "[smoke-test-offload-k8s] no result_ref returned for job_id=$job_id" >&2
+  echo "[smoke-test-offload-k8s] no result_ref returned for job_id=$job_id." >&2
+  echo "                         The worker only stores results >4KB in MinIO; check that the test" >&2
+  echo "                         payload size made it to System B intact." >&2
   printf '%s\n' "$status_body" >&2
   exit 1
 fi
-echo "  [ok] result_ref present"
+echo "  [ok] result_ref=$result_ref"
 
-echo "[3/3] GET /artifacts/$result_ref"
-art_body="$(curl -fsS --max-time 15 "http://127.0.0.1:$LOCAL_PORT/artifacts/$result_ref" 2>/dev/null || true)"
-if printf '%s' "$art_body" | grep -q "\"hello\".*\"world\""; then
-  echo "  [ok] artifact contains the round-trip payload"
+# /artifacts/{ref} on the control-plane returns ArtifactRef
+# (ref/url/expires_in), not the artifact body. Parse the presigned URL
+# out of that envelope, then GET the URL itself to read the actual
+# JSON the offload-worker stored in MinIO.
+echo "[3/4] GET /artifacts/$result_ref  (returns presigned URL)"
+art_envelope="$(curl -fsS --max-time 15 "http://127.0.0.1:$LOCAL_PORT/artifacts/$result_ref" 2>/dev/null || true)"
+presigned_url="$(ART_ENVELOPE="$art_envelope" python3 -c '
+import json, os, sys
+obj = json.loads(os.environ.get("ART_ENVELOPE") or "{}")
+print(obj.get("url") or "")
+')"
+if [ -z "$presigned_url" ]; then
+  echo "[smoke-test-offload-k8s] /artifacts response had no presigned url" >&2
+  printf '%s\n' "$art_envelope" >&2
+  exit 1
+fi
+echo "  [ok] presigned URL issued"
+
+echo "[4/4] GET <presigned URL>  (fetches MinIO object)"
+art_body="$(curl -fsS --max-time 30 "$presigned_url" 2>/dev/null || true)"
+if [ -z "$art_body" ]; then
+  echo "[smoke-test-offload-k8s] presigned URL returned empty body" >&2
+  exit 1
+fi
+
+# Confirm the artifact actually carries OUR payload (not some other
+# session's). The worker wraps echo input as {"echo": <payload>}, so
+# our marker should appear inside that.
+ok=$(MARKER="$marker" ART_BODY="$art_body" python3 -c '
+import json, os, sys
+try:
+    obj = json.loads(os.environ.get("ART_BODY") or "{}")
+except Exception:
+    sys.exit(2)
+echoed = obj.get("echo", {}) if isinstance(obj, dict) else {}
+print("yes" if echoed.get("marker") == os.environ["MARKER"] else "no")
+' || echo "no")
+if [ "$ok" = "yes" ]; then
+  echo "  [ok] artifact body contains our session marker"
 else
-  echo "[smoke-test-offload-k8s] artifact body did not contain the expected payload" >&2
+  echo "[smoke-test-offload-k8s] artifact body did not contain marker=$marker" >&2
   printf '%s\n' "$art_body" >&2
   exit 1
 fi

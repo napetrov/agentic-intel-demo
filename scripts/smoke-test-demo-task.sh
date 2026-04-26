@@ -194,10 +194,12 @@ if [ "$SKIP_TELEGRAM" != "1" ]; then
     fail "could not locate rendered openclaw.json (no ConfigMap with the right label, no .status.config)"
   else
     # Confirm a non-empty allowFrom + telegram enabled. We do NOT print
-    # the config — only pass/fail.
-    printf '%s' "$rendered" | python3 - <<'PY' >/dev/null 2>&1
-import json, sys
-cfg = json.loads(sys.stdin.read())
+    # the config — only pass/fail. The JSON is passed via env var
+    # because `python3 - <<HEREDOC` already binds stdin to the script
+    # source, so a piped payload would never reach json.loads().
+    OPENCLAW_JSON="$rendered" python3 - <<'PY' >/dev/null 2>&1
+import json, os, sys
+cfg = json.loads(os.environ["OPENCLAW_JSON"])
 tg  = cfg.get("channels", {}).get("telegram", {})
 if not tg.get("enabled"):
     sys.exit(2)
