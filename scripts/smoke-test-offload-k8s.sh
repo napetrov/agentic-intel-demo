@@ -63,6 +63,8 @@ command -v "${KC[0]}" >/dev/null 2>&1 \
   || { echo "[smoke-test-offload-k8s] ${KC[0]} not on PATH" >&2; exit 127; }
 command -v curl >/dev/null 2>&1 \
   || { echo "[smoke-test-offload-k8s] curl not on PATH" >&2; exit 127; }
+command -v python3 >/dev/null 2>&1 \
+  || { echo "[smoke-test-offload-k8s] python3 not on PATH (used to parse offload/artifacts JSON)" >&2; exit 127; }
 
 cleanup_pid=""
 cleanup() {

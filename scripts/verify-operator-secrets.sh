@@ -38,12 +38,25 @@ case "$SCOPE" in
   *) echo "[verify-operator-secrets] unknown SCOPE=$SCOPE (use all|system-a|system-b)" >&2; exit 2 ;;
 esac
 
-# Bail early if kubectl is missing — without it, every "secret missing"
-# reading would actually mean "command not found", which is misleading.
-read -r -a _PROBE <<<"$SYSTEM_A_KUBECTL"
-if ! command -v "${_PROBE[0]}" >/dev/null 2>&1; then
-  echo "[verify-operator-secrets] ${_PROBE[0]} not on PATH — run scripts/check-tier2-environment.sh first" >&2
-  exit 127
+# Bail early if the kubectl binary required for the requested SCOPE is
+# missing — without it, every "secret missing" reading would actually
+# mean "command not found", which is misleading. SCOPE=all probes both,
+# system-a/system-b probe only the relevant binding.
+probe_kubectl_cmd() {
+  local cmd="$1"
+  local -a probe=()
+  read -r -a probe <<<"$cmd"
+  if ! command -v "${probe[0]}" >/dev/null 2>&1; then
+    echo "[verify-operator-secrets] ${probe[0]} not on PATH — run scripts/check-tier2-environment.sh first" >&2
+    exit 127
+  fi
+}
+
+if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
+  probe_kubectl_cmd "$SYSTEM_A_KUBECTL"
+fi
+if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then
+  probe_kubectl_cmd "$SYSTEM_B_KUBECTL"
 fi
 
 FAIL=0

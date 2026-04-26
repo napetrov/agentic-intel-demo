@@ -141,11 +141,12 @@ SCOPE=system-a ./scripts/verify-operator-secrets.sh
 # Confirm LiteLLM answers all four aliases that the demo expects (skip
 # any alias you don't have credentials for):
 kubectl --context system-a -n inference port-forward svc/litellm 4000:4000 &
+PF_PID=$!
 LITELLM_BASE_URL=http://127.0.0.1:4000 LITELLM_MODEL=fast      ./scripts/test-litellm-sambanova.sh
 LITELLM_BASE_URL=http://127.0.0.1:4000 LITELLM_MODEL=default   ./scripts/test-litellm-sambanova.sh
 LITELLM_BASE_URL=http://127.0.0.1:4000 LITELLM_MODEL=reasoning ./scripts/test-litellm-sambanova.sh
 LITELLM_BASE_URL=http://127.0.0.1:4000 LITELLM_MODEL=sambanova ./scripts/test-litellm-sambanova.sh   # optional
-kill %1
+kill "$PF_PID"
 ```
 
 ---
@@ -196,12 +197,15 @@ pods.
 ```bash
 TELEGRAM_BOT_TOKEN=... ./scripts/telegram-send-menu.py
 
-# End-to-end "the demo can actually run a task" check:
-APPLY=1 KUBECTL="kubectl --context system-a" \
+# End-to-end "the demo can actually run a task" check. Both smokes
+# read SYSTEM_A_KUBECTL (not the generic KUBECTL the older scripts use)
+# so that one process invocation can drive system-a + system-b cleanly.
+APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
   ./scripts/smoke-test-demo-task.sh
 
 # (optional) System A → System B → MinIO offload roundtrip:
-APPLY=1 ./scripts/smoke-test-offload-k8s.sh
+APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
+  ./scripts/smoke-test-offload-k8s.sh
 ```
 
 `smoke-test-demo-task.sh` covers the four things `smoke-test-operator-instance.sh`

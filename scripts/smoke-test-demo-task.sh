@@ -78,6 +78,8 @@ command -v "${KC[0]}" >/dev/null 2>&1 \
   || { echo "[smoke-test-demo-task] ${KC[0]} not on PATH" >&2; exit 127; }
 command -v curl >/dev/null 2>&1 \
   || { echo "[smoke-test-demo-task] curl not on PATH" >&2; exit 127; }
+command -v python3 >/dev/null 2>&1 \
+  || { echo "[smoke-test-demo-task] python3 not on PATH (used to parse litellm/openclaw.json)" >&2; exit 127; }
 
 FAIL=0
 ok()   { printf '  [ok]    %s\n' "$1"; }

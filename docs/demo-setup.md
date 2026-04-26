@@ -381,7 +381,7 @@ lives in `docs/reproducibility.md` under "Values to fill in".
 6. **Demo-task smoke** (proves the demo can actually run a task, not
    just that the lifecycle is healthy):
    ```bash
-   APPLY=1 KUBECTL="kubectl --context system-a" \
+   APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
      ./scripts/smoke-test-demo-task.sh
    APPLY=1 ./scripts/smoke-test-offload-k8s.sh   # optional: full offload roundtrip
    ```
