@@ -353,7 +353,7 @@ jobs:
               -e 's|memory: "2Gi"|memory: "256Mi"|' \
               -e 's|memory: "4Gi"|memory: "1Gi"|' \
               -e 's|ghcr.io/napetrov/agentic-intel-demo/offload-worker:main|demo-offload-worker:latest|' \
-              -e 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|' \
+              -e 's|imagePullPolicy: Always|imagePullPolicy: Never|' \
               k8s/system-b/offload-worker.yaml | kubectl apply -f -
           kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
       - name: curl /health via NodePort 30800

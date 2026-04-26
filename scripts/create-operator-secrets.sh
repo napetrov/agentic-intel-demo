@@ -4,17 +4,28 @@
 # This script is the canonical materialization path for the secrets the
 # operator-first demo depends on. It writes (idempotent kubectl apply):
 #
-#   1. intel-demo-operator-secrets   (default ns)   — referenced by
-#      OpenClawInstance.spec.envFromSecrets in
-#      examples/openclawinstance-intel-demo.yaml.
-#   2. litellm-secrets               (inference ns) — referenced by
-#      k8s/system-a/litellm.yaml via secretKeyRef.
-#   3. session-pod-artifact-creds    (agents ns)    — referenced by the
-#      session-pod-template ConfigMap (MinIO/S3 creds for the agent pod).
-#   4. telegram-bot                  (agents ns)    — referenced by the
-#      session-pod-template ConfigMap (TELEGRAM_BOT_TOKEN).
-#   5. minio-creds                   (system-b ns)  — referenced by
-#      k8s/system-b/minio.yaml and offload-worker.yaml via envFrom/secretKeyRef.
+#   System A (SCOPE=system-a or all):
+#     1. intel-demo-operator-secrets   (default ns)   — referenced by
+#        OpenClawInstance.spec.envFromSecrets in
+#        examples/openclawinstance-intel-demo.yaml.
+#     2. litellm-secrets               (inference ns) — referenced by
+#        k8s/system-a/litellm.yaml via secretKeyRef.
+#     3. session-pod-artifact-creds    (agents ns)    — referenced by the
+#        session-pod-template ConfigMap (MinIO/S3 creds for the agent pod).
+#     4. telegram-bot                  (agents ns)    — referenced by the
+#        session-pod-template ConfigMap (TELEGRAM_BOT_TOKEN).
+#     5. bedrock-creds                 (agents ns)    — Bedrock bearer
+#        token for the session pod (secretKeyRef can't cross namespaces,
+#        so this is a copy of the value in intel-demo-operator-secrets).
+#
+#   System B (SCOPE=system-b or all):
+#     6. minio-creds                   (system-b ns)  — referenced by
+#        k8s/system-b/minio.yaml and offload-worker.yaml via envFrom/secretKeyRef.
+#
+# Required env vars depend on SCOPE:
+#   SCOPE=system-a (or all): TELEGRAM_BOT_TOKEN, AWS_BEARER_TOKEN_BEDROCK,
+#                            SAMBANOVA_API_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+#   SCOPE=system-b:          MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 #
 # Usage:
 #   APPLY=1 \
@@ -43,6 +54,8 @@ SESSION_POD_SECRET_NAME="${SESSION_POD_SECRET_NAME:-session-pod-artifact-creds}"
 SESSION_POD_SECRET_NAMESPACE="${SESSION_POD_SECRET_NAMESPACE:-agents}"
 TELEGRAM_SECRET_NAME="${TELEGRAM_SECRET_NAME:-telegram-bot}"
 TELEGRAM_SECRET_NAMESPACE="${TELEGRAM_SECRET_NAMESPACE:-agents}"
+BEDROCK_SECRET_NAME="${BEDROCK_SECRET_NAME:-bedrock-creds}"
+BEDROCK_SECRET_NAMESPACE="${BEDROCK_SECRET_NAMESPACE:-agents}"
 MINIO_SECRET_NAME="${MINIO_SECRET_NAME:-minio-creds}"
 MINIO_SECRET_NAMESPACE="${MINIO_SECRET_NAMESPACE:-system-b}"
 SCOPE="${SCOPE:-all}"
@@ -55,13 +68,22 @@ case "$SCOPE" in
   *) echo "[create-operator-secrets] unknown SCOPE=$SCOPE (use all|system-a|system-b)" >&2; exit 64 ;;
 esac
 
-REQUIRED_KEYS=(
-  TELEGRAM_BOT_TOKEN
-  AWS_BEARER_TOKEN_BEDROCK
-  SAMBANOVA_API_KEY
-  MINIO_ACCESS_KEY
-  MINIO_SECRET_KEY
-)
+# Required env vars depend on SCOPE — System B only needs the MinIO pair.
+REQUIRED_KEYS=()
+case "$SCOPE" in
+  all|system-a)
+    REQUIRED_KEYS+=(
+      TELEGRAM_BOT_TOKEN
+      AWS_BEARER_TOKEN_BEDROCK
+      SAMBANOVA_API_KEY
+      MINIO_ACCESS_KEY
+      MINIO_SECRET_KEY
+    )
+    ;;
+  system-b)
+    REQUIRED_KEYS+=(MINIO_ACCESS_KEY MINIO_SECRET_KEY)
+    ;;
+esac
 
 missing=()
 for key in "${REQUIRED_KEYS[@]}"; do
@@ -71,13 +93,13 @@ for key in "${REQUIRED_KEYS[@]}"; do
 done
 
 if [ ${#missing[@]} -gt 0 ]; then
-  echo "[create-operator-secrets] missing required env vars:" >&2
+  echo "[create-operator-secrets] SCOPE=$SCOPE missing required env vars:" >&2
   for key in "${missing[@]}"; do
     echo "  - $key" >&2
   done
   echo "" >&2
   echo "Set them in your shell, or export from a secrets manager, then re-run:" >&2
-  echo "  APPLY=1 ./scripts/create-operator-secrets.sh" >&2
+  echo "  APPLY=1 SCOPE=$SCOPE ./scripts/create-operator-secrets.sh" >&2
   exit 64
 fi
 
@@ -88,16 +110,35 @@ read -r -a KUBECTL_CMD <<<"$KUBECTL"
 command -v "${KUBECTL_CMD[0]}" >/dev/null 2>&1 \
   || { echo "[create-operator-secrets] ${KUBECTL_CMD[0]} not found" >&2; exit 127; }
 
+# Pre-create the destination namespaces. On a clean cluster the manifests
+# that own these namespaces (litellm.yaml, session-pod-template.yaml,
+# minio.yaml) may not be applied yet; without this preflight the very
+# first `kubectl apply -f -` would fail with `namespaces "..." not found`
+# and the script would stop before any secrets land.
+ensure_namespace() {
+  local ns="$1"
+  if [ "$APPLY" = "1" ]; then
+    "${KUBECTL_CMD[@]}" create namespace "$ns" \
+      --dry-run=client -o yaml \
+      | "${KUBECTL_CMD[@]}" apply -f - >/dev/null
+    echo "[create-operator-secrets] ensured namespace $ns"
+  else
+    echo "# would ensure namespace $ns"
+  fi
+}
+
 # render <name> <namespace> <key=value>...
+#
+# Values are passed to kubectl via --from-env-file (process substitution),
+# not --from-literal, so secret material never appears in process argv —
+# it would otherwise leak into `ps`, shell history, and CI logs.
+# Process substitution gives kubectl a per-fd path (/dev/fd/N) whose
+# contents are only readable by this shell + kubectl.
 render() {
   local name="$1" namespace="$2"; shift 2
-  local args=()
-  for kv in "$@"; do
-    args+=("--from-literal=$kv")
-  done
   "${KUBECTL_CMD[@]}" create secret generic "$name" \
     --namespace="$namespace" \
-    "${args[@]}" \
+    --from-env-file=<(printf '%s\n' "$@") \
     --dry-run=client \
     -o yaml
 }
@@ -117,6 +158,10 @@ emit() {
 [ "$APPLY" = "1" ] || echo "[create-operator-secrets] dry-run (set APPLY=1 to actually apply):"
 
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
+  ensure_namespace "$SECRET_NAMESPACE"
+  ensure_namespace "$LITELLM_SECRET_NAMESPACE"
+  ensure_namespace "$SESSION_POD_SECRET_NAMESPACE"
+
   emit "operator instance secrets" \
     "$SECRET_NAME" "$SECRET_NAMESPACE" \
     "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
@@ -138,9 +183,15 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   emit "telegram bot token" \
     "$TELEGRAM_SECRET_NAME" "$TELEGRAM_SECRET_NAMESPACE" \
     "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN"
+
+  emit "bedrock bearer token (session pod)" \
+    "$BEDROCK_SECRET_NAME" "$BEDROCK_SECRET_NAMESPACE" \
+    "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
 fi
 
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then
+  ensure_namespace "$MINIO_SECRET_NAMESPACE"
+
   emit "minio root creds" \
     "$MINIO_SECRET_NAME" "$MINIO_SECRET_NAMESPACE" \
     "MINIO_ROOT_USER=$MINIO_ACCESS_KEY" \

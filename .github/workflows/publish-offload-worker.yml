@@ -4,7 +4,8 @@ name: publish-offload-worker
 # Triggers:
 #   - push to main             -> publishes :main + :sha-<short>
 #   - tag push v*              -> publishes :<tag> + :latest
-#   - manual workflow_dispatch -> publishes :manual-<sha>
+#   - manual workflow_dispatch -> publishes :<branch> + :sha-<short>
+#                                  for the dispatched ref
 #
 # The image is referenced by k8s/system-b/offload-worker.yaml as
 # ghcr.io/<owner>/agentic-intel-demo/offload-worker:main by default.

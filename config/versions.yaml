@@ -5,8 +5,12 @@
 # script in the same change.
 
 components:
-  k3s: "v1.31.x"
-  vllm_chart: "Enterprise-Inference/core/helm-charts/vllm"
+  # Patch pin for k3s — change deliberately; floating "v1.31.x" caused
+  # downstream version drift before.
+  k3s: "v1.31.4+k3s1"
+  # vLLM helm chart lives in an external repo; pass CHART_REPO/CHART_REF
+  # to scripts/setup-system-b-vllm-local.sh to pin per environment.
+  vllm_chart_path: "core/helm-charts/vllm"
   litellm_image: "ghcr.io/berriai/litellm:main-v1.63.11-stable"
   minio_image: "minio/minio:RELEASE.2025-02-28T09-55-16Z"
   python_base: "3.12-slim"
@@ -35,9 +39,13 @@ litellm_aliases:
   reasoning: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
   sambanova: "sambanova/DeepSeek-V3.1"
 
-# Operator (consumed by scripts/install-openclaw-operator.sh; pin the ref
-# in your environment when bringing up a real cluster).
+# Operator (consumed by scripts/install-openclaw-operator.sh).
+# Both ref and image come from an upstream project we don't own — they
+# are intentionally NOT pinned here. Pin them in your environment via
+# OPENCLAW_OPERATOR_REF and the OpenClawInstance.spec.image field
+# respectively. Tracked as gaps #1 and #4 in
+# docs/operator-gap-analysis.md.
 operator:
   repo: "https://github.com/openclaw-rocks/openclaw-operator.git"
-  ref: "main"  # OVERRIDE: set OPENCLAW_OPERATOR_REF=<tag|sha> for reproducibility
-  image: "ghcr.io/openclaw-rocks/openclaw:latest"  # see docs/operator-gap-analysis.md gap #4
+  ref: "main"
+  image: "ghcr.io/openclaw-rocks/openclaw:latest"

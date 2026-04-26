@@ -36,7 +36,11 @@ command -v docker >/dev/null 2>&1 \
   || { echo "[load-offload-worker-image] docker not found" >&2; exit 127; }
 
 if [ "$RUNTIME" = "auto" ]; then
-  if command -v k3d >/dev/null 2>&1 && k3d cluster list 2>/dev/null | grep -q "^${K3D_CLUSTER}\b"; then
+  # `\b` is GNU-grep-only; on macOS BSD grep this becomes a literal
+  # backslash and the pattern silently never matches. Filter to the
+  # NAME column and use grep -Fxq for a portable exact match.
+  if command -v k3d >/dev/null 2>&1 \
+    && k3d cluster list 2>/dev/null | awk 'NR>1 {print $1}' | grep -Fxq "$K3D_CLUSTER"; then
     RUNTIME=k3d
   elif command -v k3s >/dev/null 2>&1 || [ -S /run/k3s/containerd/containerd.sock ]; then
     RUNTIME=k3s

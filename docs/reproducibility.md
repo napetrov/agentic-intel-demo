@@ -85,7 +85,14 @@ which writes every Secret the demo expects in one shot:
 | `litellm-secrets` | `inference` | `k8s/system-a/litellm.yaml` (Bedrock + SambaNova keys) |
 | `session-pod-artifact-creds` | `agents` | `session-pod-template` (MinIO/S3 creds for the agent pod) |
 | `telegram-bot` | `agents` | `session-pod-template` (`TELEGRAM_BOT_TOKEN`) |
+| `bedrock-creds` | `agents` | `session-pod-template` (`AWS_BEARER_TOKEN_BEDROCK`); separate from the `default`-ns copy because `secretKeyRef` can't cross namespaces |
 | `minio-creds` | `system-b` | `k8s/system-b/minio.yaml` + `offload-worker.yaml` |
+
+The script's required-env-var set is `SCOPE`-aware: `system-a` (or `all`)
+needs the full Telegram/Bedrock/SambaNova/MinIO set; `system-b` needs
+only `MINIO_ACCESS_KEY` + `MINIO_SECRET_KEY`. It also pre-creates the
+destination namespaces (idempotent) so applying on a clean cluster
+doesn't fail with `namespaces "..." not found`.
 
 ```bash
 # Single cluster
@@ -104,8 +111,6 @@ APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
   ./scripts/create-operator-secrets.sh
 
 APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
-  TELEGRAM_BOT_TOKEN=ignored AWS_BEARER_TOKEN_BEDROCK=ignored \
-  SAMBANOVA_API_KEY=ignored \
   MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
   ./scripts/create-operator-secrets.sh
 ```
@@ -175,10 +180,14 @@ APPLY=1 \
   ./scripts/setup-system-b-vllm-local.sh
 APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
   MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
-  TELEGRAM_BOT_TOKEN=ignored AWS_BEARER_TOKEN_BEDROCK=ignored \
-  SAMBANOVA_API_KEY=ignored \
   ./scripts/create-operator-secrets.sh
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
+# Create the artifact bucket against the published MinIO NodePort 30900.
+# Without this, offload uploads fail on a fresh System B.
+SYSTEM_B_IP=<system-b-node-ip> \
+  MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+  MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+  ./scripts/create-minio-bucket.sh
 kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
 
 # 2. Provision System A secrets (operator instance + LiteLLM + agent pod)
@@ -196,7 +205,13 @@ SYSTEM_B_VLLM_ENDPOINT=http://<system-b-node-ip>:30434/v1 \
 # 4. Install openclaw-operator (pin the ref!)
 APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> ./scripts/install-openclaw-operator.sh
 
-# 5. Apply one OpenClawInstance
+# 5. Apply one OpenClawInstance.
+#    The example file ships a concrete spec — the only ${VAR} token in
+#    it is ${TELEGRAM_BOT_TOKEN} inside the embedded openclaw.json,
+#    which the OpenClaw runtime expands from intel-demo-operator-secrets
+#    at session-pod boot (not envsubst at apply time). Edit the YAML in
+#    place if you need different region / Bedrock ARN / allow-from
+#    values.
 kubectl --context system-a apply -f examples/openclawinstance-intel-demo.yaml
 
 # 6. Verify operator-managed lifecycle

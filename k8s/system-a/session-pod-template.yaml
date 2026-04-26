@@ -44,12 +44,15 @@ data:
               value: "${TELEGRAM_ALLOWED_FROM}"
             - name: CLAUDE_CODE_USE_BEDROCK
               value: "1"
-            # Sensitive values are read from the Secrets created by
-            # scripts/create-operator-secrets.sh.
+            # Sensitive values are read from Secrets in the agents
+            # namespace, all created by scripts/create-operator-secrets.sh.
+            # secretKeyRef can't cross namespaces, so AWS_BEARER_TOKEN_BEDROCK
+            # lives in `bedrock-creds` here, not in the
+            # `intel-demo-operator-secrets` copy in the operator's namespace.
             - name: AWS_BEARER_TOKEN_BEDROCK
               valueFrom:
                 secretKeyRef:
-                  name: intel-demo-operator-secrets
+                  name: bedrock-creds
                   key: AWS_BEARER_TOKEN_BEDROCK
             - name: AWS_ACCESS_KEY_ID
               valueFrom:

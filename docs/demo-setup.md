@@ -187,8 +187,11 @@ Telegram ingress.
 - Non-overlapping pod/service CIDRs across the two clusters.
 - Merged kubeconfig with contexts `system-a` and `system-b`.
 - Telegram bot token + allowed-user id.
-- Bedrock access (region + bearer token + inference profile ARN) and/or
-  SambaNova API key for the reasoning alias.
+- Bedrock access (region + bearer token + inference profile ARN) for
+  the `reasoning` alias, and/or a SambaNova API key for the `sambanova`
+  alias. `k8s/system-a/litellm.yaml` maps `reasoning` → Bedrock Claude
+  Sonnet and `sambanova` → SambaNova DeepSeek; provision each key
+  against the alias it actually serves.
 - A reachable upstream `openclaw-operator` ref pinned via
   `OPENCLAW_OPERATOR_REF`.
 
@@ -218,12 +221,13 @@ lives in `docs/reproducibility.md` under "Values to fill in".
 
    APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
      MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
-     TELEGRAM_BOT_TOKEN=ignored AWS_BEARER_TOKEN_BEDROCK=ignored \
-     SAMBANOVA_API_KEY=ignored \
      ./scripts/create-operator-secrets.sh
 
    kubectl --context system-b apply -f k8s/system-b/minio.yaml
-   ./scripts/create-minio-bucket.sh
+   SYSTEM_B_IP=<system-b-node-ip> \
+     MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+     MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+     ./scripts/create-minio-bucket.sh
    kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
    ```
 
@@ -254,6 +258,13 @@ lives in `docs/reproducibility.md` under "Values to fill in".
    APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> \
      ./scripts/install-openclaw-operator.sh
 
+   # examples/openclawinstance-intel-demo.yaml ships a concrete spec
+   # (Bedrock ARN, AWS region, Telegram allow-id, model list). The only
+   # ${VAR} token in the file is ${TELEGRAM_BOT_TOKEN} inside the
+   # embedded openclaw.json — that's expanded at session-pod runtime by
+   # the OpenClaw operator from intel-demo-operator-secrets, not by
+   # envsubst at apply time. Edit the YAML in place if you need different
+   # values for region / allow-from / Bedrock profile.
    kubectl --context system-a apply \
      -f examples/openclawinstance-intel-demo.yaml
 
