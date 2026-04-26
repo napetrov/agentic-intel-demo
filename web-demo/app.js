@@ -288,9 +288,25 @@ const API_BASE = '/api';
 let liveBackendAvailable = false;
 
 let currentScenario = null;
+let currentPhase = 'idle';
+// Latest snapshot of multi-session records this tab is tracking. Updated
+// every time refreshMultiSession() polls /api/sessions; used by
+// renderSystemA() so the agent pool reflects spawned sessions, not just the
+// scenario primary agent.
+let lastSessionRecords = [];
 let runTimers = [];
 let liveRunId = 0;
 const originalRunLabel = runDemoBtn.textContent;
+
+// Pod-profile → vCPU. Mirrors PROFILES.cpu_request in
+// runtimes/control-plane/session_manager.py — kept in sync by hand because
+// the static demo bundle has no build step that could read the yaml.
+function profileToVcpu(profile) {
+  if (profile === 'small') return 1;
+  if (profile === 'medium') return 4;
+  if (profile === 'large') return 16;
+  return 0;
+}
 
 sysATotalEl.textContent = SYSTEM_A_TOTAL_VCPU;
 sysBTotalEl.textContent = SYSTEM_B_TOTAL_VCPU;
@@ -373,23 +389,65 @@ function agentRowHtml(name, vcpu, state) {
   const label = state === 'planned' ? 'planned' : 'running';
   return `
     <div class="agent-row ${state}">
-      <span class="agent-name">${name}</span>
+      <span class="agent-name">${escapeHtml(name)}</span>
       <span class="agent-cpu">${vcpu} vCPU</span>
       <span class="agent-status">${label}</span>
     </div>
   `;
 }
 
+// Multi-session sessions render alongside the scenario primary agent. Pending
+// rows show as "planned" (dashed); Running rows as "running" (green pulse) so
+// the operator sees the pool fill and drain as Jobs progress.
+function sessionAgentRowHtml(rec) {
+  const vcpu = profileToVcpu(rec.profile);
+  const isRunning = rec.status === 'Running';
+  const state = isRunning ? 'running' : 'planned';
+  const label = (rec.status || 'planned').toLowerCase();
+  const sidShort = (rec.session_id || '').replace(/^sess-/, '');
+  const name = `${rec.scenario || 'session'} · ${sidShort}`;
+  return `
+    <div class="agent-row ${state}" data-session-id="${escapeHtml(rec.session_id || '')}">
+      <span class="agent-name">${escapeHtml(name)}</span>
+      <span class="agent-cpu">${vcpu} vCPU</span>
+      <span class="agent-status">${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
 function renderSystemA(scenario, phase) {
-  if (!scenario || phase === 'idle') {
-    sysAAgentsEl.innerHTML = '<div class="agent-row-empty">no agents (idle — select a scenario)</div>';
+  const rows = [];
+  let usedVcpu = 0;
+
+  if (scenario && phase !== 'idle') {
+    const { primary } = scenario;
+    const state = phase === 'running' ? 'running' : 'planned';
+    rows.push(agentRowHtml(primary.name, primary.vcpu, state));
+    if (state === 'running') usedVcpu += primary.vcpu;
+  }
+
+  // Spawned multi-session agents (Pending + Running). Terminal rows are
+  // dropped so the pool drains as Jobs complete.
+  for (const rec of lastSessionRecords) {
+    if (!rec || TERMINAL_STATUSES.has(rec.status)) continue;
+    rows.push(sessionAgentRowHtml(rec));
+    if (rec.status === 'Running') usedVcpu += profileToVcpu(rec.profile);
+  }
+
+  if (!rows.length) {
+    sysAAgentsEl.innerHTML = '<div class="agent-row-empty">no agents (idle — select a scenario or spawn sessions)</div>';
     renderCapacity(0);
     return;
   }
-  const { primary } = scenario;
-  const state = phase === 'running' ? 'running' : 'planned';
-  sysAAgentsEl.innerHTML = agentRowHtml(primary.name, primary.vcpu, state);
-  renderCapacity(state === 'running' ? primary.vcpu : 0);
+  sysAAgentsEl.innerHTML = rows.join('');
+  renderCapacity(usedVcpu);
+}
+
+// Re-render System A using the current scenario + multi-session state.
+// Called when /api/sessions polling produces a fresh snapshot.
+function redrawSystemA() {
+  const scenario = currentScenario ? scenarios[currentScenario] : null;
+  renderSystemA(scenario, currentPhase);
 }
 
 function renderOffload(scenario, phase, includeSubagent) {
@@ -482,6 +540,7 @@ function renderMetrics(entries) {
 function applyIdle() {
   cancelRun();
   currentScenario = null;
+  currentPhase = 'idle';
   setDataMode('');
   setOrchestrationActive([]);
   setServiceState({});
@@ -501,6 +560,7 @@ function applyPlanned(key) {
   const scenario = scenarios[key];
   if (!scenario) return;
   currentScenario = key;
+  currentPhase = 'planned';
   setDataMode(`Scenario: ${key}`);
   setOrchestrationActive(scenario.orchestrationActive);
   setServiceState({});
@@ -525,6 +585,7 @@ function applyRunning(key, options) {
     activeServices.erag = false;
   }
   setServiceState(activeServices);
+  currentPhase = 'running';
   renderSystemA(scenario, 'running');
   renderOffload(scenario, 'running', Boolean(includeSubagentNow));
   setCrossArrow(scenario.crossSystemArrow && includeSubagentNow);
@@ -539,6 +600,7 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 document.querySelector('[data-action="status"]').addEventListener('click', () => {
   cancelRun();
   currentScenario = null;
+  currentPhase = 'idle';
   setDataMode('Stack overview');
   setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
   setServiceState({ erag: true, 'ent-inference': true });
@@ -1398,6 +1460,12 @@ async function refreshMultiSession() {
       : all;
     renderMultiSessionRows(records);
     renderMultiSessionSummary(records, body.backend);
+
+    // Mirror the session list into the System A agent pool so the operator
+    // sees rows + capacity bar move when fan-out spawns Jobs. Filtering
+    // already excluded other tabs' sessions, so this view is per-tab.
+    lastSessionRecords = records;
+    redrawSystemA();
 
     // Slow polling once everything settles; speed back up when a new
     // batch is in flight.
