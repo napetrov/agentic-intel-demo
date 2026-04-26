@@ -87,18 +87,30 @@ Materialize it from env with `scripts/create-operator-secrets.sh`
 so values never land on disk).
 
 ### 4. Operator image contract is not fully defined
-Status: candidate pinned, awaiting on-stand verification
+Status: candidate pinned, **private — needs imagePullSecret**
 
 What is in repo:
 - `examples/openclawinstance-intel-demo.yaml` `spec.image.tag` defaults
   to `v0.30.0` (mirrors the operator binary release).
 - `config/versions.yaml` `operator.image` carries the same default.
+- `scripts/check-upstream-pins.sh` actively probes the registry from
+  the deploy workstation; running it surfaces this as a hard FAIL.
+
+What `scripts/check-upstream-pins.sh` confirmed:
+- `ghcr.io/openclaw-rocks/openclaw:v0.30.0` returns
+  `HTTP 403 DENIED` from the anonymous GHCR token endpoint —
+  i.e. the image is **not anonymously pullable**. A Tier 2 deploy
+  needs an `imagePullSecret` referencing GHCR credentials, set on
+  `OpenClawInstance.spec.image.pullSecrets` (or on the namespace's
+  default ServiceAccount).
 
 What is still open:
 - The runtime image is published independently from the operator binary
   upstream — a future upstream release may bump only one of the two.
   Confirm both tags resolve before promoting past dry-run.
-- imagePullSecret requirements (when the registry becomes private).
+- Document the exact `imagePullSecret` shape (Docker config json with a
+  GHCR PAT scoped to `read:packages`) once we have a working stand
+  reference.
 
 ### 5. Health/ready criteria are not yet documented precisely
 Status: candidate pinned, awaiting on-stand verification

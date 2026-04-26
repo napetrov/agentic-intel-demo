@@ -234,13 +234,16 @@ the `demoServices` localStorage key to a JSON array.
 
 ### Tier 2 (operator-first demo path)
 - `scripts/check-tier2-environment.sh` — preflight the deploy workstation: kubectl on PATH, `system-a`/`system-b` contexts, API reachability, namespace/CRD/controller state. Read-only; run before anything else.
+- `scripts/check-upstream-pins.sh` — pre-cluster validation that every pinned image/tag actually resolves (GitHub release + GHCR/Docker Hub manifests). Catches the "operator runtime image is private" class of bring-up failures.
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
 - `scripts/create-operator-secrets.sh` — render every Secret the demo expects (operator instance, LiteLLM, agent pod, MinIO) from env via `kubectl --dry-run=client | kubectl apply`. `SCOPE=system-a|system-b|all` for two-cluster bring-up.
 - `scripts/verify-operator-secrets.sh` — confirm each Secret exists with the expected keys, **without ever reading values**. Pairs with `create-operator-secrets.sh`.
+- `scripts/check-telegram-routing.sh` — verify the bot token + slash-command menu before any human DM (Telegram Bot API only; no cluster).
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
 - `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation (CRD + controller + `OpenClawInstance` reaches Ready + gateway `/healthz`)
-- `scripts/smoke-test-demo-task.sh` — live demo-task verification: instance phase, gateway, LiteLLM chat completion for one alias, Telegram-bound config visible in the rendered runtime.
+- `scripts/smoke-test-demo-task.sh` — six-step live demo-task verification: instance phase, gateway, LiteLLM chat completion, Telegram config, `tools.exec` config, session-pod env-name wiring (no values read).
 - `scripts/smoke-test-offload-k8s.sh` — Tier 2 offload roundtrip: System A control-plane → System B offload-worker → MinIO artifact.
+- `scripts/check-openclaw-tools.sh` — scan recent session-pod logs for tool-invocation traces (run after DM-ing /demo).
 - `scripts/check-tier2-logs.sh` — canonical live-logs helper (operator/session/gateway/litellm/vllm/offload/minio) with the right `--context` for each.
 - `scripts/setup-system-b-vllm.sh` — historical SSH-into-`onedal-build` vLLM bring-up
 - `scripts/setup-system-b-vllm-local.sh` — kubectl/helm vLLM bring-up against the current kube context (no SSH)

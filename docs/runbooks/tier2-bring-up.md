@@ -19,14 +19,28 @@ demo" should run through the operator on Tier 2.
 # Verify kubectl, contexts, API reachability, namespaces, and operator
 # install state — all read-only, no Secrets read, no manifests applied.
 ./scripts/check-tier2-environment.sh
+
+# Verify the upstream pins this demo depends on actually resolve from
+# this workstation BEFORE applying any manifests. Catches private GHCR
+# images, missing release tags, and unpinned image:latest tags.
+./scripts/check-upstream-pins.sh
 ```
 
-This script catches the four most common bring-up failures before they
-waste cluster apply attempts:
+`check-tier2-environment.sh` catches the four most common bring-up
+failures before they waste cluster apply attempts:
 - `kubectl` not on PATH on the host that drives the deploy
 - `system-a` / `system-b` contexts missing from the merged kubeconfig
 - API server unreachable (VPN / firewall / wrong server URL)
 - CRD / controller already half-installed and confusing later steps
+
+`check-upstream-pins.sh` catches the most common day-zero blockers:
+- the operator runtime image (`ghcr.io/openclaw-rocks/openclaw:<tag>`)
+  is private — the deploy needs an `imagePullSecret` referencing GHCR
+  credentials. The script reports this as `HTTP 403 DENIED`.
+- the operator git tag (`OPENCLAW_OPERATOR_REF`) does not exist
+  upstream — set the var to a tag that does.
+- the vLLM image is `latest` (gap #7) — pin it before promoting past
+  dry-run.
 
 If you run on a single cluster, override the contexts:
 ```bash
@@ -195,35 +209,56 @@ pods.
 ## 5. Telegram + demo task verification
 
 ```bash
+# 5a. Register the slash-command menu and validate bot wiring before
+#     touching the cluster. check-telegram-routing.sh confirms the
+#     token works (getMe), the demo menu is registered (getMyCommands),
+#     and that the long-poll queue is in a sane state.
 TELEGRAM_BOT_TOKEN=... ./scripts/telegram-send-menu.py
+TELEGRAM_BOT_TOKEN=... ./scripts/check-telegram-routing.sh
 
-# End-to-end "the demo can actually run a task" check. Both smokes
-# read SYSTEM_A_KUBECTL (not the generic KUBECTL the older scripts use)
-# so that one process invocation can drive system-a + system-b cleanly.
+# 5b. End-to-end "the demo can actually run a task" check. Both smokes
+#     read SYSTEM_A_KUBECTL (not the generic KUBECTL the older scripts
+#     use) so one process invocation can drive system-a + system-b
+#     cleanly.
 APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
   ./scripts/smoke-test-demo-task.sh
 
-# (optional) System A → System B → MinIO offload roundtrip:
+# 5c. (optional) System A → System B → MinIO offload roundtrip:
 APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
   ./scripts/smoke-test-offload-k8s.sh
 ```
 
-`smoke-test-demo-task.sh` covers the four things `smoke-test-operator-instance.sh`
-intentionally doesn't:
+`smoke-test-demo-task.sh` covers the six things
+`smoke-test-operator-instance.sh` intentionally doesn't:
 1. instance phase is `Running`
 2. gateway `/healthz` is 200 over a port-forward
-3. LiteLLM `POST /v1/chat/completions` returns a non-empty completion for
-   `LITELLM_ALIAS` (default `fast`; switch to `reasoning` to exercise
-   Bedrock, `sambanova` to exercise SambaNova)
+3. LiteLLM `POST /v1/chat/completions` returns a non-empty completion
+   for `LITELLM_ALIAS` (default `fast`; switch to `reasoning` to
+   exercise Bedrock, `sambanova` to exercise SambaNova)
 4. Telegram channel is enabled with non-empty `allowFrom` in the
    rendered `openclaw.json` — proves the operator-managed config got
-   to the runtime, without ever reading `TELEGRAM_BOT_TOKEN`.
+   to the runtime, without ever reading `TELEGRAM_BOT_TOKEN`
+5. `tools.exec.security=full, ask=off` is present in that same
+   rendered config — proves shell tools won't be silently blocked
+6. Session pod env-var **names** include the required set
+   (default `AWS_BEARER_TOKEN_BEDROCK`, `TELEGRAM_BOT_TOKEN`) — proves
+   secrets reached the live pod, without ever reading their values
 
 Then DM the bot:
 - `/demo` should render the scenario menu
 - pick `Terminal Agent` and confirm it produces a tool-call trace
 - pick `Market Research` and confirm the offload roundtrip lands a
   `result_ref` (visible in the offload-worker logs).
+
+After at least one tool-running scenario, audit that tools actually
+ran end-to-end:
+
+```bash
+# Greps the session pod logs for canonical tool-call signatures
+# (tool.invoke, tools.exec, tool_call, exec_result, ...). Read-only.
+SINCE=10m SYSTEM_A_KUBECTL="kubectl --context system-a" \
+  ./scripts/check-openclaw-tools.sh
+```
 
 The "old generic onboarding flow" failure mode (DM sent to a generic
 agent rather than the demo router) is caught by step 4 of

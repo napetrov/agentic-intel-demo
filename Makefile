@@ -63,6 +63,18 @@ SYSTEM_B_KUBECTL ?= kubectl --context system-b
 tier2-preflight: ## Tier 2: workstation preflight (kubectl/contexts/API/CRD; read-only)
 	./scripts/check-tier2-environment.sh
 
+.PHONY: tier2-pins
+tier2-pins: ## Tier 2: validate upstream pins (operator ref, GHCR/vLLM image manifests; no cluster)
+	./scripts/check-upstream-pins.sh
+
+.PHONY: tier2-telegram
+tier2-telegram: ## Tier 2: validate Telegram bot wiring (TELEGRAM_BOT_TOKEN required; no cluster)
+	./scripts/check-telegram-routing.sh
+
+.PHONY: tier2-tool-trace
+tier2-tool-trace: ## Tier 2: scan recent session-pod logs for tool invocation (run after DM /demo)
+	SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" ./scripts/check-openclaw-tools.sh
+
 .PHONY: tier2-secrets-verify
 tier2-secrets-verify: ## Tier 2: verify Secrets exist with the expected keys (no values read)
 	SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" SYSTEM_B_KUBECTL="$(SYSTEM_B_KUBECTL)" \
