@@ -14,6 +14,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - Prefer ready-made components over custom platform work
 
 ## Documents
+- **`docs/runbooks/tier2-bring-up.md` — canonical "from empty cluster to demo task" runbook (operator-first, single source of truth).**
 - `docs/demo-overview.md` — concise demo operating model for Telegram-first entry and two-system execution
 - `docs/demo-setup.md` — tiered bring-up guide (web simulation, local services, two-system k8s + operator)
 - `docs/contracts/session-lifecycle.md` — System A-owned lifecycle and user-visible state model
@@ -64,14 +65,18 @@ The current validated direction is:
 
 Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
-## Local bring-up (laptop)
+## Local dev/smoke (Tier 1, no cluster)
+
+> Tier 1 is a developer convenience — it does **not** run the demo as
+> an audience would see it. For the shipped demo path, follow
+> `docs/runbooks/tier2-bring-up.md`.
 
 Top-level shortcuts live in the `Makefile` — `make help` prints the
 canonical verbs (`make tier0` / `make tier1-up` / `make tier2-smoke`,
 plus `make lint` and `make test`). The raw commands below still work
 identically.
 
-For a single-host demo without Kubernetes, the repo ships a
+For a single-host dev loop without Kubernetes, the repo ships a
 `docker-compose.yaml` that brings up MinIO, the agent-stub, the
 offload-worker, the control plane, and the static web UI with an `/api`
 reverse proxy:
@@ -226,10 +231,20 @@ clicking "Reset demo" brings it back. URLs can be overridden by setting
 the `demoServices` localStorage key to a JSON array.
 
 ## Scripts
+
+### Tier 2 (operator-first demo path)
+- `scripts/check-tier2-environment.sh` — preflight the deploy workstation: kubectl on PATH, `system-a`/`system-b` contexts, API reachability, namespace/CRD/controller state. Read-only; run before anything else.
+- `scripts/check-upstream-pins.sh` — pre-cluster validation that every pinned image/tag actually resolves (GitHub release + GHCR/Docker Hub manifests). Catches the "operator runtime image is private" class of bring-up failures.
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
 - `scripts/create-operator-secrets.sh` — render every Secret the demo expects (operator instance, LiteLLM, agent pod, MinIO) from env via `kubectl --dry-run=client | kubectl apply`. `SCOPE=system-a|system-b|all` for two-cluster bring-up.
+- `scripts/verify-operator-secrets.sh` — confirm each Secret exists with the expected keys, **without ever reading values**. Pairs with `create-operator-secrets.sh`.
+- `scripts/check-telegram-routing.sh` — verify the bot token + slash-command menu before any human DM (Telegram Bot API only; no cluster).
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
-- `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
+- `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation (CRD + controller + `OpenClawInstance` reaches Ready + gateway `/healthz`)
+- `scripts/smoke-test-demo-task.sh` — six-step live demo-task verification: instance phase, gateway, LiteLLM chat completion, Telegram config, `tools.exec` config, session-pod env-name wiring (no values read).
+- `scripts/smoke-test-offload-k8s.sh` — Tier 2 offload roundtrip: System A control-plane → System B offload-worker → MinIO artifact.
+- `scripts/check-openclaw-tools.sh` — scan recent session-pod logs for tool-invocation traces (run after DM-ing /demo).
+- `scripts/check-tier2-logs.sh` — canonical live-logs helper (operator/session/gateway/litellm/vllm/offload/minio) with the right `--context` for each.
 - `scripts/setup-system-b-vllm.sh` — historical SSH-into-`onedal-build` vLLM bring-up
 - `scripts/setup-system-b-vllm-local.sh` — kubectl/helm vLLM bring-up against the current kube context (no SSH)
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
@@ -246,14 +261,28 @@ the `demoServices` localStorage key to a JSON array.
 - Keep inference, routing, and execution policies declarative
 - Reuse OpenClaw, Kubernetes, LightLLM, Terminal Bench, and an OpenAI-compatible local SLM where possible
 
-## Recommended first slice
-1. Install `openclaw-operator`
-2. Apply CRD safely and verify controller health
-3. Create one `OpenClawInstance`
-4. Verify model access through LiteLLM/vLLM
-5. Verify instance-managed gateway/service health
-6. Then add System B offload behavior (scale-up is satisfied by static
-   `large` profile selection — no separate scale-up contract)
+## Recommended first slice (Tier 2, operator-first)
+The demo path is **operator-first**: every `OpenClawInstance` is managed
+by `openclaw-operator`, and Tier 2 is the only path that runs the
+shipped demo end-to-end (Telegram, Bedrock/SambaNova/vLLM, offload).
+
+Follow `docs/runbooks/tier2-bring-up.md`. The short version:
+
+0. **Preflight** the workstation (`./scripts/check-tier2-environment.sh`)
+1. Bring up System B model backend + storage (vLLM, MinIO, offload-worker)
+2. Bring up System A inference proxy (LiteLLM) and secrets
+3. Install `openclaw-operator`, apply one `OpenClawInstance`, smoke-test
+   the lifecycle (`./scripts/smoke-test-operator-instance.sh`)
+4. Smoke-test the live demo task (`./scripts/smoke-test-demo-task.sh`)
+   — confirms gateway `/healthz`, LiteLLM completion, Telegram-bound
+   config, and (optionally) the System A → System B offload roundtrip
+   (`./scripts/smoke-test-offload-k8s.sh`).
+
+Tier 1 (`docker compose up` / `scripts/dev-up.sh`) is **local dev/smoke
+only** — it exercises the offload relay and the static web UI without a
+cluster. It does NOT run OpenClaw, LiteLLM, vLLM, or Telegram, so it is
+not the "demo path" an audience would see. Use it to develop the
+control-plane / offload-worker locally, not to demo to users.
 
 ## Repo curation notes
 - `config/` is the canonical location for current live demo/runtime config
