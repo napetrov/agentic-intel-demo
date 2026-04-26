@@ -178,8 +178,11 @@ APPLY=1 \
   CHART_REF=<tag|sha> \
   KUBECTL="kubectl --context system-b" \
   ./scripts/setup-system-b-vllm-local.sh
+# Export so MINIO_* persists for the bucket-creation step below; an
+# inline `KEY=VAL ./script` only sets the variable for that one process.
+export MINIO_ACCESS_KEY=...
+export MINIO_SECRET_KEY=...
 APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
-  MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
   ./scripts/create-operator-secrets.sh
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
 # Create the artifact bucket against the published MinIO NodePort 30900.

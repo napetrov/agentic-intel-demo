@@ -1,8 +1,9 @@
-# Component and model version pins for the demo.
+# Component and model version references for the demo.
 #
-# Authoritative source for versions referenced in scripts and documentation.
-# When bumping, update the matching k8s manifest / Dockerfile / setup
-# script in the same change.
+# This file is documentation, not a runtime input — scripts and manifests
+# don't read it at apply time. Keep it in sync with the values actually
+# pinned in the matching k8s manifest / Dockerfile / setup script when
+# bumping versions, and treat any drift as a bug worth fixing.
 
 components:
   # Patch pin for k3s — change deliberately; floating "v1.31.x" caused

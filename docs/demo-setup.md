@@ -219,8 +219,12 @@ lives in `docs/reproducibility.md` under "Values to fill in".
      KUBECTL="kubectl --context system-b" \
      ./scripts/setup-system-b-vllm-local.sh
 
+   # Export these so they persist for the bucket-creation step below;
+   # an inline `KEY=VAL ./script` only sets the variable for that one
+   # process.
+   export MINIO_ACCESS_KEY=...
+   export MINIO_SECRET_KEY=...
    APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
-     MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
      ./scripts/create-operator-secrets.sh
 
    kubectl --context system-b apply -f k8s/system-b/minio.yaml

@@ -22,7 +22,11 @@ task_types:
   build_test:
     description: "Build and test on a statically-sized large session pod (Task 3)"
     execution: local_large    # session pod is sized `large` at creation time
-    model_alias: code
+    # Routes through `default` since the canonical LiteLLM model_list
+    # (k8s/system-a/litellm.yaml) currently exposes fast/default/
+    # reasoning/sambanova. There is no separate code-tuned model in
+    # the demo today; revisit once one is introduced.
+    model_alias: default
     pod_profile: large        # build/test runs directly in the large session pod
     offload_eligible: false
     artifact_output: true
