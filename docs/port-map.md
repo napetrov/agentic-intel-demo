@@ -9,7 +9,7 @@ These values are set explicitly in k8s manifests — never auto-assigned.
 
 | Service | Namespace | NodePort | Protocol | Used by |
 |---------|-----------|----------|----------|---------|
-| ollama (SLM) | system-b | **30434** | HTTP | LiteLLM on System A |
+| vLLM (SLM) | system-b | **30434** | HTTP | LiteLLM on System A (`/v1` is OpenAI-compatible). Same NodePort as the historical ollama path. |
 | MinIO API | system-b | **30900** | HTTP (S3) | Control Plane artifact relay |
 | MinIO Console | system-b | **30901** | HTTP | Admin/debug only |
 | Offload API | system-b | **30800** | HTTP | Control Plane offload gateway |

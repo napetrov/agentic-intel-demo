@@ -24,6 +24,30 @@ jobs:
             fi
           done < <(find scripts -type f -name '*.sh' -print0)
           exit $fail
+      - name: shellcheck (advisory; warnings only)
+        # Catches quoting bugs that bash -n misses. Run in
+        # advisory mode to start: a real failure in shellcheck
+        # without an existing baseline would block every PR.
+        # Once the existing scripts are clean, drop `|| true`.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning scripts/**/*.sh scripts/*.sh || true
+
+  ruff:
+    # Catches unused imports / undefined names that py_compile
+    # misses. Scoped to runtimes/ + scripts/ so we don't lint
+    # generated code under .dev-up/.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: ruff check (advisory)
+        run: |
+          ruff check --select=F,E9 runtimes/ scripts/ || true
 
   yaml:
     runs-on: ubuntu-latest

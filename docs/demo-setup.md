@@ -186,17 +186,77 @@ Telegram ingress.
   `docs/port-map.md` for install flags).
 - Non-overlapping pod/service CIDRs across the two clusters.
 - Merged kubeconfig with contexts `system-a` and `system-b`.
-- Telegram bot token + allowed-user id.
+- Telegram bot token + allowed-user id (see "Telegram bring-up" below).
 - Bedrock access (region + bearer token + inference profile ARN) for
   the `reasoning` alias, and/or a SambaNova API key for the `sambanova`
   alias. `k8s/system-a/litellm.yaml` maps `reasoning` → Bedrock Claude
   Sonnet and `sambanova` → SambaNova DeepSeek; provision each key
-  against the alias it actually serves.
+  against the alias it actually serves. SambaNova-specific notes live
+  in `docs/sambanova-integration.md`.
 - A reachable upstream `openclaw-operator` ref pinned via
   `OPENCLAW_OPERATOR_REF`.
 - `envsubst` (from the `gettext` package) on the deploy workstation —
   Step 3 below renders `k8s/system-a/litellm.yaml` through it before
   applying. See `docs/reproducibility.md` for the full tool list.
+
+### Hardware and network requirements
+
+System A sizing depends on which scenarios you actually run; System B's
+vLLM pod alone reserves 16 CPU / 32Gi for the Qwen3-4B context window.
+
+| Host | Min CPU | Min RAM | Min disk | Notes |
+|------|---------|---------|----------|-------|
+| System A — base bring-up | 4 cores | 8 GiB | 40 GiB | operator + LiteLLM + `small`/`medium` session profiles. Enough for `terminal_agent` and `market_research`. |
+| System A — full scenario coverage | 36+ cores | 72+ GiB | 40 GiB | `large_build_test` runs on the `large` session profile (32 CPU / 64Gi from `config/pod-profiles/profiles.yaml`); System A also needs operator + LiteLLM headroom on top. Either size the host accordingly or downgrade `large_build_test` to a smaller pod profile. |
+| System B | 20 cores | 40 GiB | 80 GiB | vLLM 16/32 + offload-worker 4/4 + MinIO + headroom. Drop to a smaller model / shorter `--max-model-len` in `scripts/setup-system-b-vllm-local.sh` if you need to fit on less. |
+
+Network reachability that must be open between the two hosts (NodePorts
+from `docs/port-map.md`):
+
+| Direction | Port | Purpose |
+|-----------|------|---------|
+| System A → System B | TCP 30434 | LiteLLM → vLLM (`SYSTEM_B_VLLM_ENDPOINT`) |
+| System A → System B | TCP 30900 | Control-plane / offload-worker → MinIO S3 API |
+| System A → System B | TCP 30800 | Control-plane → offload-worker (when offload runs out-of-cluster) |
+| Operator/admin → System A | TCP 6443 | `kubectl --context system-a` |
+| Operator/admin → System B | TCP 6443 | `kubectl --context system-b` |
+| Session pods → Telegram | TCP 443 | outbound `api.telegram.org` |
+| Session pods → Bedrock | TCP 443 | outbound `bedrock-runtime.${AWS_REGION}.amazonaws.com` |
+| Session pods → SambaNova | TCP 443 | outbound `api.sambanova.ai` |
+
+Verify CIDRs don't overlap before bring-up — the easiest way is to use
+the install flags from `docs/port-map.md` verbatim (System A on
+`10.42.0.0/16` + `10.96.0.0/16`, System B on `10.43.0.0/16` +
+`10.97.0.0/16`).
+
+### Telegram bring-up
+
+The `OpenClawInstance` reads `TELEGRAM_BOT_TOKEN` from
+`intel-demo-operator-secrets`, and the embedded `openclaw.json`
+allow-lists exactly one numeric Telegram user id via
+`TELEGRAM_ALLOWED_FROM`. Both must be set before
+`scripts/create-operator-secrets.sh` runs.
+
+1. **Create the bot.** DM
+   [@BotFather](https://t.me/BotFather) → `/newbot` → choose name +
+   username → save the `123456:ABC-...` HTTP API token. This is
+   `TELEGRAM_BOT_TOKEN`.
+2. **Find your numeric user id.** DM
+   [@userinfobot](https://t.me/userinfobot) → it replies with your
+   `Id: 123456789`. This is `TELEGRAM_ALLOWED_FROM`. The demo only
+   accepts messages from this id; everything else is dropped.
+3. **(Optional) Bind a group.** Add the bot to a group, send any
+   message there, then resolve the negative chat id via
+   `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates` and
+   put it under `channels.telegram.groups` in
+   `config/operator-chat-config.template.json` before applying.
+4. **Register the slash-command menu** after the operator instance is
+   Ready (uses `setMyCommands` against the bot token from your shell):
+   ```bash
+   TELEGRAM_BOT_TOKEN=... scripts/telegram-send-menu.py
+   ```
+   The menu shipped is `/demo`, `/start`, `/status`, `/reset` (matches
+   `customCommands` in the operator chat config).
 
 ### Bring-up order
 
@@ -315,6 +375,43 @@ production. "Simulated" means the UX flow is shown but no real backend runs.
   and operator-managed OpenClaw instance.
 
 See `docs/operator-gap-analysis.md` for the active gap list.
+
+## Known unknowns (must be supplied by the deployer)
+
+These values are not pinned in the repo and must come from the deployer
+or the surrounding environment. They are the most common reason a fresh
+Tier 2 bring-up doesn't reach Ready.
+
+| Value | Why it isn't pinned | Where to get it |
+|-------|---------------------|-----------------|
+| `OPENCLAW_OPERATOR_REF` | upstream project — pin per environment, not per repo. Leaving `main` is reproducibly unstable. Tracked as gap #1 in `docs/operator-gap-analysis.md`. | tag/SHA from `https://github.com/openclaw-rocks/openclaw-operator` releases. |
+| `OpenClawInstance.spec.image` | upstream operator publishes runtime images at `ghcr.io/openclaw-rocks/openclaw:<tag>`; the demo doesn't own the registry. Gap #4. | pick an operator-runtime tag that matches `OPENCLAW_OPERATOR_REF`. Edit `examples/openclawinstance-intel-demo.yaml` `spec.image`. |
+| `BEDROCK_MODEL_ID` / `ANTHROPIC_DEFAULT_SONNET_MODEL` | depends on which Bedrock inference profile *your* AWS account has enabled. | AWS console → Bedrock → "Inference profiles" → copy the profile id and the `arn:aws:bedrock:...:inference-profile/...` ARN. |
+| `AWS_REGION` | the region of the inference profile above. | same console step (top-right region selector). |
+| `SambaNova model id` | the demo defaults to `sambanova/DeepSeek-V3.1`; SambaNova ships and rotates models independently. | confirm against `https://api.sambanova.ai/v1/models` for your key. Adjust `model_name: sambanova` in `k8s/system-a/litellm.yaml` if needed. |
+| `SYSTEM_B_IP` | per-cluster LAN address. | `kubectl --context system-b get nodes -o wide` → `INTERNAL-IP`. |
+
+A single canonical Ready jsonpath for `OpenClawInstance` is also still
+unknown until `OPENCLAW_OPERATOR_REF` is pinned — `scripts/smoke-test-operator-instance.sh`
+falls back across `condition=Ready` and `.status.phase ∈ {Ready,Running,Active,Healthy}`
+until then. Override via `READY_JSONPATH` once you know the canonical
+shape for your pinned ref.
+
+## Recovery playbook (Tier 2)
+
+Common failure modes and the smallest reset that fixes them. For full
+component recovery (delete+reapply secrets, wipe artifact bucket, etc.)
+see `docs/reproducibility.md` "Recovery / reset".
+
+| Symptom | First check | Smallest fix |
+|---------|-------------|--------------|
+| Telegram bot doesn't reply | `kubectl --context system-a logs -n agents -l role=session-pod --tail=200` for `Unauthorized` (token rotated) or no `update_id` arriving (allow-id mismatch). | Re-run `scripts/create-operator-secrets.sh` with the correct `TELEGRAM_BOT_TOKEN`, then `kubectl --context system-a delete pods -n agents -l role=session-pod` to pick the new secret up. |
+| Operator instance stuck in `Provisioning` | `kubectl --context system-a describe openclawinstance intel-demo-operator` and controller logs (`-n openclaw-operator-system logs deploy/openclaw-operator-controller-manager`). | Most often a missing Secret key — re-run `scripts/create-operator-secrets.sh` with `SCOPE=system-a`, then `APPLY=1 ./scripts/teardown-openclaw-instance.sh && kubectl apply -f examples/openclawinstance-intel-demo.yaml`. |
+| LiteLLM 502 on `/v1/chat/completions` | `kubectl --context system-a logs -n inference deploy/litellm --tail=100` for the failing alias. | If `reasoning`/`sambanova` — re-issue the upstream key and re-apply `litellm-secrets`. If `fast`/`default` — check `SYSTEM_B_VLLM_ENDPOINT` from System A: `curl http://${SYSTEM_B_IP}:30434/v1/models`. |
+| vLLM OOM / restart loop on System B | `kubectl --context system-b logs -n inference deploy/vllm --previous` for `CUDA out of memory` or process kill. | Reduce `--max-model-len` or switch to a smaller model in `scripts/setup-system-b-vllm-local.sh` (Qwen3-4B at 32768 reserves ~24Gi; drop to 8192 to fit in less). Re-run the script with `APPLY=1`. |
+| `offload-worker` 5xx, `result_ref` not produced | `kubectl --context system-b logs -n system-b deploy/offload-worker --tail=200`. | Usually MinIO bucket missing — `MINIO_ROOT_USER=... MINIO_ROOT_PASSWORD=... ./scripts/create-minio-bucket.sh` recreates `demo-artifacts` idempotently. |
+| MinIO bucket lost / artifacts purged | `mc ls local/demo-artifacts` from inside the cluster. | Re-create with the script above. Old `result_ref` URLs from prior sessions become 404; the demo recovers by re-running the offload step. |
+| CRD apply fails with `metadata.annotations: Too long` | `kubectl get events -A \| grep openclawinstances`. | Use the server-side path baked into `scripts/install-openclaw-operator.sh` (`MODE=server-side-crd`, the default); see `docs/operator-runbook.md` "Working recovery strategy". |
 
 ## Where to look next
 

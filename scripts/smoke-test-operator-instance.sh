@@ -32,6 +32,14 @@ INSTANCE_MANIFEST="${INSTANCE_MANIFEST:-$REPO_ROOT/examples/openclawinstance-int
 OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-openclaw-operator-system}"
 OPERATOR_DEPLOYMENT="${OPERATOR_DEPLOYMENT:-deploy/openclaw-operator-controller-manager}"
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-300}"
+# When set, READY_JSONPATH is the canonical short-circuit Ready check for
+# the pinned operator ref. The script polls
+# `kubectl get openclawinstance ... -o jsonpath=$READY_JSONPATH` and
+# treats the value as Ready when it matches a Ready-ish enum
+# (Ready/Running/Active/Healthy/True). Leave unset to use the heuristic
+# that scans condition=Ready then `.status.phase`. Tracked as gap #5 in
+# docs/operator-gap-analysis.md.
+READY_JSONPATH="${READY_JSONPATH:-}"
 PROBE_GATEWAY="${PROBE_GATEWAY:-0}"
 KEEP="${KEEP:-0}"
 APPLY="${APPLY:-0}"
@@ -74,11 +82,40 @@ run "$KUBECTL" -n "$OPERATOR_NAMESPACE" rollout status \
 #    omits metadata.namespace and the current kube-context default differs.
 run "$KUBECTL" apply -n "$INSTANCE_NAMESPACE" -f "$INSTANCE_MANIFEST"
 
-# 3. Wait for Ready. Try the canonical Ready condition first; if the operator
-#    in this version does not surface it, fall back to a phase-based poll.
+# 3. Wait for Ready. If READY_JSONPATH is supplied, poll that one path
+#    (canonical for the pinned operator ref). Otherwise try
+#    --for=condition=Ready and fall back to a `.status.phase` heuristic.
+wait_ready_jsonpath() {
+  local deadline=$(( $(date +%s) + READY_TIMEOUT_SECONDS ))
+  local val=""
+  echo "[smoke-test-operator-instance] polling READY_JSONPATH=$READY_JSONPATH"
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    val="$("$KUBECTL" get openclawinstance "$INSTANCE_NAME" \
+              -n "$INSTANCE_NAMESPACE" \
+              -o jsonpath="$READY_JSONPATH" 2>/dev/null || true)"
+    case "$val" in
+      Ready|Running|Active|Healthy|True|true)
+        echo "[smoke-test-operator-instance] READY_JSONPATH=$val"
+        return 0
+        ;;
+      Failed|Error|CrashLoopBackOff)
+        echo "[smoke-test-operator-instance] terminal failure READY_JSONPATH=$val" >&2
+        return 1
+        ;;
+    esac
+    sleep 5
+  done
+  echo "[smoke-test-operator-instance] timeout waiting for READY_JSONPATH (last=${val:-unknown})" >&2
+  return 1
+}
+
 wait_ready() {
   local deadline=$(( $(date +%s) + READY_TIMEOUT_SECONDS ))
   local phase=""
+  if [ -n "$READY_JSONPATH" ]; then
+    wait_ready_jsonpath
+    return $?
+  fi
   echo "[smoke-test-operator-instance] waiting for $INSTANCE_NAME to become Ready"
   if "$KUBECTL" wait \
       --for=condition=Ready \

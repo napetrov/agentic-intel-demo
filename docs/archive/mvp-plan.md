@@ -1,18 +1,23 @@
-# MVP Plan — Minimal End-to-End Path
+# MVP Plan — Minimal End-to-End Path (archived)
 
-> **Deprecated path.** Phases 3–4 of this plan describe building a raw
-> control plane at `legacy/services/control-plane/` and a bespoke
-> session-pod at `legacy/runtimes/session-pod/`. Those directories have
-> been removed from the repo; the `openclaw-operator` path is the only
-> supported instance-management approach.
+> **Archived.** This plan describes the original raw control-plane /
+> bespoke session-pod path and the ollama-based inference backend.
+> Both have been superseded:
+> - instance lifecycle is now owned by `openclaw-operator` (see
+>   `docs/operator-runbook.md`)
+> - System B inference is now `vLLM` + `Qwen/Qwen3-4B-Instruct-2507`
+>   (see `docs/demo-setup.md` Tier 2 and `config/versions.yaml`)
+> - `legacy/` and `scripts/legacy/` have been removed
 >
 > For the current minimum end-to-end path use:
 > - `README.md` → "Recommended first slice"
+> - `docs/demo-setup.md` (tiered bring-up, hardware/network, Telegram,
+>   recovery)
 > - `docs/operator-runbook.md` (install + apply `OpenClawInstance`)
 > - `docs/operator-gap-analysis.md` (remaining work)
 >
-> This file is kept only as historical context and will be rewritten or
-> removed in a follow-up.
+> The text below is kept verbatim only for historical context. Concrete
+> commands, model names, and component choices in it are out of date.
 
 ## Goal
 Working demo of Task 1 (terminal agent) as fast as possible.

@@ -26,7 +26,7 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers, Kubernetes-first)
 - `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload) within the two-system reference
 - `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
-- `docs/mvp-plan.md` — (deprecated; describes the removed raw control-plane/session-pod path)
+- `docs/archive/mvp-plan.md` — historical context; describes the removed raw control-plane/session-pod path. Current minimum path lives in `docs/demo-setup.md` and `docs/operator-runbook.md`.
 - `docs/reusable-components.md` — what to reuse vs what to build
 - `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
 - `docs/reproducibility.md` — what must be written down to make the demo reproducible
@@ -65,6 +65,12 @@ The current validated direction is:
 Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
 ## Local bring-up (laptop)
+
+Top-level shortcuts live in the `Makefile` — `make help` prints the
+canonical verbs (`make tier0` / `make tier1-up` / `make tier2-smoke`,
+plus `make lint` and `make test`). The raw commands below still work
+identically.
+
 For a single-host demo without Kubernetes, the repo ships a
 `docker-compose.yaml` that brings up MinIO, the agent-stub, the
 offload-worker, the control plane, and the static web UI with an `/api`

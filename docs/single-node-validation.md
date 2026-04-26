@@ -8,7 +8,7 @@ before real System A / System B hardware is available.
 ## What onedal-build simulates
 
 - **System A cluster** — agent session pods, control plane, LiteLLM
-- **System B cluster** — ollama SLM, MinIO, offload API
+- **System B cluster** — vLLM SLM, MinIO, offload API, offload-worker
 - Both run as two separate k3s instances on one machine
 - Uses different API server ports (6443 / 6444) and data directories
 - NodePorts still work — both clusters expose services on the same host IP
@@ -18,8 +18,10 @@ before real System A / System B hardware is available.
 
 ## Hardware: onedal-build
 - 8 vCPU, 32 GB RAM, Ubuntu
-- Model: qwen2.5:7b (~6 GB RAM)
-- Remaining for k3s + pods: ~24 GB
+- Model: `Qwen/Qwen3-4B-Instruct-2507` via vLLM (canonical; needs
+  16 CPU / 32Gi at 32768 ctx — drop `--max-model-len` to fit on a
+  smaller host).
+- Remaining for k3s + pods: ~24 GB on a fitted profile.
 
 ---
 
@@ -48,16 +50,31 @@ kubectl --kubeconfig k3s-b.yaml get nodes  # one node Ready
 
 ## Step 2 — Deploy System B services first
 
-### ollama
+### vLLM (fitted profile for an 8 vCPU host)
+
+`scripts/setup-system-b-vllm-local.sh` defaults to 16 CPU / 32Gi / 32768
+context, which won't schedule on this host. Override the resource and
+context env knobs explicitly:
+
 ```bash
-kubectl --context system-b apply -f k8s/system-b/ollama.yaml
-# Wait for Running:
-kubectl --context system-b rollout status deploy/ollama -n system-b
-# Pull model:
-kubectl --context system-b exec -n system-b deploy/ollama -- ollama pull qwen2.5:7b
-# Verify (from host):
-curl http://localhost:30434/api/tags
+APPLY=1 \
+  CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \
+  CHART_REF=<tag|sha> \
+  CPU=4 \
+  MEMORY=12Gi \
+  MAX_MODEL_LEN=8192 \
+  MAX_BATCHED_TOKENS=2048 \
+  MAX_NUM_SEQS=8 \
+  KV_CACHE_SPACE=2 \
+  KUBECTL="kubectl --context system-b" \
+  ./scripts/setup-system-b-vllm-local.sh
+# Wait for Running, then verify (OpenAI-compatible):
+curl http://localhost:30434/v1/models
 ```
+
+Tune up if `onedal-build` has more than the 8 vCPU / 32 GB baseline; the
+full Tier 2 profile is documented in `docs/demo-setup.md` "Hardware and
+network requirements".
 
 ### MinIO
 ```bash
@@ -133,10 +150,10 @@ Infrastructure:
 - [ ] No NodePort conflicts (check with `ss -tlnp | grep 30`)
 
 Inference:
-- [ ] `ollama pull qwen2.5:7b` completed (model present in `/data/ollama`)
-- [ ] ollama responds: `curl localhost:30434/api/generate`
-- [ ] LiteLLM routes to ollama: `curl localhost:31400/v1/chat/completions`
-- [ ] Measure first-token latency (target <10s on 8 vCPU)
+- [ ] vLLM pod Ready and serving the configured model
+- [ ] vLLM responds: `curl localhost:30434/v1/models`
+- [ ] LiteLLM routes to vLLM: `curl localhost:31400/v1/chat/completions`
+- [ ] Measure first-token latency (target <10s on 8 vCPU at fitted profile)
 - [ ] Two concurrent requests don't OOM
 
 Storage:
@@ -162,7 +179,7 @@ End-to-end:
 ## What this validation proves before real hardware
 
 - Two-cluster architecture works in principle
-- ollama on CPU is fast enough for demo UX
+- vLLM on CPU (with AMX on GNR) is fast enough for demo UX
 - Session pod image works (OpenClaw daemon, tools, model client)
 - Control Plane correctly creates/terminates pods and jobs
 - Cross-"cluster" (cross-NodePort) artifact and API paths work
