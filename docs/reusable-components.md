@@ -27,20 +27,27 @@ This document lists what to reuse as-is, what to configure, and what to build mi
 - **Config**: `config/model-routing/litellm-config.yaml`
 - **Notes**: supports local SLM + cloud backends, retry logic, cost tracking
 
-### ollama (for local SLM — MVP choice)
-- **What**: local model server, OpenAI-compatible API
-- **Repo**: https://github.com/ollama/ollama
-- **Use for**: local SLM on System B
-- **Deploy**: `docker pull ollama/ollama` or install binary on System B
-- **Models**: `ollama pull qwen2.5:7b-instruct` or `ollama pull llama3.2:3b`
-- **API**: `http://system-b:11434/v1` (OpenAI-compatible with `/v1` prefix)
-- **Notes**: easiest for CPU-only deployment; no HuggingFace token needed for Qwen2.5
-
-### vLLM (optional upgrade from ollama)
+### vLLM (canonical local SLM)
 - **What**: high-performance inference server, OpenAI-compatible
 - **Repo**: https://github.com/vllm-project/vllm
-- **Use for**: replace ollama if throughput/latency matters
-- **Notes**: better for GNR CPU with AMX; requires more setup than ollama
+- **Use for**: local SLM on System B (the path actually wired into
+  LiteLLM, the offload tests, and CI).
+- **Deploy**: `scripts/setup-system-b-vllm-local.sh` (kubectl/helm) —
+  see `docs/demo-setup.md` Tier 2 step 2.
+- **Model**: `Qwen/Qwen3-4B-Instruct-2507` at 32768 ctx, 16 CPU / 32Gi.
+  Pinned in `config/versions.yaml`.
+- **API**: NodePort 30434, `/v1` is OpenAI-compatible.
+- **Notes**: better for GNR CPU with AMX. The earlier ollama path
+  (`docs/archive/mvp-plan.md` phases 1–2) used the same NodePort but
+  is no longer the supported deploy path.
+
+### ollama (historical alternative — not the canonical path)
+- **What**: local model server, OpenAI-compatible API.
+- **Repo**: https://github.com/ollama/ollama
+- **Status**: was the MVP choice; replaced by vLLM. Kept here only as
+  a reference for "what if I want to swap the backend on a host that
+  can't run vLLM." `k8s/system-b/ollama.yaml` still parses but is not
+  exercised by CI or the operator-first bring-up.
 
 ### MinIO
 - **What**: S3-compatible object storage
@@ -78,7 +85,7 @@ This document lists what to reuse as-is, what to configure, and what to build mi
 | Component | What to configure |
 |-----------|------------------|
 | LiteLLM | model routing config, API keys, aliases |
-| ollama | model pull, exposed port, resource limits |
+| vLLM | helm chart ref, model id, max-model-len, exposed NodePort, resource limits |
 | MinIO | bucket creation, access key pair |
 | Kubernetes RBAC | ServiceAccount for control plane |
 | OpenClaw | agent config, model endpoint, tool enablement |

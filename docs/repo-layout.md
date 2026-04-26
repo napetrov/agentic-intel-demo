@@ -39,7 +39,7 @@ agentic-intel-demo/
 │   │   └── session-pod-template.yaml  # Pod template used by control plane
 │   ├── system-b/
 │   │   ├── namespaces.yaml
-│   │   ├── ollama.yaml          # Deployment + Service (NodePort 30434)
+│   │   ├── ollama.yaml          # historical; vLLM is the canonical path. Same NodePort 30434 — bring vLLM up via scripts/setup-system-b-vllm-local.sh, not ollama.yaml.
 │   │   ├── minio.yaml           # Deployment + Service + hostPath/PVC
 │   │   ├── offload-api.yaml     # Deployment + Service (NodePort 30800)
 │   │   └── worker-job-template.yaml
@@ -124,7 +124,7 @@ agentic-intel-demo/
 ### System B
 | Namespace | Contents |
 |-----------|----------|
-| `system-b` | ollama, minio, offload API, worker jobs |
+| `system-b` | vLLM (canonical), minio, offload API, worker jobs |
 
 ---
 

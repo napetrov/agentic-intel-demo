@@ -165,7 +165,7 @@ See `config/model-routing/litellm-config.yaml`.
 - **Ready-made**: LiteLLM OSS — `ghcr.io/berriai/litellm`
 - Deployed as standalone Deployment in namespace `inference` on System A
 - Session pods reach it via env var `LITELLM_BASE_URL=http://litellm.inference.svc.cluster.local:4000`
-- LiteLLM reaches System B ollama via `http://<system-b-ip>:30434` (NodePort)
+- LiteLLM reaches System B vLLM via `http://<system-b-ip>:30434/v1` (NodePort)
 
 ---
 
@@ -175,9 +175,14 @@ Shared compute, SLM, and storage node.
 
 ### Local SLM service
 - OpenAI-compatible API server
-- **Ready-made**: `vLLM` or `ollama` or `llama.cpp` with OpenAI shim
-- Model: configurable, e.g. Qwen2.5-7B-Instruct or Llama-3.2-3B
-- Exposed as `http://system-b:8000/v1`
+- **Ready-made**: `vLLM` (canonical for this demo) — `ollama` /
+  `llama.cpp` with OpenAI shim are valid alternatives but not what's
+  pinned in `config/versions.yaml` or installed by
+  `scripts/setup-system-b-vllm-local.sh`.
+- Model: `Qwen/Qwen3-4B-Instruct-2507` at 32768 ctx, 16 CPU / 32Gi
+  (see `config/versions.yaml`). Switch in
+  `scripts/setup-system-b-vllm-local.sh` if you need a smaller fit.
+- Exposed as `http://<system-b-ip>:30434/v1` (NodePort 30434).
 
 ### Offload API service
 - Accepts job spec, launches Kubernetes Job on System B cluster
