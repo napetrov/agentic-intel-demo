@@ -41,7 +41,14 @@ READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-300}"
 # override the path for a different upstream version. Set to the empty
 # string to fall through to the legacy condition=Ready+phase fallback.
 # Tracked as gap #5 in docs/operator-gap-analysis.md.
-READY_JSONPATH="${READY_JSONPATH-{.status.phase}}"
+#
+# Use an explicit conditional rather than ${READY_JSONPATH-{.status.phase}}:
+# the `}` inside the default word closes the brace expansion early,
+# turning the whole construct into a literal `}` for an empty value and
+# appending a stray `}` to any user override. Codex P1 caught this.
+if [ -z "${READY_JSONPATH+set}" ]; then
+  READY_JSONPATH='{.status.phase}'
+fi
 PROBE_GATEWAY="${PROBE_GATEWAY:-0}"
 KEEP="${KEEP:-0}"
 APPLY="${APPLY:-0}"
