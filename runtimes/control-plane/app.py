@@ -37,6 +37,7 @@ _HERE = _Path(__file__).resolve().parent
 if str(_HERE) not in _sys.path:
     _sys.path.insert(0, str(_HERE))
 
+from persistence import SqliteJsonStore  # noqa: E402
 from session_manager import (  # noqa: E402  (after sys.path tweak)
     DEFAULT_PROFILE,
     PROFILES,
@@ -121,8 +122,20 @@ def _safe_probe_target(url: str) -> str:
     return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
-_jobs: dict[str, dict[str, Any]] = {}
-_jobs_lock = threading.Lock()
+# Durable job registry. JOBS_DB_PATH points at a sqlite file; leave it
+# unset (or ":memory:") to keep the previous in-memory behavior — the
+# unit tests rely on that default so they don't need a writable cwd.
+# The compose / dev-up path mounts a volume and sets the env var so a
+# `docker compose restart control-plane` no longer drops every job's
+# result_ref. See docs/contracts/offload-result-contract.md.
+_jobs = SqliteJsonStore(
+    path=os.environ.get("JOBS_DB_PATH") or None,
+    table="jobs",
+)
+# Back-compat alias: the unit tests acquire `_jobs_lock` around direct
+# dict access. The store ships a re-entrant lock that callers can hold
+# externally for read-modify-write sequences.
+_jobs_lock = _jobs.lock
 
 # Lazily-initialised S3/MinIO client, shared across /artifacts calls.
 # boto3.client() is not cheap — several hundred ms on cold import under load.
@@ -253,18 +266,17 @@ def ready() -> dict[str, str]:
 def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
     job_id = f"job-{uuid.uuid4().hex[:12]}"
     now = time.time()
-    with _jobs_lock:
-        _jobs[job_id] = {
-            "job_id": job_id,
-            "status": "running",
-            "session_id": req.session_id,
-            "task_id": None,
-            "result": None,
-            "result_ref": None,
-            "error": None,
-            "submitted_at": now,
-            "completed_at": None,
-        }
+    _jobs[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "session_id": req.session_id,
+        "task_id": None,
+        "result": None,
+        "result_ref": None,
+        "error": None,
+        "submitted_at": now,
+        "completed_at": None,
+    }
 
     # `is not None`: 0 is an invalid request (validator rejects it), not
     # "use the default". Truthiness would silently coerce 0 to default.
@@ -296,29 +308,35 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
                 f"unexpected offload-worker payload type: {type(body).__name__}"
             )
     except (httpx.HTTPError, ValueError) as exc:
-        with _jobs_lock:
-            _jobs[job_id].update(
-                status="error",
-                error=f"offload-worker call failed: {exc}",
-                completed_at=time.time(),
-            )
+        _jobs.update_fields(
+            job_id,
+            status="error",
+            error=f"offload-worker call failed: {exc}",
+            completed_at=time.time(),
+        )
         raise HTTPException(
             status_code=502, detail=f"offload-worker unreachable: {exc}"
         ) from exc
 
     worker_status = body.get("status")
-    with _jobs_lock:
-        entry = _jobs[job_id]
-        entry["task_id"] = body.get("task_id")
-        entry["completed_at"] = time.time()
-        if worker_status == "ok":
-            entry["status"] = "completed"
-            entry["result"] = body.get("result")
-            entry["result_ref"] = body.get("result_key")
-        else:
-            entry["status"] = "error"
-            entry["error"] = body.get("error") or "offload-worker returned error"
-        final_status = entry["status"]
+    if worker_status == "ok":
+        merged = _jobs.update_fields(
+            job_id,
+            task_id=body.get("task_id"),
+            completed_at=time.time(),
+            status="completed",
+            result=body.get("result"),
+            result_ref=body.get("result_key"),
+        )
+    else:
+        merged = _jobs.update_fields(
+            job_id,
+            task_id=body.get("task_id"),
+            completed_at=time.time(),
+            status="error",
+            error=body.get("error") or "offload-worker returned error",
+        )
+    final_status = merged["status"]
 
     return OffloadSubmitted(
         job_id=job_id,
@@ -329,11 +347,10 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
 
 @app.get("/offload/{job_id}", response_model=OffloadStatus)
 def get_offload(job_id: str) -> OffloadStatus:
-    with _jobs_lock:
-        entry = _jobs.get(job_id)
-        if not entry:
-            raise HTTPException(status_code=404, detail=f"unknown job_id {job_id}")
-        return OffloadStatus(**entry)
+    entry = _jobs.get(job_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f"unknown job_id {job_id}")
+    return OffloadStatus(**entry)
 
 
 # ---------------------------------------------------------------------------
@@ -568,10 +585,9 @@ def get_artifact(ref: str) -> ArtifactRef:
     # Only presign refs that this relay actually issued (via POST /offload).
     # Otherwise any caller who can guess an object key turns this into a
     # bucket-wide read proxy. The set of issued refs lives in `_jobs`.
-    with _jobs_lock:
-        issued = {
-            entry["result_ref"] for entry in _jobs.values() if entry.get("result_ref")
-        }
+    issued = {
+        entry["result_ref"] for entry in _jobs.values() if entry.get("result_ref")
+    }
     if ref not in issued:
         raise HTTPException(status_code=404, detail=f"unknown artifact ref {ref}")
     client = _s3_client()

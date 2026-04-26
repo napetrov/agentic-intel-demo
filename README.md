@@ -88,6 +88,14 @@ Ports bound on `127.0.0.1`: `8080` (web UI + `/api` proxy), `8090`
 sure those are free, or override them via the env (the optional Flowise /
 OpenWebUI overlays add `3000` / `3030`).
 
+The control-plane writes the offload-job registry and the local-backend
+session table to a `control-plane-data` named volume (mounted at
+`/var/lib/control-plane`), so a `docker compose restart control-plane`
+preserves issued `result_ref`s and the multi-agent fan-out table. Set
+`JOBS_DB_PATH=:memory:` (and/or `SESSIONS_DB_PATH=:memory:`) on the
+service to opt out and go back to the legacy in-memory behavior; `docker
+compose down -v` drops the volume.
+
 Verify the stack came up before clicking through the UI:
 
 ```bash

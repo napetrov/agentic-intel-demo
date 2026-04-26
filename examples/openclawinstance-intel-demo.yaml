@@ -7,7 +7,12 @@ spec:
     replicas: 1
   image:
     repository: ghcr.io/openclaw-rocks/openclaw
-    tag: latest
+    # Candidate tag tracking the latest upstream operator release at
+    # repo-pin time. The runtime image is published independently from
+    # the operator binary — confirm the tag your operator ref expects
+    # before promoting this past dry-run. Tracked as gap #4 in
+    # docs/operator-gap-analysis.md.
+    tag: v0.30.0
     pullPolicy: IfNotPresent
   env:
     - name: AWS_REGION

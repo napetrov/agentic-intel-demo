@@ -1,0 +1,160 @@
+# Static fallback manifest for the System B model backend.
+#
+# When you have a forked Enterprise-Inference helm chart, prefer:
+#   APPLY=1 CHART_REPO=... CHART_REF=... \
+#     ./scripts/setup-system-b-vllm-local.sh
+#
+# This file is the alternative path: a single-file Deployment + Service
+# that you can `kubectl --context system-b apply -f` directly. It does
+# NOT cover every knob the helm chart exposes (no PVC for Hugging Face
+# cache by default; resource flags hard-coded; no metrics sidecar). It
+# IS the smallest thing that gets vLLM serving Qwen3-4B-Instruct on a
+# CPU host so System A's LiteLLM has a `fast`/`default` model alias.
+#
+# Caveats before you trust this past dry-run:
+#
+#  * Image: `vllm/vllm-openai` is a CUDA-first image. On a CPU-only host
+#    it will start but is not throughput-tuned. For Intel CPU
+#    deployments, swap `image:` to a CPU-tuned build (the chart path
+#    uses an internal IPEX-LLM image; pick whichever your environment
+#    has license + access to). Tracked as gap #7 in
+#    docs/operator-gap-analysis.md — the demo doesn't ship a public
+#    pinned CPU image.
+#
+#  * Model download: vLLM pulls weights from Hugging Face on first run.
+#    Add `HF_HOME` + a PVC if the pod restarts often, otherwise every
+#    cold start re-downloads ~8GB.
+#
+#  * NodePort 30434 mirrors what scripts/setup-system-b-vllm-local.sh
+#    publishes, so System A's `SYSTEM_B_VLLM_ENDPOINT=http://<ip>:30434/v1`
+#    works against either path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: system-b
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-config
+  namespace: system-b
+data:
+  # Tunables surfaced as env so an operator can tweak without rebuilding.
+  # Match the defaults in scripts/setup-system-b-vllm-local.sh so the two
+  # paths are interchangeable.
+  MODEL_ID: "Qwen/Qwen3-4B-Instruct-2507"
+  MAX_MODEL_LEN: "32768"
+  MAX_BATCHED_TOKENS: "1024"
+  MAX_NUM_SEQS: "64"
+  KV_CACHE_SPACE: "8"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: system-b
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  strategy:
+    # Single-replica + Recreate so we don't briefly run two model loaders
+    # competing for the same host's RAM during a rollout.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      containers:
+        - name: vllm
+          # NOTE: pin a real tag against your stand. `latest` is here so
+          # `kubectl apply` doesn't fail on a missing image — it is NOT a
+          # validated default. See the file header for context.
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --model
+            - $(MODEL_ID)
+            - --port
+            - "8000"
+            - --host
+            - 0.0.0.0
+            - --max-model-len
+            - $(MAX_MODEL_LEN)
+            - --max-num-batched-tokens
+            - $(MAX_BATCHED_TOKENS)
+            - --max-num-seqs
+            - $(MAX_NUM_SEQS)
+            - --enforce-eager
+            - --enable-auto-tool-choice
+            - --tool-call-parser
+            - hermes
+          envFrom:
+            - configMapRef:
+                name: vllm-config
+          env:
+            - name: VLLM_CPU_KVCACHE_SPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: vllm-config
+                  key: KV_CACHE_SPACE
+            - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+              value: "1"
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 40
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 600
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "16"
+              memory: "32Gi"
+            limits:
+              cpu: "32"
+              memory: "48Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: system-b
+spec:
+  selector:
+    app: vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-nodeport
+  namespace: system-b
+spec:
+  selector:
+    app: vllm
+  type: NodePort
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      # Same NodePort the helm-chart path publishes, so System A's
+      # SYSTEM_B_VLLM_ENDPOINT works regardless of which path is used.
+      nodePort: 30434

@@ -362,17 +362,23 @@ production. "Simulated" means the UX flow is shown but no real backend runs.
 ## What is still a gap
 
 - `POST /offload`, `GET /offload/{job_id}`, `GET /artifacts/{ref}` are
-  now implemented in `runtimes/control-plane/` and exercised end-to-end
+  implemented in `runtimes/control-plane/` and exercised end-to-end
   by the `tier1-scenario-slice` CI job (process-level) and by
-  `tier2-offload-smoke` (k3d-level). The control-plane is a thin relay:
-  in-memory job registry, synchronous forwarding to the offload-worker.
-  A durable registry is still TODO.
+  `tier2-offload-smoke` (k3d-level). The job registry is now durable:
+  set `JOBS_DB_PATH=/var/lib/control-plane/jobs.db` (the compose file
+  does this; dev-up.sh too) so a relay restart doesn't drop issued
+  `result_ref`s. Unset (or `:memory:`) keeps the legacy in-memory mode.
 - `POST /sessions/{id}/scale-up` has been dropped. `large_build_test` now
   runs on a statically-sized `large` session pod selected at
   `OpenClawInstance` creation time (see `docs/architecture-variants.md`,
   `local-large` variant).
-- Full session-lifecycle registry beyond the current `/sessions` stub
-  and operator-managed OpenClaw instance.
+- `LocalSessionBackend` now persists via `SESSIONS_DB_PATH` so the
+  multi-agent fan-out table survives a control-plane restart. The
+  `kube` backend reads from k8s and never needed a local cache.
+- Full operator-managed OpenClaw instance lifecycle still depends on
+  upstream pins — see `docs/operator-gap-analysis.md` gaps #1, #4, #5,
+  #7 for the four candidate pins (operator ref, runtime image, Ready
+  phase, vLLM chart).
 
 See `docs/operator-gap-analysis.md` for the active gap list.
 
@@ -384,18 +390,22 @@ Tier 2 bring-up doesn't reach Ready.
 
 | Value | Why it isn't pinned | Where to get it |
 |-------|---------------------|-----------------|
-| `OPENCLAW_OPERATOR_REF` | upstream project — pin per environment, not per repo. Leaving `main` is reproducibly unstable. Tracked as gap #1 in `docs/operator-gap-analysis.md`. | tag/SHA from `https://github.com/openclaw-rocks/openclaw-operator` releases. |
-| `OpenClawInstance.spec.image` | upstream operator publishes runtime images at `ghcr.io/openclaw-rocks/openclaw:<tag>`; the demo doesn't own the registry. Gap #4. | pick an operator-runtime tag that matches `OPENCLAW_OPERATOR_REF`. Edit `examples/openclawinstance-intel-demo.yaml` `spec.image`. |
+| `OPENCLAW_OPERATOR_REF` | upstream project. Now defaults to `v0.30.0` as a candidate (latest upstream release at repo-pin time); `scripts/install-openclaw-operator.sh` prints a "candidate ref" notice unless `OPENCLAW_OPERATOR_REF_VERIFIED=1`. Gap #1. | tag/SHA from `https://github.com/openclaw-rocks/openclaw-operator` releases. |
+| `OpenClawInstance.spec.image` | runtime image published independently from the operator binary. Now defaults to `ghcr.io/openclaw-rocks/openclaw:v0.30.0` in `examples/openclawinstance-intel-demo.yaml`. Gap #4. | pick the operator-runtime tag that matches `OPENCLAW_OPERATOR_REF`; edit the YAML in place if it diverges. |
+| `READY_JSONPATH` | upstream phase value depends on operator ref. Defaults to `{.status.phase}` and accepts `Running` (canonical for v0.30.0); set to empty to fall through to the legacy heuristic. Gap #5. | confirm via `kubectl get openclawinstance <name> -o yaml` once the controller settles. |
+| `CHART_REPO` for vLLM | upstream Enterprise-Inference fork the demo doesn't redistribute. `scripts/setup-system-b-vllm-local.sh` fails fast on `<your-org>` placeholders; the static fallback is `kubectl apply -f k8s/system-b/vllm.yaml`. Gap #7. | your fork URL + tag, OR the static manifest. |
 | `BEDROCK_MODEL_ID` / `ANTHROPIC_DEFAULT_SONNET_MODEL` | depends on which Bedrock inference profile *your* AWS account has enabled. | AWS console → Bedrock → "Inference profiles" → copy the profile id and the `arn:aws:bedrock:...:inference-profile/...` ARN. |
 | `AWS_REGION` | the region of the inference profile above. | same console step (top-right region selector). |
 | `SambaNova model id` | the demo defaults to `sambanova/DeepSeek-V3.1`; SambaNova ships and rotates models independently. | confirm against `https://api.sambanova.ai/v1/models` for your key. Adjust `model_name: sambanova` in `k8s/system-a/litellm.yaml` if needed. |
 | `SYSTEM_B_IP` | per-cluster LAN address. | `kubectl --context system-b get nodes -o wide` → `INTERNAL-IP`. |
 
-A single canonical Ready jsonpath for `OpenClawInstance` is also still
-unknown until `OPENCLAW_OPERATOR_REF` is pinned — `scripts/smoke-test-operator-instance.sh`
-falls back across `condition=Ready` and `.status.phase ∈ {Ready,Running,Active,Healthy}`
-until then. Override via `READY_JSONPATH` once you know the canonical
-shape for your pinned ref.
+A single canonical Ready jsonpath for `OpenClawInstance` is now baked
+into `scripts/smoke-test-operator-instance.sh` (`READY_JSONPATH` defaults
+to `{.status.phase}`, with `Running` as the canonical Ready value for
+upstream v0.30.0). Set `READY_JSONPATH=` (empty) to fall through to the
+legacy `condition=Ready` + `.status.phase ∈ {Ready,Running,Active,Healthy}`
+heuristic, or override `READY_JSONPATH` to a different shape if you bump
+to a ref that surfaces Ready elsewhere.
 
 ## Recovery playbook (Tier 2)
 

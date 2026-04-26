@@ -127,6 +127,13 @@ services:
       OPENCLAW_GATEWAY_URL: ${OPENCLAW_GATEWAY_URL:-http://agent-stub:8080}
       LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
       SAMBANOVA_PROBE_URL: ${SAMBANOVA_PROBE_URL:-}
+      # Durable registry paths — the volume below maps to /var/lib/control-plane
+      # so a compose restart preserves issued result_refs and the
+      # /sessions table. Override JOBS_DB_PATH=:memory: to opt out.
+      JOBS_DB_PATH: /var/lib/control-plane/jobs.db
+      SESSIONS_DB_PATH: /var/lib/control-plane/sessions.db
+    volumes:
+      - control-plane-data:/var/lib/control-plane
     depends_on:
       offload-worker:
         condition: service_healthy
@@ -158,3 +165,4 @@ services:
 
 volumes:
   minio-data:
+  control-plane-data:

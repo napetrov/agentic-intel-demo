@@ -32,14 +32,16 @@ INSTANCE_MANIFEST="${INSTANCE_MANIFEST:-$REPO_ROOT/examples/openclawinstance-int
 OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-openclaw-operator-system}"
 OPERATOR_DEPLOYMENT="${OPERATOR_DEPLOYMENT:-deploy/openclaw-operator-controller-manager}"
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-300}"
-# When set, READY_JSONPATH is the canonical short-circuit Ready check for
-# the pinned operator ref. The script polls
-# `kubectl get openclawinstance ... -o jsonpath=$READY_JSONPATH` and
-# treats the value as Ready when it matches a Ready-ish enum
-# (Ready/Running/Active/Healthy/True). Leave unset to use the heuristic
-# that scans condition=Ready then `.status.phase`. Tracked as gap #5 in
-# docs/operator-gap-analysis.md.
-READY_JSONPATH="${READY_JSONPATH:-}"
+# Canonical Ready signal for the pinned operator ref. The upstream
+# controller emits .status.phase=Running while an OpenClawInstance is
+# healthy (other phases: Pending/Provisioning/Updating/BackingUp/
+# Degraded/Failed/Terminating); the Ready condition is True during
+# Running. Defaulting READY_JSONPATH to `{.status.phase}` short-circuits
+# the heuristic for the pinned ref while still letting an operator
+# override the path for a different upstream version. Set to the empty
+# string to fall through to the legacy condition=Ready+phase fallback.
+# Tracked as gap #5 in docs/operator-gap-analysis.md.
+READY_JSONPATH="${READY_JSONPATH-{.status.phase}}"
 PROBE_GATEWAY="${PROBE_GATEWAY:-0}"
 KEEP="${KEEP:-0}"
 APPLY="${APPLY:-0}"
@@ -154,6 +156,8 @@ if [ "$APPLY" = "1" ]; then
       -l "openclaw.rocks/instance=$INSTANCE_NAME" >&2 || true
     exit 1
   fi
+elif [ -n "$READY_JSONPATH" ]; then
+  echo "+ $KUBECTL get openclawinstance $INSTANCE_NAME -n $INSTANCE_NAMESPACE -o jsonpath=$READY_JSONPATH  (poll until ∈ {Running,Ready,Active,Healthy,True})"
 else
   echo "+ $KUBECTL wait --for=condition=Ready --timeout=${READY_TIMEOUT_SECONDS}s openclawinstance/$INSTANCE_NAME -n $INSTANCE_NAMESPACE"
 fi
