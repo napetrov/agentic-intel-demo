@@ -2,3 +2,9 @@ fastapi==0.115.12
 uvicorn[standard]==0.34.2
 httpx==0.28.1
 boto3==1.37.38
+# Used by session_manager.KubeSessionBackend when SESSION_BACKEND=kube.
+# Imported lazily so the docker-compose path (SESSION_BACKEND=local, the
+# default) doesn't pull this onto the import path until you actually
+# select the kube backend.
+kubernetes==32.0.1
+PyYAML==6.0.2

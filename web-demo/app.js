@@ -1269,6 +1269,265 @@ applyIdle();
 probeBackend();
 setInterval(probeBackend, 15_000);
 
+// ---------- Multi-agent fan-out ----------
+//
+// Owns the "Spawn N sessions" panel. The control plane decides whether
+// each session is a real k8s Job (kube backend) or an in-memory
+// simulation (local backend); the panel reports the backend so demo
+// viewers know what they're watching.
+//
+// Polling: while any session is non-terminal we refresh every 1s; once
+// they all settle we slow to 5s (still useful for the operator if they
+// trigger another spawn). Polling is paused when the panel isn't visible
+// and stopped entirely when the page unloads.
+
+const multiSessionPanel = document.getElementById('multi-session-panel');
+const multiSessionForm = document.getElementById('multi-session-form');
+const multiSessionScenario = document.getElementById('multi-session-scenario');
+const multiSessionProfile = document.getElementById('multi-session-profile');
+const multiSessionCount = document.getElementById('multi-session-count');
+const multiSessionSpawn = document.getElementById('multi-session-spawn');
+const multiSessionStatus = document.getElementById('multi-session-status');
+const multiSessionSummary = document.getElementById('multi-session-summary');
+const multiSessionRows = document.getElementById('multi-session-rows');
+const multiSessionBackend = document.getElementById('multi-session-backend');
+const multiSessionRefresh = document.getElementById('multi-session-refresh');
+const multiSessionClear = document.getElementById('multi-session-clear');
+
+// Tracks the session_ids this browser session asked the backend to
+// spawn. The control plane shows ALL sessions, but the table only shows
+// ones we created so two demo viewers don't crowd each other's tables.
+//
+// `hasSpawnedHere` flips true the first time this tab spawns anything
+// and stays true forever after. Without this flag, "Clear list" would
+// empty trackedSessionIds and the next refresh would flip back to
+// "show all sessions" — which in a shared demo immediately repopulates
+// the table with whatever other viewers are doing, defeating the
+// per-tab isolation.
+const trackedSessionIds = new Set();
+let hasSpawnedHere = false;
+const TERMINAL_STATUSES = new Set(['Completed', 'Failed']);
+
+let multiSessionPollTimer = null;
+let multiSessionPolling = false;
+
+function setMultiSessionStatus(text, kind) {
+  if (!multiSessionStatus) return;
+  multiSessionStatus.textContent = text || '';
+  multiSessionStatus.dataset.kind = kind || '';
+}
+
+function formatAge(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  if (seconds < 60) return `${seconds.toFixed(0)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}m${s.toString().padStart(2, '0')}s`;
+}
+
+function renderMultiSessionRows(records) {
+  if (!multiSessionRows) return;
+  if (!records.length) {
+    multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="7">No sessions yet. Spawn some above.</td></tr>';
+    return;
+  }
+  const now = Date.now() / 1000;
+  multiSessionRows.innerHTML = records
+    .map((rec) => {
+      const age = formatAge(now - (rec.created_at || now));
+      const podOrJob = rec.pod_name || rec.job_name || '—';
+      const statusClass = `status-${(rec.status || 'unknown').toLowerCase()}`;
+      // Don't show a Delete button for already-terminal rows — it works
+      // (returns 404 if the backend GC'd it), but adds noise.
+      const canDelete = !TERMINAL_STATUSES.has(rec.status);
+      const deleteBtn = canDelete
+        ? `<button class="ghost small multi-session-del" data-session-id="${escapeHtml(rec.session_id)}" type="button">Delete</button>`
+        : '';
+      return `
+        <tr>
+          <td><code>${escapeHtml(rec.session_id)}</code></td>
+          <td>${escapeHtml(rec.scenario || '—')}</td>
+          <td>${escapeHtml(rec.profile || '—')}</td>
+          <td><span class="session-status ${statusClass}">${escapeHtml(rec.status || '—')}</span></td>
+          <td><code>${escapeHtml(podOrJob)}</code></td>
+          <td>${escapeHtml(age)}</td>
+          <td>${deleteBtn}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderMultiSessionSummary(records, backend) {
+  if (!multiSessionSummary) return;
+  if (!records.length) {
+    multiSessionSummary.hidden = true;
+    return;
+  }
+  const counts = {};
+  records.forEach((r) => {
+    counts[r.status] = (counts[r.status] || 0) + 1;
+  });
+  const parts = Object.entries(counts).map(
+    ([status, n]) => `<span class="status-pill status-${status.toLowerCase()}">${escapeHtml(status)}: ${n}</span>`
+  );
+  multiSessionSummary.innerHTML = `
+    <span class="multi-session-summary-label">Backend: <code>${escapeHtml(backend || 'unknown')}</code></span>
+    <span class="multi-session-summary-label">Tracked: ${records.length}</span>
+    ${parts.join('')}
+  `;
+  multiSessionSummary.hidden = false;
+}
+
+async function refreshMultiSession() {
+  if (multiSessionPolling) return; // Avoid overlap if a poll is in flight.
+  multiSessionPolling = true;
+  try {
+    const body = await fetchJson(`${API_BASE}/sessions`, { timeoutMs: 5000 });
+    const all = Array.isArray(body && body.sessions) ? body.sessions : [];
+    if (multiSessionBackend) {
+      multiSessionBackend.textContent = `backend: ${body.backend || 'unknown'}`;
+    }
+    // Filter to sessions this tab tracks. The flag (not the set's
+    // current size) gates this: once a tab has spawned anything, it
+    // stays in "show only mine" mode even after Clear list, otherwise a
+    // shared demo would re-show every other viewer's sessions on the
+    // very next refresh.
+    const records = hasSpawnedHere
+      ? all.filter((r) => trackedSessionIds.has(r.session_id))
+      : all;
+    renderMultiSessionRows(records);
+    renderMultiSessionSummary(records, body.backend);
+
+    // Slow polling once everything settles; speed back up when a new
+    // batch is in flight.
+    const anyPending = records.some((r) => !TERMINAL_STATUSES.has(r.status));
+    scheduleMultiSessionPoll(anyPending ? 1000 : 5000);
+  } catch (err) {
+    if (multiSessionBackend) multiSessionBackend.textContent = 'backend: unreachable';
+    setMultiSessionStatus(`Session list fetch failed: ${err.message}`, 'error');
+    scheduleMultiSessionPoll(5000);
+  } finally {
+    multiSessionPolling = false;
+  }
+}
+
+function scheduleMultiSessionPoll(ms) {
+  if (multiSessionPollTimer) clearTimeout(multiSessionPollTimer);
+  multiSessionPollTimer = setTimeout(() => {
+    multiSessionPollTimer = null;
+    refreshMultiSession();
+  }, ms);
+}
+
+async function spawnSessionBatch(scenario, profile, count) {
+  setMultiSessionStatus(`Submitting ${count} × ${scenario} (${profile})…`, 'pending');
+  multiSessionSpawn.disabled = true;
+  const originalLabel = multiSessionSpawn.textContent;
+  multiSessionSpawn.textContent = 'Submitting…';
+  try {
+    const body = await fetchJson(`${API_BASE}/sessions/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario, profile, count }),
+      timeoutMs: 30_000,
+    });
+    const created = Array.isArray(body && body.sessions) ? body.sessions : [];
+    created.forEach((rec) => trackedSessionIds.add(rec.session_id));
+    if (created.length) hasSpawnedHere = true;
+    const errored = body && body.by_status && body.by_status._error;
+    if (errored) {
+      // Backend now serializes the failure reason on `body.error` so the
+      // user doesn't have to dig through server logs to find out why the
+      // batch was partial. Fall back to the older "see server logs" text
+      // when the field isn't present (older control-plane build).
+      const reason = body && body.error ? `: ${body.error}` : '. See server logs.';
+      setMultiSessionStatus(
+        `Spawned ${created.length} (partial — backend bailed before reaching ${count})${reason}`,
+        'warn'
+      );
+    } else {
+      setMultiSessionStatus(
+        `Spawned ${created.length} session${created.length === 1 ? '' : 's'} on backend "${body.backend}".`,
+        'ok'
+      );
+    }
+    refreshMultiSession();
+  } catch (err) {
+    setMultiSessionStatus(`Spawn failed: ${err.message}`, 'error');
+  } finally {
+    multiSessionSpawn.disabled = false;
+    multiSessionSpawn.textContent = originalLabel;
+  }
+}
+
+if (multiSessionForm) {
+  multiSessionForm.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const scenario = multiSessionScenario.value;
+    const profile = multiSessionProfile.value;
+    const count = Math.max(1, Math.min(50, parseInt(multiSessionCount.value, 10) || 1));
+    spawnSessionBatch(scenario, profile, count);
+  });
+}
+
+if (multiSessionRefresh) {
+  multiSessionRefresh.addEventListener('click', () => refreshMultiSession());
+}
+
+if (multiSessionClear) {
+  multiSessionClear.addEventListener('click', async () => {
+    // Issue DELETEs for everything we currently track. Errors are
+    // tolerated — the backend may have already GC'd a finished session,
+    // and a 404 is a successful no-op from the user's perspective.
+    const ids = Array.from(trackedSessionIds);
+    setMultiSessionStatus(`Deleting ${ids.length} tracked session${ids.length === 1 ? '' : 's'}…`, 'pending');
+    await Promise.allSettled(
+      ids.map((sid) =>
+        fetchJson(`${API_BASE}/sessions/${encodeURIComponent(sid)}`, {
+          method: 'DELETE',
+          timeoutMs: 5000,
+        }).catch(() => null)
+      )
+    );
+    trackedSessionIds.clear();
+    setMultiSessionStatus('Tracked sessions cleared.', 'ok');
+    refreshMultiSession();
+  });
+}
+
+if (multiSessionRows) {
+  // Event-delegation so per-row Delete buttons don't need to be rebound
+  // on every render.
+  multiSessionRows.addEventListener('click', async (ev) => {
+    const target = ev.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.classList.contains('multi-session-del')) return;
+    const sid = target.dataset.sessionId;
+    if (!sid) return;
+    target.disabled = true;
+    target.textContent = 'Deleting…';
+    try {
+      await fetchJson(`${API_BASE}/sessions/${encodeURIComponent(sid)}`, {
+        method: 'DELETE',
+        timeoutMs: 5000,
+      });
+      trackedSessionIds.delete(sid);
+      refreshMultiSession();
+    } catch (err) {
+      setMultiSessionStatus(`Delete ${sid} failed: ${err.message}`, 'error');
+      target.disabled = false;
+      target.textContent = 'Delete';
+    }
+  });
+}
+
+// Kick off the poll loop. refreshMultiSession() schedules the next tick,
+// so we don't need a setInterval here.
+if (multiSessionPanel) {
+  refreshMultiSession();
+}
+
 // ---------- Optional service launchers ----------
 //
 // Three layers of "off":

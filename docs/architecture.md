@@ -80,6 +80,51 @@ This is a deliberately thin relay: jobs are kept in memory and forwarded
 synchronously. A durable registry is still TODO. Deployed in k8s via
 `k8s/system-a/control-plane-offload.yaml`.
 
+### Sessions API — multi-agent fan-out
+
+The control plane also owns session lifecycle so the demo can show many
+agents running concurrently instead of one at a time. Each session maps
+1:1 to one running agent workload; in the k8s deployment the backing
+object is a `batch/v1.Job`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/sessions` | create one session: `{scenario, profile?, session_id?}` → `SessionResponse` |
+| `POST` | `/sessions/batch` | create N sessions in one call: `{scenario, profile?, count}`. Capped by `SESSION_BATCH_MAX` (default 50) |
+| `GET` | `/sessions` | list all sessions + `by_status` summary |
+| `GET` | `/sessions/{id}` | poll one session |
+| `DELETE` | `/sessions/{id}` | request termination (k8s: foreground-propagation Job delete) |
+| `GET` | `/sessions/profiles` | available pod profiles (small / medium / large) |
+
+Backend selection is env-driven (`SESSION_BACKEND`):
+
+* `local` (default for docker-compose / `scripts/dev-up.sh`) — in-memory
+  state-machine simulator. Sessions move `Pending → Running → Completed`
+  on a wall-clock timer; no real Pods are created. The "Multi-agent
+  fan-out" panel in the web UI and `scripts/load-simulate.sh` both work
+  against this backend, so the multi-session demo runs without k8s.
+* `kube` (k8s deployment) — `KubeSessionBackend` creates one
+  `batch/v1.Job` per session from the `session-job-template` ConfigMap
+  (`k8s/system-a/session-job-template.yaml`). Resource requests come
+  from the named profile (`config/pod-profiles/profiles.yaml`, mirrored
+  in `session_manager.PROFILES`). Job condition `Complete=True` /
+  `Failed=True` map directly to the response `status` field.
+  `ttlSecondsAfterFinished` lets k8s GC finished sessions so the
+  namespace doesn't accumulate Pods after a load demo.
+
+The kube backend requires the additional RBAC verbs in
+`k8s/system-a/rbac.yaml` (`batch/jobs` + `configmaps:get`); the
+`kubernetes` Python package is added to `requirements.txt` but only
+imported when `SESSION_BACKEND=kube`, so the local backend stays
+dependency-free.
+
+Capacity utilisation: the offload-worker (System B) is the shared
+backend that all sessions hit when they call `/offload`. With
+`k8s/system-b/offload-worker-hpa.yaml` it scales between 1 and 12
+replicas based on CPU utilisation (target 60%), so a 20-session
+load-simulator burst can actually exercise multi-replica behaviour
+instead of queueing on a single worker.
+
 ### Internal modules
 - **Session Manager** — pod create/delete, status, session registry
 - **Pod Profile Resolver** — maps task type to pod profile

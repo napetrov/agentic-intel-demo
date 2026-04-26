@@ -35,8 +35,18 @@ spec:
           env:
             - name: AGENTS_NAMESPACE
               value: agents
+            # Selects KubeSessionBackend: every /sessions create becomes
+            # a real batch/v1.Job in the agents namespace. Set to "local"
+            # to fall back to the in-memory simulator (useful for
+            # debugging the API surface without spinning up real Pods).
+            - name: SESSION_BACKEND
+              value: kube
             - name: SESSION_TEMPLATE_CONFIGMAP
-              value: session-pod-template
+              value: session-job-template
+            # Optional override; leave unset to inherit the image
+            # baked into the session-job-template ConfigMap.
+            - name: SESSION_IMAGE
+              value: ${SESSION_IMAGE}
             - name: SYSTEM_B_KUBECONFIG
               value: /etc/system-b/kubeconfig
             - name: MINIO_ENDPOINT

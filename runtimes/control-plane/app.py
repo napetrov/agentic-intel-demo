@@ -25,8 +25,24 @@ from urllib.parse import urlsplit, urlunsplit
 import boto3
 import httpx
 from botocore.client import Config as BotoConfig
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
+
+# Ensure sibling modules in this directory resolve when app.py is loaded
+# via importlib (the test suite does this so it can import app.py without
+# making runtimes/control-plane an installable package).
+import sys as _sys
+from pathlib import Path as _Path
+_HERE = _Path(__file__).resolve().parent
+if str(_HERE) not in _sys.path:
+    _sys.path.insert(0, str(_HERE))
+
+from session_manager import (  # noqa: E402  (after sys.path tweak)
+    DEFAULT_PROFILE,
+    PROFILES,
+    SessionBackend,
+    make_backend,
+)
 
 app = FastAPI(title="demo-control-plane", version="0.1.0")
 logger = logging.getLogger("control-plane")
@@ -307,6 +323,231 @@ def get_offload(job_id: str) -> OffloadStatus:
         if not entry:
             raise HTTPException(status_code=404, detail=f"unknown job_id {job_id}")
         return OffloadStatus(**entry)
+
+
+# ---------------------------------------------------------------------------
+# Sessions API — multi-agent fan-out
+# ---------------------------------------------------------------------------
+#
+# Each session is one running agent workload. In the k8s deployment the
+# backend creates a batch/v1.Job per session; in the docker-compose / dev-up
+# path it simulates the same lifecycle in-memory. Either way the wire
+# contract is identical so the web UI doesn't need to know which is in
+# use. See session_manager.py for the backend implementations.
+#
+# Routes:
+#   POST   /sessions             create one session
+#   POST   /sessions/batch       create N sessions in one call (load demo)
+#   GET    /sessions             list all sessions
+#   GET    /sessions/{id}        poll one session
+#   DELETE /sessions/{id}        request termination
+
+# Hard cap on a single batch create so a runaway browser tab can't DoS the
+# backend by asking for ten thousand Jobs at once. The local backend stores
+# everything in-memory, so a generous-but-bounded ceiling keeps RAM finite.
+SESSION_BATCH_MAX = int(os.environ.get("SESSION_BATCH_MAX", "50"))
+
+# Build the backend once at import time. Failures here propagate to the
+# uvicorn startup so the operator sees them in the deployment logs instead
+# of getting a confusing 500 on the first /sessions call.
+_session_backend: SessionBackend = make_backend()
+logger.info("session backend: %s", _session_backend.name)
+
+
+# K8s DNS-1035 labels (used for Job names) cap at 63 chars; KubeSessionBackend
+# appends "-job" (4 chars) to session_id when forming the Job name, so the
+# bound here is 59. `scenario` becomes a label value (max 63 chars). These
+# limits matter even when SESSION_BACKEND=local: a request that succeeds
+# locally should also succeed against the kube backend, otherwise demo
+# viewers hit an inconsistency the moment they switch backends.
+_K8S_LABEL_MAX = 63
+_SESSION_ID_MAX = _K8S_LABEL_MAX - len("-job")  # 59
+
+
+class SessionCreateRequest(BaseModel):
+    scenario: str = Field(min_length=1, max_length=_K8S_LABEL_MAX)
+    profile: str = Field(default=DEFAULT_PROFILE)
+    session_id: Optional[str] = Field(default=None, max_length=_SESSION_ID_MAX)
+
+
+class SessionBatchRequest(BaseModel):
+    # No session_id field on batch — ids are auto-generated, and the
+    # generator (sess- + 10 hex chars) is well under the limit.
+    scenario: str = Field(min_length=1, max_length=_K8S_LABEL_MAX)
+    profile: str = Field(default=DEFAULT_PROFILE)
+    # gt=0: zero sessions is a no-op the client could just not send.
+    count: int = Field(gt=0)
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    scenario: str
+    profile: str
+    status: str
+    created_at: float
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
+    pod_name: Optional[str] = None
+    job_name: Optional[str] = None
+    backend: str
+    cpu_request: Optional[str] = None
+    memory_request: Optional[str] = None
+    message: Optional[str] = None
+
+
+class SessionListResponse(BaseModel):
+    backend: str
+    total: int
+    by_status: dict[str, int]
+    sessions: list[SessionResponse]
+    # Populated by /sessions/batch when the loop bails early so the
+    # caller learns *why* the batch was partial (kube quota, RBAC,
+    # transient API outage, etc.) instead of just seeing `_error: 1`
+    # in by_status. Always None for full-success responses and for
+    # /sessions (list).
+    error: Optional[str] = None
+
+
+def _record_to_response(rec) -> SessionResponse:
+    return SessionResponse(**rec.to_public())
+
+
+@app.get("/sessions/profiles")
+def list_profiles() -> dict[str, Any]:
+    """Resource specs the /sessions endpoint accepts. Surfaced so the web
+    UI can render the profile picker without hard-coding the table."""
+    return {
+        "default": DEFAULT_PROFILE,
+        "profiles": PROFILES,
+    }
+
+
+@app.post("/sessions", response_model=SessionResponse, status_code=201)
+def create_session(req: SessionCreateRequest) -> SessionResponse:
+    if req.profile not in PROFILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
+        )
+    try:
+        rec = _session_backend.create(
+            scenario=req.scenario,
+            profile=req.profile,
+            session_id=req.session_id,
+        )
+    except ValueError as exc:
+        # Duplicate session_id and unknown-profile both surface here.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # Backend-side failures (kube API errors, missing template).
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _record_to_response(rec)
+
+
+@app.post("/sessions/batch", response_model=SessionListResponse, status_code=201)
+def create_session_batch(
+    req: SessionBatchRequest, response: Response
+) -> SessionListResponse:
+    """Create N sessions in one shot. Used by the load-simulator and the
+    "Spawn N concurrent sessions" panel in the web UI. Each session gets
+    its own auto-generated id.
+
+    Status codes:
+      201 — every requested session was created
+      207 — partial success: some sessions created, then the loop bailed.
+            Body still carries the successfully-created sessions plus an
+            `_error: 1` marker in `by_status` so the caller can clean up.
+            207 (rather than 201) so HTTP-status-only callers (curl,
+            shell scripts, automation) don't treat partial as success.
+      502 — total failure: zero sessions were created. Returned as a
+            JSON body so the caller learns *why* (vs a bare HTTPException
+            stripping context).
+    """
+    if req.count > SESSION_BATCH_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"count {req.count} exceeds SESSION_BATCH_MAX={SESSION_BATCH_MAX}",
+        )
+    if req.profile not in PROFILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
+        )
+    created = []
+    error: Optional[str] = None
+    for _ in range(req.count):
+        try:
+            rec = _session_backend.create(scenario=req.scenario, profile=req.profile)
+        except (ValueError, RuntimeError) as exc:
+            error = str(exc)
+            break
+        created.append(rec)
+    by_status = _summarize_status(created)
+    if error is not None:
+        # Mark partial failure in both the body (for the JS client which
+        # already inspects `_error`) and the HTTP status (for clients
+        # that only check status). Total failure becomes a hard 502 so
+        # `curl -f` and similar tooling exit non-zero.
+        by_status = {**by_status, "_error": 1}
+        response.status_code = 502 if not created else 207
+    return SessionListResponse(
+        backend=_session_backend.name,
+        total=len(created),
+        by_status=by_status,
+        sessions=[_record_to_response(r) for r in created],
+        error=error,
+    )
+
+
+def _summarize_status(records) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for r in records:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    return counts
+
+
+@app.get("/sessions", response_model=SessionListResponse)
+def list_sessions() -> SessionListResponse:
+    try:
+        records = _session_backend.list()
+    except RuntimeError as exc:
+        # KubeSessionBackend translates kube ApiException to RuntimeError;
+        # surfacing as 502 keeps the read-side error contract aligned with
+        # POST /sessions.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return SessionListResponse(
+        backend=_session_backend.name,
+        total=len(records),
+        by_status=_summarize_status(records),
+        sessions=[_record_to_response(r) for r in records],
+    )
+
+
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
+def get_session(session_id: str) -> SessionResponse:
+    try:
+        rec = _session_backend.get(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"unknown session {session_id!r}")
+    return _record_to_response(rec)
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: str) -> dict[str, str]:
+    try:
+        deleted = _session_backend.delete(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"unknown session {session_id!r}")
+    return {"session_id": session_id, "status": "deleting"}
+
+
+# ---------------------------------------------------------------------------
+# Artifacts (existing offload code resumes here)
+# ---------------------------------------------------------------------------
 
 
 @app.get("/artifacts/{ref:path}", response_model=ArtifactRef)

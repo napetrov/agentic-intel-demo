@@ -1,0 +1,59 @@
+# HorizontalPodAutoscaler for the offload-worker.
+#
+# Why this exists: with one Job per session (System A), every running
+# session that calls /offload lands on the shared offload-worker pool
+# (System B). At a single replica that pool is the bottleneck — the
+# whole point of fanning out sessions is to also fan out the work they
+# generate. The HPA scales the worker between 1 and 12 replicas based
+# on observed CPU vs request, so a load demo that starts 20 sessions
+# can actually exercise multi-replica behavior.
+#
+# CPU-based instead of queue-depth-based because the worker holds no
+# durable queue — task lifetime is request-lifetime. A future revision
+# that introduces Redis/JetStream should switch to a custom metric
+# (queue depth or in-flight tasks) for tighter coupling.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: offload-worker
+  namespace: system-b
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: offload-worker
+  minReplicas: 1
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          # 60% leaves headroom for short bursts before the HPA reacts;
+          # tighter targets cause flapping at the demo's bursty load
+          # pattern.
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      # Scale fast on burst — load-simulator can submit 20 sessions in
+      # under a second and we want replicas to follow within a stabilization
+      # window, not a minute later.
+      stabilizationWindowSeconds: 15
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      # Slow scale-down so a brief lull between demo runs doesn't churn
+      # replicas. 5min is long enough to cover the gap between two
+      # back-to-back walkthroughs.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
