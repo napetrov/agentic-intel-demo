@@ -59,6 +59,20 @@ tier1-scenario-slice: ## Tier 1: run the CI scenario-slice (control-plane offloa
 SYSTEM_A_KUBECTL ?= kubectl --context system-a
 SYSTEM_B_KUBECTL ?= kubectl --context system-b
 
+.PHONY: tier2-preflight
+tier2-preflight: ## Tier 2: workstation preflight (kubectl/contexts/API/CRD; read-only)
+	./scripts/check-tier2-environment.sh
+
+.PHONY: tier2-secrets-verify
+tier2-secrets-verify: ## Tier 2: verify Secrets exist with the expected keys (no values read)
+	SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" SYSTEM_B_KUBECTL="$(SYSTEM_B_KUBECTL)" \
+	  ./scripts/verify-operator-secrets.sh
+
+.PHONY: tier2-logs
+tier2-logs: ## Tier 2: tail logs for every component (or pass WHICH=operator|session|gateway|litellm|vllm|offload|minio)
+	SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" SYSTEM_B_KUBECTL="$(SYSTEM_B_KUBECTL)" \
+	  ./scripts/check-tier2-logs.sh $(WHICH)
+
 .PHONY: tier2-secrets-system-a
 tier2-secrets-system-a: ## Tier 2: render System A Secrets from env (APPLY=1 to apply)
 	APPLY=$(APPLY) SCOPE=system-a KUBECTL="$(SYSTEM_A_KUBECTL)" \
@@ -92,6 +106,16 @@ tier2-instance-apply: ## Tier 2: apply examples/openclawinstance-intel-demo.yaml
 tier2-smoke: ## Tier 2: smoke-test the operator instance lifecycle on system-a (APPLY=1 to actually run)
 	APPLY=$(APPLY) KUBECTL="$(SYSTEM_A_KUBECTL)" \
 	  ./scripts/smoke-test-operator-instance.sh
+
+.PHONY: tier2-demo-task-smoke
+tier2-demo-task-smoke: ## Tier 2: smoke-test the live demo task (gateway/litellm/telegram-config; APPLY=1 to actually run)
+	APPLY=$(APPLY) SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" \
+	  ./scripts/smoke-test-demo-task.sh
+
+.PHONY: tier2-offload-smoke
+tier2-offload-smoke: ## Tier 2: smoke-test the System A → System B offload roundtrip (APPLY=1 to actually run)
+	APPLY=$(APPLY) SYSTEM_A_KUBECTL="$(SYSTEM_A_KUBECTL)" \
+	  ./scripts/smoke-test-offload-k8s.sh
 
 .PHONY: tier2-teardown
 tier2-teardown: ## Tier 2: operator-owned teardown of the demo OpenClawInstance on system-a (APPLY=1 to apply)

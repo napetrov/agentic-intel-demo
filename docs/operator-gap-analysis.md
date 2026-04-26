@@ -122,11 +122,20 @@ shared source of truth between docs and the smoke test. Bumping the
 operator ref may shift this; re-verify before promoting.
 
 ### 6. Old raw control-plane path still dominates repo structure
-Status: open
+Status: closed
 
-What is missing:
-- docs and scripts should stop presenting raw pod/control-plane creation as the main path
-- repo structure should make operator-first flow obvious
+The repo now treats `openclaw-operator` as the canonical lifecycle:
+- `README.md` "Recommended first slice" leads with the operator path; the
+  `docker compose` / `dev-up.sh` Tier 1 stack is now explicitly labelled as
+  *local dev/smoke only*, not the demo path.
+- `docs/runbooks/tier2-bring-up.md` is the canonical bring-up checklist
+  (preflight → secrets → System B → System A → operator → instance →
+  Telegram → demo task → logs).
+- The previous raw `legacy/` and `scripts/legacy/` trees are removed.
+
+`runtimes/control-plane/` is retained as the offload relay (it implements
+`POST /offload` / `GET /artifacts/{ref}`) — the operator manages session
+lifecycle, the control-plane only relays offload tasks to System B.
 
 ### 7. vLLM helm chart is not pinned in the repo
 Status: open

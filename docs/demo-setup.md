@@ -1,8 +1,12 @@
 # Demo Setup — Tiered Bring-up
 
-This repo supports three distinct bring-up tiers. Pick the smallest tier
-that demonstrates what you need; each higher tier adds real services at the
-cost of more environment requirements.
+This repo supports three distinct bring-up tiers. **Tier 2 is the
+shipped demo path** — operator-first, two-system k8s with Telegram and
+real model serving. Tier 0 and Tier 1 are *local dev/smoke* only: they
+exercise narrative (Tier 0) or the offload relay (Tier 1) without
+running OpenClaw, LiteLLM, vLLM, or Telegram. If you are reproducing
+the demo for an audience, jump straight to Tier 2 — start with the
+canonical runbook in `docs/runbooks/tier2-bring-up.md`.
 
 All tiers share the same logical architecture (System A orchestrates,
 System B executes offload). What differs is how much of that architecture
@@ -10,13 +14,17 @@ is real vs. simulated.
 
 ## Tier summary
 
-| Tier | What runs | Needs | Verifies |
-|------|-----------|-------|----------|
-| 0 — Web simulation | static HTML/CSS/JS in `web-demo/` | any machine with Python or Docker | scenario flow, UX, narrative |
-| 1 — Local services | `control-plane` + `offload-worker` + MinIO | Docker on one machine | full scenario slice: `POST /offload` → `/run` → MinIO artifact |
-| 2 — Two-system k8s + operator | full stack: `openclaw-operator`, LiteLLM, vLLM, MinIO, offload-worker, control-plane | two Intel CPU machines with k3s, Telegram bot | the full demo as shipped |
+| Tier | Purpose | What runs | Needs | Verifies |
+|------|---------|-----------|-------|----------|
+| 0 — Web simulation | dev/smoke (narrative only) | static HTML/CSS/JS in `web-demo/` | any machine with Python or Docker | scenario flow, UX, narrative |
+| 1 — Local services | dev/smoke (offload relay only) | `control-plane` + `offload-worker` + MinIO | Docker on one machine | full scenario slice: `POST /offload` → `/run` → MinIO artifact |
+| 2 — Two-system k8s + operator | **shipped demo path** | full stack: `openclaw-operator`, LiteLLM, vLLM, MinIO, offload-worker, control-plane | two Intel CPU machines with k3s, Telegram bot | the full demo as shipped |
 
 ## Tier 0 — Web simulation
+
+> **Tier 0 is dev/smoke only**, not the demo path. Use it to walk through
+> the scenario narrative without compute. For the shipped demo path see
+> `docs/runbooks/tier2-bring-up.md`.
 
 **Goal:** show the demo narrative and scenario flow without any real compute
 or Kubernetes.
@@ -59,6 +67,12 @@ the backend.
 > backend mode — Tier 0 falls back to the scripted walkthrough.
 
 ## Tier 1 — Local services
+
+> **Tier 1 is dev/smoke only**, not the demo path. It exists to test the
+> offload-relay implementation locally; an audience watching this stack
+> sees the offload roundtrip but no Telegram, no OpenClaw, no LiteLLM,
+> no vLLM. For the shipped demo path see
+> `docs/runbooks/tier2-bring-up.md`.
 
 **Goal:** exercise the System A → System B offload path end-to-end —
 control-plane relay, offload worker, and MinIO artifact storage — on one
@@ -171,6 +185,11 @@ to two-system k8s setup.
 
 ## Tier 2 — Two-system k8s + operator
 
+> **Tier 2 is the shipped demo path.** This section is the deep
+> reference for individual steps; the canonical end-to-end runbook
+> (preflight → secrets → System B → System A → operator → instance
+> → Telegram → demo task → logs) is `docs/runbooks/tier2-bring-up.md`.
+
 **Goal:** the full architecture: operator-managed OpenClaw instance on
 System A, LiteLLM routing, vLLM on System B, MinIO, offload worker,
 Telegram ingress.
@@ -188,11 +207,20 @@ Telegram ingress.
 - Merged kubeconfig with contexts `system-a` and `system-b`.
 - Telegram bot token + allowed-user id (see "Telegram bring-up" below).
 - Bedrock access (region + bearer token + inference profile ARN) for
-  the `reasoning` alias, and/or a SambaNova API key for the `sambanova`
-  alias. `k8s/system-a/litellm.yaml` maps `reasoning` → Bedrock Claude
-  Sonnet and `sambanova` → SambaNova DeepSeek; provision each key
-  against the alias it actually serves. SambaNova-specific notes live
-  in `docs/sambanova-integration.md`.
+  the `reasoning` alias is **required** — the shipped
+  `OpenClawInstance` defaults the agent's primary model to Bedrock
+  Claude Sonnet.
+- A SambaNova API key for the `sambanova` alias is **optional**: leave
+  `SAMBANOVA_API_KEY` empty (or unset) and the alias surfaces as
+  `unconfigured`. The demo's golden path (terminal + market research)
+  doesn't require it. To validate end-to-end when you DO use it, run
+  `scripts/test-sambanova-direct.sh` against `api.sambanova.ai/v1` and
+  `scripts/test-litellm-sambanova.sh` against the LiteLLM alias once
+  System A is up. SambaNova-specific notes live in
+  `docs/sambanova-integration.md`.
+- `k8s/system-a/litellm.yaml` maps `reasoning` → Bedrock Claude Sonnet
+  and `sambanova` → SambaNova DeepSeek; provision each key against
+  the alias it actually serves.
 - A reachable upstream `openclaw-operator` ref pinned via
   `OPENCLAW_OPERATOR_REF`.
 - `envsubst` (from the `gettext` package) on the deploy workstation —
@@ -263,6 +291,15 @@ allow-lists exactly one numeric Telegram user id via
 The exact list of values you need to gather first
 (`OPENCLAW_OPERATOR_REF`, `BEDROCK_MODEL_ID`, `SYSTEM_B_IP`, …)
 lives in `docs/reproducibility.md` under "Values to fill in".
+
+0. **Preflight** the workstation:
+   ```bash
+   ./scripts/check-tier2-environment.sh
+   ```
+   Verifies kubectl + `system-a`/`system-b` contexts + API
+   reachability. Read-only — never reads Secrets, never applies
+   manifests. Fails loudly if `kubectl` isn't on PATH or a context is
+   missing, which are the two most common bring-up blockers.
 
 1. **Environment** — k3s on both systems with the flags from
    `docs/port-map.md`. Make sure `kubectl` resolves both contexts
@@ -340,6 +377,17 @@ lives in `docs/reproducibility.md` under "Values to fill in".
    ```bash
    scripts/telegram-send-menu.py
    ```
+
+6. **Demo-task smoke** (proves the demo can actually run a task, not
+   just that the lifecycle is healthy):
+   ```bash
+   APPLY=1 KUBECTL="kubectl --context system-a" \
+     ./scripts/smoke-test-demo-task.sh
+   APPLY=1 ./scripts/smoke-test-offload-k8s.sh   # optional: full offload roundtrip
+   ```
+   Inspect logs with `./scripts/check-tier2-logs.sh` (per-component
+   filters: `operator`, `session`, `gateway`, `litellm`, `vllm`,
+   `offload`, `minio`).
 
 Refer to `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as
 the source of truth for operator bring-up and known blockers.
