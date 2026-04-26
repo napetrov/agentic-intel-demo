@@ -194,6 +194,9 @@ Telegram ingress.
   against the alias it actually serves.
 - A reachable upstream `openclaw-operator` ref pinned via
   `OPENCLAW_OPERATOR_REF`.
+- `envsubst` (from the `gettext` package) on the deploy workstation —
+  Step 3 below renders `k8s/system-a/litellm.yaml` through it before
+  applying. See `docs/reproducibility.md` for the full tool list.
 
 ### Bring-up order
 

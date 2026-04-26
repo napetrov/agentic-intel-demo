@@ -26,6 +26,7 @@ kubectl    >= 1.28
 helm       >= 3.13   (for the vLLM bring-up)
 docker     >= 24
 git        any
+gettext             (provides `envsubst`, used to render litellm.yaml)
 python3    >= 3.12
 pip
 aws CLI    >= 2 (for MinIO artifact tests)
