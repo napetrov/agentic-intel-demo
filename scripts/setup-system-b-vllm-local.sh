@@ -41,18 +41,33 @@ APPLY="${APPLY:-0}"
 KUBECTL="${KUBECTL:-kubectl}"
 HELM="${HELM:-helm}"
 
-if [ -z "$CHART_REPO" ]; then
+if [ -z "$CHART_REPO" ] || [[ "$CHART_REPO" == *"<your-org>"* ]]; then
   cat >&2 <<EOF
 [setup-system-b-vllm-local] CHART_REPO is required.
 
-  Set it to the git URL of a repository that ships the vLLM helm chart
-  at \$CHART_PATH (default: core/helm-charts/vllm).
+  The vLLM helm chart this script installs lives in an upstream fork
+  the demo doesn't redistribute (the same gap as the openclaw-operator
+  ref). Tracked as gap #7 in docs/operator-gap-analysis.md.
 
-Example:
-  APPLY=1 \\
-    CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \\
-    CHART_REF=<tag-or-sha> \\
-    ./scripts/setup-system-b-vllm-local.sh
+  Two ways forward:
+
+  1. Pin a fork you maintain:
+       APPLY=1 \\
+         CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \\
+         CHART_REF=<tag-or-sha> \\
+         ./scripts/setup-system-b-vllm-local.sh
+
+     CHART_PATH defaults to core/helm-charts/vllm to match the
+     upstream Enterprise-Inference layout. Override per fork.
+
+  2. Skip the chart and apply the static manifest instead:
+       kubectl --context system-b apply -f k8s/system-b/vllm.yaml
+
+     The static path doesn't accept the chart's full knob set (just
+     model id, context length, and resources via env) and currently
+     references the CUDA-first vllm/vllm-openai:latest image — swap
+     to a CPU-tuned image (or a pinned tag you trust) before
+     promoting past dry-run. See the YAML's header for caveats.
 EOF
   exit 64
 fi

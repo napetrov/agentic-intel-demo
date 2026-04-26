@@ -50,8 +50,8 @@ value lives in the repo" — every Tier 2 manifest reads from one of these.
 
 | Variable | Where it lands | How to obtain |
 |----------|---------------|---------------|
-| `OPENCLAW_OPERATOR_REF` | `scripts/install-openclaw-operator.sh` | tag/SHA from `https://github.com/openclaw-rocks/openclaw-operator` releases — leaving `main` is reproducibly unstable |
-| `OPENCLAW_OPERATOR_IMAGE` | `examples/openclawinstance-intel-demo.yaml` `spec.image` | upstream operator publishes runtime images at `ghcr.io/openclaw-rocks/openclaw:<tag>` — pin a tag, not `latest` |
+| `OPENCLAW_OPERATOR_REF` | `scripts/install-openclaw-operator.sh` (default: `v0.30.0`) | tag/SHA from `https://github.com/openclaw-rocks/openclaw-operator` releases. The repo pins a candidate; set `OPENCLAW_OPERATOR_REF_VERIFIED=1` once you've validated it on your stand. |
+| `OPENCLAW_OPERATOR_IMAGE` | `examples/openclawinstance-intel-demo.yaml` `spec.image` (default tag: `v0.30.0`) | runtime images are published at `ghcr.io/openclaw-rocks/openclaw:<tag>` independently from the operator binary — confirm the tag exists for your operator ref. |
 | `TELEGRAM_BOT_TOKEN` | `intel-demo-operator-secrets`, `telegram-bot` (created by `scripts/create-operator-secrets.sh`) | BotFather → `/newbot` |
 | `TELEGRAM_ALLOWED_FROM` | `examples/openclawinstance-intel-demo.yaml`, `session-pod-template.yaml` env | Telegram numeric user id (e.g. via `@userinfobot`) |
 | `AWS_BEARER_TOKEN_BEDROCK` | `intel-demo-operator-secrets`, `litellm-secrets` | AWS Bedrock console → "Bedrock API keys" → generate bearer token |
@@ -173,12 +173,17 @@ cp config/env/system-b.yaml.template config/env/system-b.yaml   # if present
 # 0.5 Install k3s and export kubeconfigs
 # See docs/port-map.md and docs/single-node-validation.md
 
-# 1. Bring up System B model backend + storage
+# 1. Bring up System B model backend + storage.
+#    Two paths:
+#     * helm chart from your fork (canonical):
 APPLY=1 \
   CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \
   CHART_REF=<tag|sha> \
   KUBECTL="kubectl --context system-b" \
   ./scripts/setup-system-b-vllm-local.sh
+#     * static manifest (no helm, no fork) — pin the image first;
+#       see comments in k8s/system-b/vllm.yaml. Tracked as gap #7.
+# kubectl --context system-b apply -f k8s/system-b/vllm.yaml
 # Export so SYSTEM_B_IP / MINIO_* persist for the bucket-creation step
 # below; an inline `KEY=VAL ./script` only sets the variable for that
 # one process. SYSTEM_B_IP is the canonical placeholder for the System
@@ -208,8 +213,13 @@ SYSTEM_B_VLLM_ENDPOINT="http://${SYSTEM_B_IP}:30434/v1" \
   envsubst < k8s/system-a/litellm.yaml \
   | kubectl --context system-a apply -f -
 
-# 4. Install openclaw-operator (pin the ref!)
-APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> ./scripts/install-openclaw-operator.sh
+# 4. Install openclaw-operator. The script defaults to v0.30.0 (latest
+#    upstream release at repo-pin time); override OPENCLAW_OPERATOR_REF
+#    to pin a different tag/SHA, or set OPENCLAW_OPERATOR_REF_VERIFIED=1
+#    once you've validated v0.30.0 on your stand.
+APPLY=1 ./scripts/install-openclaw-operator.sh
+#    or with an explicit pin:
+# APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> ./scripts/install-openclaw-operator.sh
 
 # 5. Apply one OpenClawInstance.
 #    The example file ships a concrete spec — the only ${VAR} token in

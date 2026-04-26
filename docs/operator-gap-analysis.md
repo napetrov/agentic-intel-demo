@@ -45,14 +45,20 @@ A fresh deploy should be considered correct only when all of the following are t
 ## Remaining gaps
 
 ### 1. Exact operator source/bundle is not pinned
-Status: open
+Status: candidate pinned, awaiting on-stand verification
 
-What is missing:
-- exact repo/ref/tag/commit of operator manifests
-- exact install command sequence to fetch/build/apply them
+What is in repo:
+- `scripts/install-openclaw-operator.sh` defaults `OPENCLAW_OPERATOR_REF`
+  to `v0.30.0` (the latest upstream release at repo-pin time).
+- `config/versions.yaml` `operator.ref` mirrors the same value.
+- The script prints a "candidate ref" notice unless
+  `OPENCLAW_OPERATOR_REF_VERIFIED=1` is set, so a deployer who hasn't
+  validated against their own stand sees that explicitly.
 
-Why it matters:
-- without a pinned source, the operator install is not reproducible
+What is still open:
+- The candidate has NOT been re-validated end-to-end on this demo's
+  stand. Bumping the default on every upstream release without a green
+  smoke test would silently break Tier 2.
 
 ### 2. CRD-safe install process is not automated
 Status: closed
@@ -81,30 +87,39 @@ Materialize it from env with `scripts/create-operator-secrets.sh`
 so values never land on disk).
 
 ### 4. Operator image contract is not fully defined
-Status: open
+Status: candidate pinned, awaiting on-stand verification
 
-What is missing:
-- final image reference for operator-managed OpenClaw runtime
-- whether image is pulled from GHCR or preloaded locally
-- if private, imagePullSecret requirements
+What is in repo:
+- `examples/openclawinstance-intel-demo.yaml` `spec.image.tag` defaults
+  to `v0.30.0` (mirrors the operator binary release).
+- `config/versions.yaml` `operator.image` carries the same default.
+
+What is still open:
+- The runtime image is published independently from the operator binary
+  upstream — a future upstream release may bump only one of the two.
+  Confirm both tags resolve before promoting past dry-run.
+- imagePullSecret requirements (when the registry becomes private).
 
 ### 5. Health/ready criteria are not yet documented precisely
-Status: partially closed
+Status: candidate pinned, awaiting on-stand verification
 
-`scripts/smoke-test-operator-instance.sh` encodes the current best-known
-success contract:
+`scripts/smoke-test-operator-instance.sh` defaults `READY_JSONPATH` to
+`{.status.phase}` and accepts `Running` (canonical for upstream
+v0.30.0) plus the historical fallback enum `Ready|Active|Healthy|True`.
+Set `READY_JSONPATH=` (empty) to fall through to the legacy
+`condition=Ready` then `.status.phase` heuristic.
+
+Other surfaces of the success contract:
 - CRD `openclawinstances.openclaw.rocks` exists
 - controller `deploy/openclaw-operator-controller-manager` rollout completes
-- `kubectl wait --for=condition=Ready openclawinstance/<name>` succeeds, OR
-- `.status.phase` reaches one of `Ready|Running|Active|Healthy`
 - with `PROBE_GATEWAY=1`, the gateway service responds to `/healthz`
 
-On failure it dumps `describe openclawinstance`, controller logs, and pod
-list scoped to `openclaw.rocks/instance=<name>`.
+On failure the script dumps `describe openclawinstance`, controller logs,
+and pod list scoped to `openclaw.rocks/instance=<name>`.
 
-Still open: pin the exact `.status.phase` / Ready condition that the
-upstream operator surfaces in the pinned ref, so the fallback list above
-can be replaced with a single canonical check.
+`config/versions.yaml` `operator_ready.phase=Running` is the canonical
+shared source of truth between docs and the smoke test. Bumping the
+operator ref may shift this; re-verify before promoting.
 
 ### 6. Old raw control-plane path still dominates repo structure
 Status: open
@@ -112,6 +127,41 @@ Status: open
 What is missing:
 - docs and scripts should stop presenting raw pod/control-plane creation as the main path
 - repo structure should make operator-first flow obvious
+
+### 7. vLLM helm chart is not pinned in the repo
+Status: open
+
+The chart `setup-system-b-vllm-local.sh` installs lives in a fork the
+demo doesn't redistribute (the upstream Enterprise-Inference layout at
+`core/helm-charts/vllm`). The script now fails fast when `CHART_REPO`
+is left as a `<your-org>` placeholder, and points at an alternative
+static manifest at `k8s/system-b/vllm.yaml` that runs vLLM directly
+without the chart — but that manifest leaves the image tag at `latest`
+because there is no public CPU-tuned vLLM image we can validate
+against. Same shape as gaps #1 and #4: an external project the demo
+depends on but doesn't own.
+
+What is still open:
+- pin a known-good `CHART_REPO`/`CHART_REF` once a public mirror or
+  internal fork is available, OR
+- pin a CPU-tuned image tag in `k8s/system-b/vllm.yaml` once one is
+  validated against the demo's hardware tier.
+
+### 8. Job/session registry was not durable
+Status: closed
+
+`runtimes/control-plane/persistence.py` ships a SQLite-backed
+`SqliteJsonStore`; both the offload-job registry (`_jobs` in app.py)
+and `LocalSessionBackend._records` write through to it when
+`JOBS_DB_PATH` / `SESSIONS_DB_PATH` are set. The compose file mounts
+`control-plane-data:/var/lib/control-plane`; `dev-up.sh` uses
+`$STATE_DIR/{jobs,sessions}.db`. A `docker compose restart
+control-plane` no longer drops issued `result_ref`s or wipes the
+multi-agent fan-out table.
+
+Unit coverage: `tests/test_persistence.py` exercises both
+restart-survival paths and the lazy-state-machine persisting its
+terminal transitions.
 
 ---
 

@@ -29,8 +29,12 @@ import os
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from typing import Any, Optional, Protocol
+
+# Sibling module: the control-plane package isn't installable, so the
+# import works the same way it does in app.py via PYTHONPATH munging.
+from persistence import SqliteJsonStore
 
 logger = logging.getLogger("control-plane.sessions")
 
@@ -110,11 +114,32 @@ def _new_session_id() -> str:
     return f"sess-{uuid.uuid4().hex[:10]}"
 
 
+_SESSION_FIELD_NAMES = {f.name for f in fields(SessionRecord)}
+
+
+def _record_from_dict(data: dict[str, Any]) -> SessionRecord:
+    """Rebuild a SessionRecord from its persisted JSON form.
+
+    Tolerates extra keys (forward-compat) and missing optional ones
+    (records persisted by an older binary). `extras` is restored as a
+    dict so backend-private bookkeeping survives a restart.
+    """
+    payload = {k: v for k, v in data.items() if k in _SESSION_FIELD_NAMES}
+    payload.setdefault("extras", {})
+    return SessionRecord(**payload)
+
+
 class LocalSessionBackend:
-    """In-memory simulator. Each session moves Pending → Running → Completed
-    on a fixed schedule. Threads are not used; the state machine is
-    evaluated lazily on every read so the simulator is deterministic
-    relative to wall-clock.
+    """Simulator backend with optional SQLite persistence.
+
+    Without a path: in-memory only — every session moves
+    Pending → Running → Completed on a fixed schedule, lost on restart.
+
+    With ``db_path`` set (or via SESSIONS_DB_PATH): the same simulation,
+    plus every mutation is durably committed. A restart rehydrates the
+    record set and the lazy state-machine advance picks up where the
+    wall-clock left off — sessions older than PENDING+RUNNING come back
+    as Completed without re-running the timer.
     """
 
     name = "local"
@@ -124,17 +149,42 @@ class LocalSessionBackend:
     PENDING_SECONDS = 1.5
     RUNNING_SECONDS = 8.0
 
-    def __init__(self) -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        self._store = SqliteJsonStore(path=db_path, table="sessions")
+        # _records is a write-through cache of the SQLite table — keeping
+        # the dict in front of the DB preserves the existing O(1) reads
+        # the demo's tight UI poll loop expects.
         self._records: dict[str, SessionRecord] = {}
         self._lock = threading.Lock()
+        # Rehydrate on startup. The SqliteJsonStore returns the rows the
+        # table actually contains; an in-memory store starts empty so this
+        # is a no-op for the unit tests that don't pass a path.
+        for key, data in self._store.items():
+            try:
+                self._records[key] = _record_from_dict(data)
+            except (TypeError, ValueError) as exc:
+                # A row written by a future binary may carry fields this
+                # one can't parse; skip rather than crash the worker.
+                logger.warning("dropped unparseable session %s: %s", key, exc)
+
+    def _persist(self, rec: SessionRecord) -> None:
+        """Write a record through to SQLite. Cheap no-op for in-memory mode."""
+        self._store[rec.session_id] = asdict(rec)
 
     # The state machine runs on read so we don't need a background thread
     # (which would complicate uvicorn worker counts and shutdown). The
     # advance is idempotent — calling _advance() twice on the same record
     # is a no-op once it reaches a terminal state.
+    #
+    # Ordering: when the state changes, the durable write happens BEFORE
+    # the in-memory mutation is published. _persist needs the new field
+    # values, so we mutate `rec` in place, snapshot the originals, persist,
+    # and roll back on failure. Without the rollback a SQLite hiccup would
+    # leave the cache showing state that disappears on the next restart.
     def _advance(self, rec: SessionRecord, now: float) -> None:
         if rec.status in TERMINAL_STATUSES or rec.status == STATUS_DELETING:
             return
+        snapshot = (rec.status, rec.started_at, rec.completed_at, rec.message)
         elapsed = now - rec.created_at
         if rec.status == STATUS_PENDING and elapsed >= self.PENDING_SECONDS:
             rec.status = STATUS_RUNNING
@@ -146,6 +196,12 @@ class LocalSessionBackend:
             rec.status = STATUS_COMPLETED
             rec.completed_at = rec.created_at + self.PENDING_SECONDS + self.RUNNING_SECONDS
             rec.message = f"simulated {rec.scenario} run completed"
+        if rec.status != snapshot[0]:
+            try:
+                self._persist(rec)
+            except Exception:
+                rec.status, rec.started_at, rec.completed_at, rec.message = snapshot
+                raise
 
     def create(
         self,
@@ -173,6 +229,10 @@ class LocalSessionBackend:
                 memory_request=specs["memory_request"],
                 message="simulated session created (local backend)",
             )
+            # Durable write first — if SQLite barfs, the in-memory cache
+            # stays empty and the caller sees the failure instead of a
+            # session that exists in memory but vanishes on restart.
+            self._persist(rec)
             self._records[sid] = rec
             return rec
 
@@ -192,6 +252,13 @@ class LocalSessionBackend:
             # Sorted oldest-first so the UI table grows downward.
             return sorted(self._records.values(), key=lambda r: r.created_at)
 
+    def close(self) -> None:
+        """Release the underlying SQLite handle. Tests use this to keep
+        tmp-path teardown clean on platforms that don't free open files
+        eagerly. Production code holds the backend for the whole process
+        lifetime and never calls this."""
+        self._store.close()
+
     def delete(self, session_id: str) -> bool:
         with self._lock:
             if session_id not in self._records:
@@ -201,6 +268,10 @@ class LocalSessionBackend:
             # STATUS_DELETING here, but that transition was never
             # observable — the dict entry was removed in the same locked
             # section.)
+            # Drop from disk before cache so a SQLite failure leaves both
+            # views consistent (record still present in both) instead of
+            # resurrecting the session on the next process restart.
+            self._store.pop(session_id, None)
             del self._records[session_id]
             return True
 
@@ -579,7 +650,10 @@ def make_backend() -> SessionBackend:
     """
     kind = os.environ.get("SESSION_BACKEND", "local").strip().lower()
     if kind == "local":
-        return LocalSessionBackend()
+        # SESSIONS_DB_PATH points at a sqlite file mounted on a volume
+        # in compose / dev-up; unset = in-memory only, which is what the
+        # unit tests rely on.
+        return LocalSessionBackend(db_path=os.environ.get("SESSIONS_DB_PATH") or None)
     if kind == "kube":
         namespace = os.environ.get("AGENTS_NAMESPACE", "agents")
         template = os.environ.get("SESSION_TEMPLATE_CONFIGMAP", "session-job-template")

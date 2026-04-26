@@ -50,5 +50,19 @@ litellm_aliases:
 # in docs/operator-gap-analysis.md.
 operator:
   repo: "https://github.com/openclaw-rocks/openclaw-operator.git"
-  ref: "main"
-  image: "ghcr.io/openclaw-rocks/openclaw:latest"
+  # Candidate pin — latest upstream release as of the most recent
+  # `scripts/install-openclaw-operator.sh` default bump. Re-validate on
+  # your stand before promoting; set OPENCLAW_OPERATOR_REF_VERIFIED=1
+  # in the install env to silence the "candidate ref" notice once you've
+  # confirmed the bump.
+  ref: "v0.30.0"
+  # Operator runtime image (consumed by examples/openclawinstance-intel-demo.yaml
+  # as spec.image.tag). Published independently from the operator binary;
+  # the tag here mirrors `ref` only by convention.
+  image: "ghcr.io/openclaw-rocks/openclaw:v0.30.0"
+# Canonical Ready phase the upstream controller emits while an
+# OpenClawInstance is healthy. Surfaced here so scripts/smoke-test-operator-instance.sh
+# and docs/operator-gap-analysis.md gap #5 share a single source of truth.
+operator_ready:
+  phase: "Running"
+  jsonpath: "{.status.phase}"
