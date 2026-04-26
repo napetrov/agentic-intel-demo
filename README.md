@@ -213,10 +213,13 @@ the `demoServices` localStorage key to a JSON array.
 
 ## Scripts
 - `scripts/install-openclaw-operator.sh` — install the external `openclaw-operator` (upstream project; see `docs/operator-install.md`). Defaults to dry-run; pin `OPENCLAW_OPERATOR_REF=<tag|sha>` and pass `APPLY=1` to actually apply.
+- `scripts/create-operator-secrets.sh` — render every Secret the demo expects (operator instance, LiteLLM, agent pod, MinIO) from env via `kubectl --dry-run=client | kubectl apply`. `SCOPE=system-a|system-b|all` for two-cluster bring-up.
 - `scripts/check-operator-prereqs.sh` — checklist for operator-managed instance prerequisites
 - `scripts/smoke-test-operator-instance.sh` — operator lifecycle validation checklist
-- `scripts/setup-system-b-vllm.sh` — current validated System B vLLM path
+- `scripts/setup-system-b-vllm.sh` — historical SSH-into-`onedal-build` vLLM bring-up
+- `scripts/setup-system-b-vllm-local.sh` — kubectl/helm vLLM bring-up against the current kube context (no SSH)
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
+- `scripts/load-offload-worker-image.sh` — build + load the offload-worker image into k3s/k3d when GHCR is unreachable
 - `scripts/cleanup-system-a.sh` — reduce disk pressure on System A safely
 
 ## Guiding principles

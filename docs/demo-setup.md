@@ -186,33 +186,96 @@ Telegram ingress.
   `docs/port-map.md` for install flags).
 - Non-overlapping pod/service CIDRs across the two clusters.
 - Merged kubeconfig with contexts `system-a` and `system-b`.
-- Telegram bot token and allowed-user id.
-- Cloud model credentials for the reasoning alias (optional; defaults fall
-  back to LiteLLM-served local SLM).
+- Telegram bot token + allowed-user id.
+- Bedrock access (region + bearer token + inference profile ARN) for
+  the `reasoning` alias, and/or a SambaNova API key for the `sambanova`
+  alias. `k8s/system-a/litellm.yaml` maps `reasoning` → Bedrock Claude
+  Sonnet and `sambanova` → SambaNova DeepSeek; provision each key
+  against the alias it actually serves.
+- A reachable upstream `openclaw-operator` ref pinned via
+  `OPENCLAW_OPERATOR_REF`.
+- `envsubst` (from the `gettext` package) on the deploy workstation —
+  Step 3 below renders `k8s/system-a/litellm.yaml` through it before
+  applying. See `docs/reproducibility.md` for the full tool list.
 
 ### Bring-up order
 
-1. **Environment** — see `docs/mvp-plan.md` Phase 0.
+The exact list of values you need to gather first
+(`OPENCLAW_OPERATOR_REF`, `BEDROCK_MODEL_ID`, `SYSTEM_B_IP`, …)
+lives in `docs/reproducibility.md` under "Values to fill in".
+
+1. **Environment** — k3s on both systems with the flags from
+   `docs/port-map.md`. Make sure `kubectl` resolves both contexts
+   (`kubectl config get-contexts | grep -E 'system-[ab]'`).
+
 2. **System B — model backend and storage:**
    ```bash
-   scripts/setup-system-b-vllm.sh     # vLLM for Qwen3-4B at NodePort 30434
+   # vLLM bring-up via kubectl/helm against the current context
+   # (replaces the SSH-into-onedal-build path).
+   APPLY=1 \
+     CHART_REPO=https://github.com/<your-org>/Enterprise-Inference.git \
+     CHART_REF=<tag|sha> \
+     KUBECTL="kubectl --context system-b" \
+     ./scripts/setup-system-b-vllm-local.sh
+
+   # Export these so they persist for the bucket-creation step below;
+   # an inline `KEY=VAL ./script` only sets the variable for that one
+   # process. SYSTEM_B_IP is the canonical placeholder for the System B
+   # node's reachable address — see docs/reproducibility.md "Values to
+   # fill in".
+   export SYSTEM_B_IP=...
+   export MINIO_ACCESS_KEY=...
+   export MINIO_SECRET_KEY=...
+   APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
+     ./scripts/create-operator-secrets.sh
+
    kubectl --context system-b apply -f k8s/system-b/minio.yaml
-   scripts/create-minio-bucket.sh     # demo-artifacts bucket
+   MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+     MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+     ./scripts/create-minio-bucket.sh
    kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
    ```
-3. **System A — inference proxy:**
+
+   The default offload-worker image is
+   `ghcr.io/napetrov/agentic-intel-demo/offload-worker:main`, published
+   by `.github/workflows/publish-offload-worker.yml`. For local k3s/k3d
+   without GHCR access, use `./scripts/load-offload-worker-image.sh` and
+   apply the manifest with the printed `sed` patch.
+
+3. **System A — inference proxy + secrets:**
    ```bash
-   kubectl --context system-a apply -f k8s/system-a/litellm.yaml
+   APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
+     TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
+     SAMBANOVA_API_KEY=... \
+     MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+     ./scripts/create-operator-secrets.sh
+
+   SYSTEM_B_VLLM_ENDPOINT="http://${SYSTEM_B_IP}:30434/v1" \
+     AWS_REGION=us-east-2 \
+     envsubst < k8s/system-a/litellm.yaml \
+     | kubectl --context system-a apply -f -
    ```
+
 4. **System A — operator and OpenClaw instance:**
    ```bash
-   scripts/check-operator-prereqs.sh
-   # advisory: prints the CRD-first kubectl commands to run; it does NOT
-   # apply anything itself — run the printed commands manually
-   scripts/install-openclaw-operator.sh
-   kubectl --context system-a apply -f examples/openclawinstance-intel-demo.yaml
-   scripts/smoke-test-operator-instance.sh
+   ./scripts/check-operator-prereqs.sh
+
+   APPLY=1 OPENCLAW_OPERATOR_REF=<tag|sha> \
+     ./scripts/install-openclaw-operator.sh
+
+   # examples/openclawinstance-intel-demo.yaml ships a concrete spec
+   # (Bedrock ARN, AWS region, Telegram allow-id, model list). The only
+   # ${VAR} token in the file is ${TELEGRAM_BOT_TOKEN} inside the
+   # embedded openclaw.json — that's expanded at session-pod runtime by
+   # the OpenClaw operator from intel-demo-operator-secrets, not by
+   # envsubst at apply time. Edit the YAML in place if you need different
+   # values for region / allow-from / Bedrock profile.
+   kubectl --context system-a apply \
+     -f examples/openclawinstance-intel-demo.yaml
+
+   APPLY=1 ./scripts/smoke-test-operator-instance.sh
    ```
+
 5. **Telegram menu:**
    ```bash
    scripts/telegram-send-menu.py

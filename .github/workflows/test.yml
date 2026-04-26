@@ -307,10 +307,12 @@ jobs:
             -p "30800:30800@server:0" \
             --wait --timeout 180s
           kubectl cluster-info
-      - name: build offload-worker image
-        run: docker build -t demo-offload-worker:latest ./runtimes/offload-worker
-      - name: import image into k3d
-        run: k3d image import demo-offload-worker:latest -c demo
+      - name: build + load offload-worker image into k3d
+        # Mirrors what scripts/load-offload-worker-image.sh does for users.
+        env:
+          RUNTIME: k3d
+          K3D_CLUSTER: demo
+        run: bash scripts/load-offload-worker-image.sh
       - name: apply MinIO manifests with test creds
         run: |
           # CI node is 2 vCPU / 7 GiB; the production manifest requests
@@ -342,13 +344,27 @@ jobs:
           kubectl -n system-b logs pod/mc || true
       - name: apply offload-worker manifest
         run: |
+          set -euo pipefail
           # Trim the production cpu: "2" / 4 / memory: 2Gi / 4Gi requests down
-          # so the pod fits alongside MinIO on a 2-vCPU GitHub runner.
+          # so the pod fits alongside MinIO on a 2-vCPU GitHub runner, and
+          # repoint the image to the locally-built tag (the manifest's
+          # default is the GHCR image, which we don't pull from inside CI).
+          patched=$(mktemp)
           sed -e 's|cpu: "2"|cpu: "200m"|' \
               -e 's|cpu: "4"|cpu: "1"|' \
               -e 's|memory: "2Gi"|memory: "256Mi"|' \
               -e 's|memory: "4Gi"|memory: "1Gi"|' \
-              k8s/system-b/offload-worker.yaml | kubectl apply -f -
+              -e 's|ghcr.io/napetrov/agentic-intel-demo/offload-worker:main|demo-offload-worker:latest|' \
+              -e 's|imagePullPolicy: Always|imagePullPolicy: Never|' \
+              k8s/system-b/offload-worker.yaml > "$patched"
+          # Fail fast if the upstream manifest stopped matching either
+          # pattern — silently applying with the GHCR image and Always
+          # pull policy here would flake the smoke and waste CI minutes.
+          grep -q 'image: demo-offload-worker:latest' "$patched" \
+            || { echo "::error::sed image-rewrite did not match; check manifest"; exit 1; }
+          grep -q 'imagePullPolicy: Never' "$patched" \
+            || { echo "::error::sed pull-policy rewrite did not match; check manifest"; exit 1; }
+          kubectl apply -f "$patched"
           kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
       - name: curl /health via NodePort 30800
         run: |

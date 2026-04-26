@@ -3,25 +3,13 @@ kind: Namespace
 metadata:
   name: agents
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: session-pod-artifact-creds
-  namespace: agents
-type: Opaque
-stringData:
-  AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
-  AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: telegram-bot
-  namespace: agents
-type: Opaque
-stringData:
-  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
----
+# The Secrets `session-pod-artifact-creds` and `telegram-bot` (both in
+# namespace `agents`) used to live here as inline `stringData: ${VAR}`
+# placeholders that required an undocumented `envsubst` pre-step. They
+# are now created by `scripts/create-operator-secrets.sh`, which uses
+# `kubectl create secret --dry-run=client -o yaml | kubectl apply -f -`
+# so values never land on disk. Run that script before applying this
+# manifest.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -43,14 +31,29 @@ data:
           env:
             - name: OPENCLAW_CONFIG_PATH
               value: /config/openclaw.json
+            # AWS_REGION + ANTHROPIC_DEFAULT_SONNET_MODEL are non-sensitive
+            # routing values — keep envsubst-style so they can be tuned per
+            # environment without modifying the Secret.
             - name: AWS_REGION
               value: ${AWS_REGION}
-            - name: CLAUDE_CODE_USE_BEDROCK
-              value: "1"
-            - name: AWS_BEARER_TOKEN_BEDROCK
-              value: ${AWS_BEARER_TOKEN_BEDROCK}
             - name: ANTHROPIC_DEFAULT_SONNET_MODEL
               value: ${ANTHROPIC_DEFAULT_SONNET_MODEL}
+            - name: BEDROCK_MODEL_ID
+              value: ${BEDROCK_MODEL_ID}
+            - name: TELEGRAM_ALLOWED_FROM
+              value: "${TELEGRAM_ALLOWED_FROM}"
+            - name: CLAUDE_CODE_USE_BEDROCK
+              value: "1"
+            # Sensitive values are read from Secrets in the agents
+            # namespace, all created by scripts/create-operator-secrets.sh.
+            # secretKeyRef can't cross namespaces, so AWS_BEARER_TOKEN_BEDROCK
+            # lives in `bedrock-creds` here, not in the
+            # `intel-demo-operator-secrets` copy in the operator's namespace.
+            - name: AWS_BEARER_TOKEN_BEDROCK
+              valueFrom:
+                secretKeyRef:
+                  name: bedrock-creds
+                  key: AWS_BEARER_TOKEN_BEDROCK
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -61,6 +64,11 @@ data:
                 secretKeyRef:
                   name: session-pod-artifact-creds
                   key: AWS_SECRET_ACCESS_KEY
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telegram-bot
+                  key: TELEGRAM_BOT_TOKEN
           volumeMounts:
             - name: config
               mountPath: /config
@@ -98,8 +106,10 @@ data:
             "auth": "api-key",
             "api": "openai-completions",
             "models": [
-              { "id": "system-b-vllm-qwen3-4b-fast", "name": "System B vLLM Qwen3-4B Fast", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
-              { "id": "system-b-vllm-qwen3-4b-default", "name": "System B vLLM Qwen3-4B Default", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 }
+              { "id": "fast", "name": "Fast (Qwen3-4B)", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
+              { "id": "default", "name": "Default (Qwen3-4B)", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 },
+              { "id": "reasoning", "name": "Reasoning (Claude Sonnet via Bedrock)", "api": "openai-completions", "contextWindow": 200000, "maxTokens": 8192 },
+              { "id": "sambanova", "name": "SambaNova (DeepSeek V3.1)", "api": "openai-completions", "contextWindow": 32768, "maxTokens": 4096 }
             ]
           },
           "amazon-bedrock": {
@@ -114,7 +124,7 @@ data:
       },
       "agents": {
         "defaults": {
-          "model": { "primary": "amazon-bedrock/${BEDROCK_MODEL_ID}", "fallbacks": ["litellm/system-b-vllm-qwen3-4b-fast"] },
+          "model": { "primary": "amazon-bedrock/${BEDROCK_MODEL_ID}", "fallbacks": ["litellm/fast", "litellm/default"] },
           "workspace": "/workspace"
         }
       },

@@ -42,7 +42,7 @@ User asks for a market-research summary on a topic. The flow:
 2. **Chat Model A: ChatOpenAI (planner)**
    - Credential: `litellm-openai`
    - Base URL: `${LITELLM_BASE_URL}`
-   - Model name: `aws-bedrock-claude-sonnet`
+   - Model name: `reasoning`
    - System prompt:
      > Decompose the user's market-research request into a JSON object:
      > `{"topic":"...","data":[{ "metric":"...", "value":<number>, ... }, ...]}`.
@@ -50,7 +50,7 @@ User asks for a market-research summary on a topic. The flow:
      > Output JSON only.
 3. **Chat Model B: ChatOpenAI (summarizer)**
    - Credential: `litellm-openai`
-   - Model name: `system-b-vllm-qwen3-4b-default`
+   - Model name: `default`
    - System prompt:
      > Summarize the offload result for a non-technical reader. Quote
      > metric names verbatim. If an artifact URL is present, include it.

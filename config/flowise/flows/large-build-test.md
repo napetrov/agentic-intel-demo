@@ -40,7 +40,7 @@ User asks the agent to run the large build/test demo. The flow:
 1. **Chat Input** — built-in.
 2. **Chat Model: ChatOpenAI (planner)**
    - Credential: `litellm-openai`
-   - Model name: `system-b-vllm-qwen3-4b-default`
+   - Model name: `default`
    - System prompt:
      > You are the large-build-test demo guide. Briefly tell the user the
      > canned scenario is about to run, then call the `run_scenario` tool
@@ -81,12 +81,12 @@ User asks the agent to run the large build/test demo. The flow:
    - Route a failure (`status === 'error'`, or `completed` with
      `exit_code !== 0`) to the cloud-reasoning summarizer.
 5. **Chat Model: ChatOpenAI (summarizer, success)**
-   - Model name: `system-b-vllm-qwen3-4b-fast`
+   - Model name: `fast`
    - System prompt:
      > Summarize the build/test stdout for the user in 3 bullets. Quote
      > exit code.
 6. **Chat Model: ChatOpenAI (summarizer, failure)**
-   - Model name: `aws-bedrock-claude-sonnet`
+   - Model name: `reasoning`
    - System prompt:
      > The build/test failed. Summarize stderr, the likely root cause,
      > and one concrete next step. Quote exit code.

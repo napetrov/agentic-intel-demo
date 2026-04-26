@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LITELLM_BASE_URL="${LITELLM_BASE_URL:-http://127.0.0.1:4000}"
-LITELLM_MODEL="${LITELLM_MODEL:-sambanova-deepseek-v3-1}"
+LITELLM_MODEL="${LITELLM_MODEL:-sambanova}"
 PROMPT="${PROMPT:-Hello! Reply with exactly: litellm sambanova ok}"
 
 payload="$(cat <<EOF

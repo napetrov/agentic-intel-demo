@@ -51,13 +51,13 @@ Set these once in the Flowise UI (Settings → Credentials):
 Flow nodes that select a model should use one of the aliases declared in
 `config/model-routing/litellm-config.yaml` so LiteLLM handles routing:
 
-- `system-b-vllm-qwen3-4b-fast` — local SLM, low-latency
-- `system-b-vllm-qwen3-4b-default` — local SLM, balanced
-- `aws-bedrock-claude-sonnet` — cloud reasoning
-- `sambanova-deepseek-v3-1` — cloud reasoning alternative
+- `fast` — System B vLLM (Qwen3-4B), low-latency
+- `default` — same backend, longer timeout, Bedrock fallback
+- `reasoning` — Bedrock Claude Sonnet
+- `sambanova` — SambaNova DeepSeek V3.1 (alternative reasoning path)
 
-Pick aliases by step (e.g. extract → `*-fast`, plan → `aws-bedrock-claude-sonnet`).
-Hard-coding model names in the flow defeats LiteLLM routing.
+Pick aliases by step (e.g. extract → `fast`, plan → `reasoning`). Hard-
+coding model names in the flow defeats LiteLLM routing.
 
 ## How tasks (flows) are exposed
 

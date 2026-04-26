@@ -1,13 +1,54 @@
+# Component and model version references for the demo.
+#
+# This file is documentation, not a runtime input — scripts and manifests
+# don't read it at apply time. Keep it in sync with the values actually
+# pinned in the matching k8s manifest / Dockerfile / setup script when
+# bumping versions, and treat any drift as a bug worth fixing.
+
 components:
-  ollama: "0.6.8"
-  litellm: "v1.72.2-stable"
-  minio: "RELEASE.2025-02-28T09-55-16Z"
-  postgres: "16"
+  # Patch pin for k3s — change deliberately; floating "v1.31.x" caused
+  # downstream version drift before.
+  k3s: "v1.31.4+k3s1"
+  # vLLM helm chart lives in an external repo; pass CHART_REPO/CHART_REF
+  # to scripts/setup-system-b-vllm-local.sh to pin per environment.
+  vllm_chart_path: "core/helm-charts/vllm"
+  litellm_image: "ghcr.io/berriai/litellm:main-v1.63.11-stable"
+  minio_image: "minio/minio:RELEASE.2025-02-28T09-55-16Z"
   python_base: "3.12-slim"
   node_base: "22-slim"
 
 models:
-  local_slm: "qwen2.5:7b-instruct"
-  cloud_reasoning: "openai/gpt-4o"
-  # alternative: "llama3.2:3b"   (lighter, faster on CPU)
-  # alternative: "mistral:7b-instruct"
+  # System B local SLM (canonical, served by vLLM)
+  local_slm:
+    id: "Qwen/Qwen3-4B-Instruct-2507"
+    context_length: 32768
+    cpu_profile: "16 CPU / 32Gi"
+  # Cloud reasoning fallback (via Bedrock)
+  cloud_reasoning:
+    id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    via: "amazon-bedrock"
+  # SambaNova-served reasoning model
+  cloud_alt:
+    id: "DeepSeek-V3.1"
+    via: "sambanova"
+
+# LiteLLM model_name aliases that the rest of the stack depends on.
+# Defined in k8s/system-a/litellm.yaml's `litellm-config` ConfigMap.
+litellm_aliases:
+  fast: "openai/Qwen/Qwen3-4B-Instruct-2507 (vLLM)"
+  default: "openai/Qwen/Qwen3-4B-Instruct-2507 (vLLM, longer timeout)"
+  reasoning: "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  sambanova: "sambanova/DeepSeek-V3.1"
+
+# Operator reference values (documentation only).
+# scripts/install-openclaw-operator.sh reads OPENCLAW_OPERATOR_REPO /
+# OPENCLAW_OPERATOR_REF from the environment at install time; it does
+# not parse this file. Both ref and image come from an upstream project
+# we don't own — pin them in your environment via OPENCLAW_OPERATOR_REF
+# and via the OpenClawInstance.spec.image field in
+# examples/openclawinstance-intel-demo.yaml. Tracked as gaps #1 and #4
+# in docs/operator-gap-analysis.md.
+operator:
+  repo: "https://github.com/openclaw-rocks/openclaw-operator.git"
+  ref: "main"
+  image: "ghcr.io/openclaw-rocks/openclaw:latest"
