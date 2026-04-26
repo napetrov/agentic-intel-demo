@@ -59,8 +59,8 @@ value lives in the repo" — every Tier 2 manifest reads from one of these.
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `examples/openclawinstance-intel-demo.yaml`, `session-pod-template.yaml` env | the inference-profile ARN created in your Bedrock account |
 | `SAMBANOVA_API_KEY` | `intel-demo-operator-secrets`, `litellm-secrets` | SambaNova Cloud account → API keys |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `intel-demo-operator-secrets`, `minio-creds`, `session-pod-artifact-creds` | choose any (these create the MinIO root user) |
-| `SYSTEM_B_VLLM_ENDPOINT` | `k8s/system-a/litellm.yaml` ConfigMap | `http://<system-b-node-ip>:30434/v1` after `setup-system-b-vllm-local.sh` |
-| `system_b_node_ip` | `config/env/system-b.yaml` (template) | `kubectl --context system-b get nodes -o wide` (use `INTERNAL-IP`) |
+| `SYSTEM_B_VLLM_ENDPOINT` | `k8s/system-a/litellm.yaml` ConfigMap | `http://${SYSTEM_B_IP}:30434/v1` after `setup-system-b-vllm-local.sh` |
+| `SYSTEM_B_IP` | `config/env/system-b.yaml` (template); also read by `scripts/create-minio-bucket.sh` | `kubectl --context system-b get nodes -o wide` (use `INTERNAL-IP`) |
 
 The two-step materialization is:
 
@@ -143,7 +143,7 @@ cluster_name: system-b
 control_plane_url: https://api.system-b.example.com
 namespaces:
   services: system-b
-vllm_endpoint: http://<system-b-node-ip>:30434/v1   # OpenAI-compatible
+vllm_endpoint: http://${SYSTEM_B_IP}:30434/v1   # OpenAI-compatible
 minio_endpoint: http://minio.system-b.svc.cluster.local:9000
 minio_nodeport: 30900  # externally accessible for System A
 offload_api_endpoint: http://offload-api.system-b.svc.cluster.local:8080
@@ -178,8 +178,11 @@ APPLY=1 \
   CHART_REF=<tag|sha> \
   KUBECTL="kubectl --context system-b" \
   ./scripts/setup-system-b-vllm-local.sh
-# Export so MINIO_* persists for the bucket-creation step below; an
-# inline `KEY=VAL ./script` only sets the variable for that one process.
+# Export so SYSTEM_B_IP / MINIO_* persist for the bucket-creation step
+# below; an inline `KEY=VAL ./script` only sets the variable for that
+# one process. SYSTEM_B_IP is the canonical placeholder for the System
+# B node's reachable address; create-minio-bucket.sh reads it directly.
+export SYSTEM_B_IP=...
 export MINIO_ACCESS_KEY=...
 export MINIO_SECRET_KEY=...
 APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
@@ -187,8 +190,7 @@ APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
 # Create the artifact bucket against the published MinIO NodePort 30900.
 # Without this, offload uploads fail on a fresh System B.
-SYSTEM_B_IP=<system-b-node-ip> \
-  MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
   MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
   ./scripts/create-minio-bucket.sh
 kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
@@ -200,7 +202,7 @@ APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
   ./scripts/create-operator-secrets.sh
 
 # 3. Inference proxy on System A
-SYSTEM_B_VLLM_ENDPOINT=http://<system-b-node-ip>:30434/v1 \
+SYSTEM_B_VLLM_ENDPOINT="http://${SYSTEM_B_IP}:30434/v1" \
   AWS_REGION=us-east-2 \
   envsubst < k8s/system-a/litellm.yaml \
   | kubectl --context system-a apply -f -

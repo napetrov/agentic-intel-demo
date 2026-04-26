@@ -198,7 +198,7 @@ Telegram ingress.
 ### Bring-up order
 
 The exact list of values you need to gather first
-(`OPENCLAW_OPERATOR_REF`, `BEDROCK_MODEL_ID`, `system_b_node_ip`, …)
+(`OPENCLAW_OPERATOR_REF`, `BEDROCK_MODEL_ID`, `SYSTEM_B_IP`, …)
 lives in `docs/reproducibility.md` under "Values to fill in".
 
 1. **Environment** — k3s on both systems with the flags from
@@ -217,15 +217,17 @@ lives in `docs/reproducibility.md` under "Values to fill in".
 
    # Export these so they persist for the bucket-creation step below;
    # an inline `KEY=VAL ./script` only sets the variable for that one
-   # process.
+   # process. SYSTEM_B_IP is the canonical placeholder for the System B
+   # node's reachable address — see docs/reproducibility.md "Values to
+   # fill in".
+   export SYSTEM_B_IP=...
    export MINIO_ACCESS_KEY=...
    export MINIO_SECRET_KEY=...
    APPLY=1 SCOPE=system-b KUBECTL="kubectl --context system-b" \
      ./scripts/create-operator-secrets.sh
 
    kubectl --context system-b apply -f k8s/system-b/minio.yaml
-   SYSTEM_B_IP=<system-b-node-ip> \
-     MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
+   MINIO_ROOT_USER="$MINIO_ACCESS_KEY" \
      MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
      ./scripts/create-minio-bucket.sh
    kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
@@ -245,7 +247,7 @@ lives in `docs/reproducibility.md` under "Values to fill in".
      MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
      ./scripts/create-operator-secrets.sh
 
-   SYSTEM_B_VLLM_ENDPOINT=http://<system-b-node-ip>:30434/v1 \
+   SYSTEM_B_VLLM_ENDPOINT="http://${SYSTEM_B_IP}:30434/v1" \
      AWS_REGION=us-east-2 \
      envsubst < k8s/system-a/litellm.yaml \
      | kubectl --context system-a apply -f -
