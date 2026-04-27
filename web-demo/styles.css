@@ -675,6 +675,14 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .agent-command-status[data-kind="warn"] { color: var(--yellow); }
 .agent-command-status[data-kind="error"] { color: var(--orange); }
 .agent-command-status[data-kind="pending"] { color: var(--cyan); }
+.agent-command-log {
+  margin-top: 10px;
+  min-height: 140px;
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
 
 /* ---- Multi-agent fan-out panel ---- */
 .multi-session-actions {

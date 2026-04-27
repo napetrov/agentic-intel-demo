@@ -142,6 +142,23 @@ def dispatch(task_type: str, payload: dict) -> Any:
         raise ValueError(f"Unknown task_type: {task_type!r}")
 
 
+def _coerce_bool(value: Any) -> bool:
+    """Permissive truthy check for JSON-shaped payload flags.
+
+    Accepts native booleans, the strings "1"/"true"/"yes"/"on" (case-insensitive),
+    and the integer 1. Anything else — including missing keys, None, "0", and
+    arbitrary strings — is treated as false so a typo can't accidentally flip a
+    behavior switch.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def _dispatch_shell(payload: dict) -> dict:
     """Run a fixed scenario script and return stdout/stderr/exit_code.
 
@@ -184,6 +201,15 @@ def _dispatch_shell(payload: dict) -> dict:
         "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
         "HOME": "/tmp",
     }
+
+    # Optional narration toggle: when the caller sets payload.quiet=true (or
+    # the worker is started with DEMO_QUIET=1 in the environment) the scenario
+    # scripts skip [scenario]/[step] narration lines and emit only real
+    # command output + the structured result fragment. Useful when the demo
+    # is wired to an end-user screen that should look like a real shell run
+    # rather than a guided walkthrough.
+    if _coerce_bool(payload.get("quiet")) or os.environ.get("DEMO_QUIET") == "1":
+        safe_env["DEMO_QUIET"] = "1"
 
     try:
         proc = subprocess.run(

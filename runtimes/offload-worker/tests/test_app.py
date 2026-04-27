@@ -126,6 +126,35 @@ def test_shell_runs_known_scenario(scenario):
     assert f"[scenario] {scenario}" in body["result"]["stdout"]
 
 
+@pytest.mark.parametrize(
+    "scenario", ["terminal-agent", "market-research", "large-build-test"]
+)
+def test_shell_quiet_flag_suppresses_narration(scenario):
+    """payload.quiet=true must drop the [scenario]/[step] narration lines.
+
+    Real command output (uname/date/pwd, ls, the JSON result fragment) and the
+    `--- task-brief ---` headers stay on, so the recipient sees actual shell
+    output rather than guided demo text. This is the inverse of
+    test_shell_runs_known_scenario, which asserts the narration is present
+    when quiet is unset.
+    """
+    r = client.post(
+        "/run",
+        json={
+            "task_type": "shell",
+            "payload": {"scenario": scenario, "quiet": True},
+        },
+    )
+    body = r.json()
+    assert body["status"] == "ok", body
+    out = body["result"]["stdout"]
+    assert f"[scenario] {scenario}" not in out
+    assert "[step " not in out
+    # The structured result fragment is real output, not narration — it must
+    # survive the quiet flag so callers can still parse the scenario verdict.
+    assert f'"scenario":"{scenario}"' in out
+
+
 def test_shell_rejects_unknown_scenario():
     r = client.post(
         "/run",
