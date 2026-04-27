@@ -1,9 +1,15 @@
 # Component and model version references for the demo.
 #
-# This file is documentation, not a runtime input — scripts and manifests
-# don't read it at apply time. Keep it in sync with the values actually
-# pinned in the matching k8s manifest / Dockerfile / setup script when
-# bumping versions, and treat any drift as a bug worth fixing.
+# Mixed-mode file:
+# - Entries consumed at runtime (via scripts/lib/load-versions.sh):
+#     operator.ref, operator.image,
+#     components.compose_minio_image, components.compose_minio_mc_image,
+#     components.litellm_image, components.minio_image, components.k3s.
+# - Everything else (models.*, litellm_aliases.*, vllm_chart_path,
+#   python_base, node_base, operator_ready.*) is documentation only —
+#   manifests / scripts pin those values inline. Keep the file in sync with
+#   the matching k8s manifest / Dockerfile / setup script when bumping;
+#   drift is a bug worth fixing.
 
 components:
   # Patch pin for k3s — change deliberately; floating "v1.31.x" caused
@@ -13,7 +19,16 @@ components:
   # to scripts/setup-system-b-vllm-local.sh to pin per environment.
   vllm_chart_path: "core/helm-charts/vllm"
   litellm_image: "ghcr.io/berriai/litellm:main-v1.63.11-stable"
+  # k8s/system-b/minio.yaml uses the docker.io image at this tag.
   minio_image: "minio/minio:RELEASE.2025-02-28T09-55-16Z"
+  # docker-compose.yaml pins quay.io images at older tags that have stayed
+  # stable for the local-dev path. They're separate keys so bumping one
+  # doesn't drag the other along — the two paths have different stability
+  # requirements. Both are consumed via ${MINIO_IMAGE} / ${MINIO_MC_IMAGE}
+  # interpolation in docker-compose.yaml; load via:
+  #   eval "$(scripts/lib/load-versions.sh)" && docker compose up
+  compose_minio_image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+  compose_minio_mc_image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
   python_base: "3.12-slim"
   node_base: "22-slim"
 

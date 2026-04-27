@@ -10,10 +10,15 @@
 set -euo pipefail
 
 OPENCLAW_OPERATOR_REPO="${OPENCLAW_OPERATOR_REPO:-https://github.com/openclaw-rocks/openclaw-operator.git}"
-# Default ref pinned to the latest upstream release as a candidate
-# (see config/versions.yaml `operator.ref`). Override via the env when
-# you've validated a different tag/SHA against your stand. The previous
-# default (`main`) was reproducibly unstable.
+# Default ref comes from config/versions.yaml (operator.ref) via the
+# load-versions helper, falling back to v0.30.0 if the helper or file is
+# unavailable. Env var still wins — `eval` of the helper uses :=, which
+# only assigns when the variable is unset/empty.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/load-versions.sh" ]; then
+  # shellcheck disable=SC1091
+  eval "$("$SCRIPT_DIR/lib/load-versions.sh" 2>/dev/null || true)"
+fi
 OPENCLAW_OPERATOR_REF="${OPENCLAW_OPERATOR_REF:-v0.30.0}"
 
 OPERATOR_CRD_PATH="${OPERATOR_CRD_PATH:-config/crd/bases/openclawinstances.openclaw.rocks.yaml}"

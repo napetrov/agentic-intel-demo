@@ -1,5 +1,13 @@
 # Demo architecture template.
 #
+# Spec-only: validated for shape by scripts/validate-demo-templates.py;
+# NOT consumed by any deploy script. The shipped two-system topology is
+# pinned directly in examples/openclawinstance-intel-demo.yaml,
+# k8s/system-{a,b}/, config/model-routing/litellm-config.yaml, and
+# config/env/system-{a,b}.yaml.template. To deploy a different topology,
+# fill in this template AND hand-translate the slots into those artifacts.
+# See templates/architecture/README.md.
+#
 # Copy this file to `config/architectures/<your-name>.yaml` (or wherever you
 # keep deployment config) and fill every <...> slot. Run
 # `python3 scripts/validate-demo-templates.py` to check consistency with

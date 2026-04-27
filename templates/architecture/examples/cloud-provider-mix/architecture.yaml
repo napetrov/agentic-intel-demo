@@ -1,5 +1,10 @@
 # Worked example — two-system architecture with multiple cloud providers.
 #
+# Spec-only: validated for shape, not consumed by any deploy script. To
+# actually deploy this topology you must hand-translate the slots below
+# into examples/openclawinstance-intel-demo.yaml + k8s/ + config/. See
+# templates/architecture/README.md.
+#
 # Identical topology to two-system but shows how multiple token providers
 # (local vLLM + Bedrock + SambaNova) can sit behind LiteLLM and be routed
 # to different model aliases. Matches the operator config shipped in

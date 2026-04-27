@@ -19,7 +19,12 @@
 
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
+    # Pinned via env interpolation so config/versions.yaml stays the single
+    # source of truth. Default matches what the demo has shipped with;
+    # `eval "$(scripts/lib/load-versions.sh)"` before `docker compose up`
+    # rehydrates from versions.yaml. CI / per-env overrides via shell still
+    # win — the default only fires when MINIO_IMAGE is unset/empty.
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z}
     command: server /data --address :9000 --console-address :9001
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
@@ -38,7 +43,7 @@ services:
       - minio-data:/data
 
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z}
     depends_on:
       - minio
     environment:

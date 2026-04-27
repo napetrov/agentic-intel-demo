@@ -25,11 +25,26 @@ any files under config/architectures/ if present):
 - every model_aliases entry resolves to a declared inference provider
 - supported_execution_modes are legal for the topology
 
+Cross-config consistency:
+- operator-chat-config.template.json's Telegram systemPrompt mentions every
+  scenario id as `scenario:<id>` and echoes its `initial_user_message`
+  verbatim (catches "added a scenario but forgot to update the operator
+  prompt and silently broke the Telegram menu")
+- every customCommands[].command in the operator chat config is referenced
+  as `/<command>` in agents/orchestrator.md
+- every `litellm/<alias>` reference in the operator chat config + every
+  `id` exposed under models.providers.litellm.models[] resolves to a real
+  model_name in config/model-routing/litellm-config.yaml. The same check
+  applies to examples/openclawinstance-intel-demo.yaml's embedded
+  openclaw.json config.
+
 Exits non-zero on any failure; prints a per-file diagnostic. Relies only on
 the Python standard library + PyYAML.
 """
 from __future__ import annotations
 
+import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -361,6 +376,216 @@ def validate_architecture(report: Report, path: Path) -> set[str]:
     return normalized_sem
 
 
+def _load_litellm_aliases(report: Report) -> set[str]:
+    """Return the set of model_name aliases declared in the LiteLLM router."""
+    path = REPO_ROOT / "config" / "model-routing" / "litellm-config.yaml"
+    where = str(path.relative_to(REPO_ROOT))
+    if not path.exists():
+        report.add_error(f"{where}: missing — required for LiteLLM alias checks")
+        return set()
+    try:
+        doc = load_yaml(path) or {}
+    except yaml.YAMLError as e:
+        report.add_error(f"{where}: YAML parse error: {e}")
+        return set()
+    model_list = doc.get("model_list") or []
+    if not isinstance(model_list, list):
+        report.add_error(f"{where}: model_list must be a list")
+        return set()
+    aliases: set[str] = set()
+    for i, entry in enumerate(model_list):
+        if not isinstance(entry, dict):
+            report.add_error(f"{where}: model_list[{i}] must be a mapping")
+            continue
+        name = entry.get("model_name")
+        if not isinstance(name, str):
+            report.add_error(f"{where}: model_list[{i}].model_name missing")
+            continue
+        aliases.add(name)
+    return aliases
+
+
+def _check_chat_config_object(
+    report: Report,
+    where: str,
+    cfg: dict,
+    scenarios: dict[str, dict],
+    orchestrator_text: str,
+    litellm_aliases: set[str],
+) -> None:
+    """Validate one parsed operator chat config object (JSON-shaped).
+
+    Used for both config/operator-chat-config.template.json and the
+    embedded openclaw.json string inside
+    examples/openclawinstance-intel-demo.yaml — they share the same shape.
+    """
+    if not isinstance(cfg, dict):
+        report.add_error(f"{where}: chat config root must be a mapping")
+        return
+
+    # ---- Telegram systemPrompt ↔ catalog/scenarios.yaml ----
+    telegram = ((cfg.get("channels") or {}).get("telegram") or {})
+    groups = telegram.get("groups") or {}
+    system_prompts: list[tuple[str, str]] = []
+    if isinstance(groups, dict):
+        for gid, gentry in groups.items():
+            if isinstance(gentry, dict):
+                sp = gentry.get("systemPrompt")
+                if isinstance(sp, str):
+                    system_prompts.append((str(gid), sp))
+
+    # Some operator configs (e.g. examples/openclawinstance-intel-demo.yaml)
+    # do not embed a systemPrompt — that's fine, but if any prompt exists,
+    # it must mention every scenario.
+    if scenarios and system_prompts:
+        for sid, entry in scenarios.items():
+            callback = f"scenario:{sid}"
+            ack = entry.get("initial_user_message")
+            for gid, sp in system_prompts:
+                missing: list[str] = []
+                if callback not in sp:
+                    missing.append(f"callback `{callback}`")
+                if isinstance(ack, str) and ack and ack not in sp:
+                    missing.append(f"initial_user_message `{ack}`")
+                if missing:
+                    report.add_error(
+                        f"{where}: Telegram group `{gid}` systemPrompt is "
+                        f"missing {', '.join(missing)} for scenario `{sid}`"
+                    )
+        report.ok(f"{where}: Telegram systemPrompt covers all scenarios")
+
+    # ---- customCommands ↔ orchestrator.md ----
+    custom_commands = telegram.get("customCommands") or []
+    if isinstance(custom_commands, list) and orchestrator_text:
+        for i, cc in enumerate(custom_commands):
+            if not isinstance(cc, dict):
+                report.add_error(
+                    f"{where}: channels.telegram.customCommands[{i}] must be a mapping"
+                )
+                continue
+            cmd = cc.get("command")
+            if not isinstance(cmd, str) or not cmd:
+                report.add_error(
+                    f"{where}: customCommands[{i}].command is required"
+                )
+                continue
+            # Match `/<cmd>` as a whole token in orchestrator.md.
+            pattern = re.compile(rf"(^|\s|`)/{re.escape(cmd)}(\b|`|$)")
+            if not pattern.search(orchestrator_text):
+                report.add_error(
+                    f"{where}: customCommands[{i}].command `/{cmd}` not "
+                    f"referenced in agents/orchestrator.md"
+                )
+        if custom_commands:
+            report.ok(f"{where}: customCommands all referenced in orchestrator.md")
+
+    # ---- litellm/<alias> references ↔ litellm-config.yaml ----
+    if litellm_aliases:
+        # Walk every model.primary / model.fallbacks under agents.{defaults,list[]}.
+        agents_block = cfg.get("agents") or {}
+        targets: list[tuple[str, str]] = []  # (where_label, model_ref)
+
+        def collect(label: str, model_obj):
+            if not isinstance(model_obj, dict):
+                return
+            primary = model_obj.get("primary")
+            if isinstance(primary, str):
+                targets.append((f"{label}.primary", primary))
+            for j, fb in enumerate(model_obj.get("fallbacks") or []):
+                if isinstance(fb, str):
+                    targets.append((f"{label}.fallbacks[{j}]", fb))
+
+        defaults_model = (agents_block.get("defaults") or {}).get("model")
+        collect("agents.defaults.model", defaults_model)
+        for i, agent in enumerate(agents_block.get("list") or []):
+            if isinstance(agent, dict):
+                collect(f"agents.list[{i}].model", agent.get("model"))
+
+        for label, ref in targets:
+            if not ref.startswith("litellm/"):
+                continue
+            alias = ref.split("/", 1)[1]
+            if alias not in litellm_aliases:
+                report.add_error(
+                    f"{where}: {label} `{ref}` references unknown LiteLLM alias "
+                    f"`{alias}` (declared aliases: "
+                    f"{sorted(litellm_aliases)})"
+                )
+
+        # Also check models.providers.litellm.models[].id — these are
+        # the IDs the chat surface advertises to the user; each must
+        # resolve to a real router alias.
+        litellm_provider = (
+            (cfg.get("models") or {}).get("providers") or {}
+        ).get("litellm")
+        if isinstance(litellm_provider, dict):
+            for i, m in enumerate(litellm_provider.get("models") or []):
+                if not isinstance(m, dict):
+                    continue
+                mid = m.get("id")
+                if isinstance(mid, str) and mid not in litellm_aliases:
+                    report.add_error(
+                        f"{where}: models.providers.litellm.models[{i}].id "
+                        f"`{mid}` not declared in "
+                        f"config/model-routing/litellm-config.yaml::model_list"
+                    )
+        report.ok(f"{where}: LiteLLM alias references resolve")
+
+
+def validate_chat_configs(report: Report) -> None:
+    """Cross-check operator chat configs against catalog + router + orchestrator."""
+    # Reload scenarios once for the chat-config checks. validate_scenarios()
+    # is already running its own pass; we only need the (id, ack) map here.
+    scen_path = REPO_ROOT / "catalog" / "scenarios.yaml"
+    try:
+        scen_doc = load_yaml(scen_path) or {}
+    except (FileNotFoundError, yaml.YAMLError):
+        scen_doc = {}
+    scenarios = (scen_doc.get("scenarios") or {}) if isinstance(scen_doc, dict) else {}
+    if not isinstance(scenarios, dict):
+        scenarios = {}
+
+    orchestrator_path = REPO_ROOT / "agents" / "orchestrator.md"
+    orchestrator_text = (
+        load_text(orchestrator_path) if orchestrator_path.exists() else ""
+    )
+
+    litellm_aliases = _load_litellm_aliases(report)
+
+    # 1) Standalone operator chat config template.
+    chat_path = REPO_ROOT / "config" / "operator-chat-config.template.json"
+    if chat_path.exists():
+        where = str(chat_path.relative_to(REPO_ROOT))
+        try:
+            cfg = json.loads(chat_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            report.add_error(f"{where}: JSON parse error: {e}")
+        else:
+            _check_chat_config_object(
+                report, where, cfg, scenarios, orchestrator_text, litellm_aliases
+            )
+
+    # 2) Embedded openclaw.json inside the OpenClawInstance example.
+    inst_path = REPO_ROOT / "examples" / "openclawinstance-intel-demo.yaml"
+    if inst_path.exists():
+        where = f"{inst_path.relative_to(REPO_ROOT)} (spec.config.openclaw.json)"
+        try:
+            inst = load_yaml(inst_path) or {}
+        except yaml.YAMLError as e:
+            report.add_error(f"{inst_path.relative_to(REPO_ROOT)}: YAML parse error: {e}")
+            inst = {}
+        embedded = ((inst.get("spec") or {}).get("config") or {}).get("openclaw.json")
+        if isinstance(embedded, str) and embedded.strip():
+            try:
+                cfg = json.loads(embedded)
+            except json.JSONDecodeError as e:
+                report.add_error(f"{where}: embedded JSON parse error: {e}")
+            else:
+                _check_chat_config_object(
+                    report, where, cfg, scenarios, orchestrator_text, litellm_aliases
+                )
+
+
 def main() -> int:
     report = Report()
 
@@ -369,6 +594,7 @@ def main() -> int:
         supported_modes_union |= validate_architecture(report, path)
 
     validate_scenarios(report, supported_modes_union)
+    validate_chat_configs(report)
 
     for note in report.checked:
         print(f"OK  {note}")
