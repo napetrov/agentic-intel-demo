@@ -388,6 +388,11 @@ def _load_litellm_aliases(report: Report) -> set[str]:
     except yaml.YAMLError as e:
         report.add_error(f"{where}: YAML parse error: {e}")
         return set()
+    if not isinstance(doc, dict):
+        report.add_error(
+            f"{where}: root must be a mapping, got {type(doc).__name__}"
+        )
+        return set()
     model_list = doc.get("model_list") or []
     if not isinstance(model_list, list):
         report.add_error(f"{where}: model_list must be a list")
@@ -429,8 +434,26 @@ def _check_chat_config_object(
         report.add_error(f"{where}: chat config root must be a mapping")
         return
 
+    def as_mapping(label: str, value: object) -> dict:
+        """Normalize a nested block to a dict, reporting type drift.
+
+        Without this guard, a malformed but truthy non-dict value (e.g.
+        `channels: []`) would crash the validator with AttributeError on
+        the next `.get()` call instead of being reported cleanly.
+        """
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            report.add_error(
+                f"{where}: `{label}` must be a mapping, got "
+                f"{type(value).__name__}"
+            )
+            return {}
+        return value
+
     # ---- Telegram systemPrompt ↔ catalog/scenarios.yaml ----
-    telegram = ((cfg.get("channels") or {}).get("telegram") or {})
+    channels = as_mapping("channels", cfg.get("channels"))
+    telegram = as_mapping("channels.telegram", channels.get("telegram"))
     groups = telegram.get("groups") or {}
     system_prompts: list[tuple[str, str]] = []
     if isinstance(groups, dict):
@@ -504,7 +527,7 @@ def _check_chat_config_object(
     if litellm_aliases:
         section_errors = 0
         # Walk every model.primary / model.fallbacks under agents.{defaults,list[]}.
-        agents_block = cfg.get("agents") or {}
+        agents_block = as_mapping("agents", cfg.get("agents"))
         targets: list[tuple[str, str]] = []  # (where_label, model_ref)
 
         def collect(label: str, model_obj):
@@ -538,9 +561,9 @@ def _check_chat_config_object(
         # Also check models.providers.litellm.models[].id — these are
         # the IDs the chat surface advertises to the user; each must
         # resolve to a real router alias.
-        litellm_provider = (
-            (cfg.get("models") or {}).get("providers") or {}
-        ).get("litellm")
+        models_block = as_mapping("models", cfg.get("models"))
+        providers_block = as_mapping("models.providers", models_block.get("providers"))
+        litellm_provider = providers_block.get("litellm")
         if isinstance(litellm_provider, dict):
             for i, m in enumerate(litellm_provider.get("models") or []):
                 if not isinstance(m, dict):
@@ -577,7 +600,8 @@ def validate_chat_configs(report: Report) -> None:
 
     litellm_aliases = _load_litellm_aliases(report)
 
-    # 1) Standalone operator chat config template.
+    # 1) Standalone operator chat config template — canonical source of
+    # the demo-menu / systemPrompt contract. Treat as required.
     chat_path = REPO_ROOT / "config" / "operator-chat-config.template.json"
     if chat_path.exists():
         where = str(chat_path.relative_to(REPO_ROOT))
@@ -594,6 +618,11 @@ def validate_chat_configs(report: Report) -> None:
                 report, where, cfg, scenarios, orchestrator_text, litellm_aliases,
                 require_system_prompt=True,
             )
+    else:
+        report.add_error(
+            "config/operator-chat-config.template.json: missing — required "
+            "for cross-config validation"
+        )
 
     # 2) Embedded openclaw.json inside the OpenClawInstance example.
     inst_path = REPO_ROOT / "examples" / "openclawinstance-intel-demo.yaml"
