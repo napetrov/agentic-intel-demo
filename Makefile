@@ -9,6 +9,16 @@ WEB_DEMO_PORT ?= 8080
 help:
 	@awk 'BEGIN {FS = ":.*##"; printf "Available targets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-26s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+.PHONY: all
+all: lint test ## Run the full local quality suite (lint + test)
+
+.PHONY: clean
+clean: ## Remove local test/coverage/cache artifacts (no Docker/k8s side effects)
+	rm -rf .test-venv .coverage .coverage.* htmlcov coverage.xml \
+	       .pytest_cache .mypy_cache .ruff_cache
+	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	rm -rf web-demo/test-results web-demo/playwright-report
+
 # --- Tier 0 (web simulation) ------------------------------------------------
 
 .PHONY: tier0
