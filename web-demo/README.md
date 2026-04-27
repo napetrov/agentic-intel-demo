@@ -82,3 +82,140 @@ BASE_URL=http://localhost:8080 npx playwright test
 
 The same suite runs in CI on every PR (`.github/workflows/test.yml`,
 `web-demo-smoke` job).
+
+## UI walkthrough
+
+The page is laid out as one column of stacked panels. Top to bottom:
+
+### 1. Platform health rail
+Five dots, one per upstream service: OpenClaw, LiteLLM, SambaNova, System
+A (control-plane), System B (offload-worker). Each dot polls `/api/probe/{name}`
+(the control-plane probe endpoint — see `docs/api-reference.md`) and renders
+one of four states:
+
+| Class | Dot colour | aria-label | Meaning |
+|-------|-----------|------------|---------|
+| `ok` | green | `healthy` | Target answered 2xx within the timeout |
+| `warn` | yellow | `degraded` | Initial state, OR control-plane up but worker not ready (System B only) |
+| `down` | red | `unreachable` | Target probed and failed (timeout / non-2xx / network error) |
+| `idle` | grey | `not configured` | No URL configured for this probe (env var unset) |
+| `unknown` | grey | `reachability unknown` | Control plane is down, so we genuinely cannot probe upstream — distinct from "broken" |
+
+`idle` and `unknown` both render grey but mean different things: `idle`
+is "operator deliberately didn't wire this", `unknown` is "we tried but
+couldn't tell". Both are honest; neither is a false-OK. See
+`docs/health-probes.md` for the full state model.
+
+### 2. Hero / scenario picker
+Three primary buttons:
+- **Stack overview** — lights every node and route in the architecture
+  diagram below so you can see the full topology at a glance, no demo
+  needed.
+- **Run demo** — runs the scripted walkthrough. Falls back to a static
+  scripted run if the control plane isn't reachable; uses live backend
+  data when it is.
+- **Reset demo** — clears the run state, hides the services panel,
+  resets the architecture diagram and tool activity log.
+
+Below: a horizontally-scrollable card row of demo scenarios pulled from
+`catalog/scenarios.yaml`. Clicking a card runs that scenario through the
+walkthrough. The scenarios shipped today are:
+`terminal-agent`, `market-research`, `large-build-test`.
+
+### 3. Architecture diagram
+Three bands stacked top-to-bottom:
+- **Orchestration band** (shared) — Telegram, OpenClaw, LiteLLM.
+- **System A** — control-plane and the active session pods. The
+  capacity bar at top-right shows used / total vCPU.
+- **System B** — offload-worker, vLLM, MinIO. Same capacity bar shape.
+
+The cross-system arrow lights when an offload is in flight. Per-pod
+chips populate live during a scenario run; clicking a chip surfaces the
+matching log lines in the workspace panel further down.
+
+### 4. Multi-agent fan-out
+Spawn N concurrent sessions to demonstrate density. Picks scenario,
+profile (`small` (default), `medium`, `large`), and count, then `POST /sessions/batch`
+to the control plane. The session table polls `/sessions` and shows live
+status per session (`Pending` → `Running` → `Completed`/`Failed`;
+`Deleting` on termination).
+
+The "backend" badge top-right reflects which backend the control plane
+is using — `local` (in-memory simulation; the dev / docker-compose
+default) or `kube` (real `batch/v1.Job`s in the `agents` namespace —
+overridable via `AGENTS_NAMESPACE`).
+
+`Clear list` only purges the local list; it does NOT delete sessions on
+the backend. Use the per-row delete button to terminate a session.
+
+### 5. Optional services panel (hidden until reachable)
+Surfaces optional integrations the local stack can pick up:
+Flowise (`:3000`), OpenWebUI (`:3030`), MinIO console (`:9001`). The
+panel only appears if at least one of them probes successfully.
+
+### 6. Agent console
+A free-form input wired to `/api/agent/command`, which forwards to the
+agent-stub's `/tools/invoke` (Tier 1) or to the operator-managed agent
+gateway (Tier 2). Output rendering:
+- **Status line** — what the agent decided to do and why
+  (classifier rationale).
+- **Command log** — full tool trace, stdout/stderr, and elapsed time.
+
+Available tools and the deterministic / LLM-backed classifier are
+documented in `docs/agent-tool-reference.md`. If the control plane is
+unreachable the input shows "Backend not detected" and disables submit.
+
+### 7. Workspace + tool activity
+The bottom panel renders the most recent scenario run:
+- **Command log** — every shell / tool invocation in order.
+- **Metrics grid** — counters wired up by `app.js` (commands run, tools
+  invoked, artifacts produced, elapsed seconds).
+- **Tool activity** — short one-liner per step, suitable for a
+  presentation overlay.
+- **Result** — final structured summary returned by the agent.
+- **Console** — raw stream output.
+
+## Other entry points
+
+- `service-views.html` — "Behind the scenes" view: per-service
+  status, log tails, and config snapshots.
+- `scalability.html` — "Scalability story": density, throughput, and
+  per-task economics on synthetic data.
+
+## Backend env vars that affect the UI
+
+The web demo is purely static; everything dynamic is rendered from
+control-plane responses. Relevant control-plane env vars (consumed by
+`runtimes/control-plane/app.py`):
+
+| Var | Effect on the UI |
+|-----|------------------|
+| `OPENCLAW_GATEWAY_URL` | OpenClaw dot — `idle` (grey, "not configured") if blank |
+| `LITELLM_BASE_URL` | LiteLLM dot — `idle` (grey, "not configured") if blank |
+| `SAMBANOVA_PROBE_URL` | SambaNova dot — `idle` (grey, "not configured") if blank |
+| `SESSION_BACKEND` | Multi-agent fan-out badge (`local` / `kube`) |
+| `MINIO_ENDPOINT` | Whether artifact links resolve |
+
+A full reference is in `docs/api-reference.md`.
+
+## Troubleshooting
+
+- **All dots stay yellow ("warn").** That's the initial state — the
+  first probe hasn't returned yet. If they stay yellow, the backend
+  isn't reachable. Check `curl http://localhost:8090/health` (compose
+  exposes the control plane on host port 8090). In
+  static-only mode this is expected.
+- **OpenClaw / SambaNova dots show grey "not configured".** The control
+  plane doesn't have a URL configured for that probe. See env var table
+  above. Not a failure — the rail is reporting honestly.
+- **Upstream dots show grey "reachability unknown".** Control plane is
+  down, so the UI can't tell whether System B / OpenClaw / etc. are
+  healthy. Fix the control plane first; the upstream dots will
+  re-resolve on the next probe tick.
+- **Multi-agent panel says "backend: probing…" indefinitely.** The
+  `/sessions` endpoint isn't responding. Verify `SESSION_BACKEND` env
+  resolves a valid backend at startup; check the control-plane logs for
+  the "session backend: ..." line.
+- **Agent command says "Backend not detected".** The `/api/agent/*`
+  proxy isn't wired up. In compose this means nginx-in-the-web-demo
+  container is up but the agent-stub container isn't.

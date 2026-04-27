@@ -35,4 +35,12 @@ scenarios:
     architecture_variant: <local-standard|local-large|offload>   # see docs/architecture-variants.md
     artifact_output: <true|false>
     offload_task_type: <analytics|null>   # only for execution_mode: offload_system_b
+
+    # Optional operational hints (advisory — not enforced by the validator):
+    difficulty: <easy|medium|hard>        # operator guidance: which scenario to start a demo with
+    estimated_duration_seconds: <int>     # rough wall-clock for one run; surfaced in the menu
+    fixtures_dir: <relative-path|null>    # e.g. agents/scenarios/<id>/fixtures/ — pre-seeded inputs
+                                          # so the scenario runs offline / air-gapped
+    preferred_model_alias: <fast|default|reasoning|sambanova|null>  # LiteLLM alias hint;
+                                                                     # runtime may still override
 # ↑↑↑ stop copying here; do NOT include the outer `scenarios:` line above ↑↑↑

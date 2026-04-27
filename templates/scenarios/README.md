@@ -29,6 +29,10 @@ ones in YAML keys.
    Never add a second top-level `scenarios:` key to `catalog/scenarios.yaml`.
 3. Create `agents/scenarios/<id>/` and copy `flow.template.md` into
    `flow.md` and `task-brief.template.md` into `<task-name>.md`. Fill both in.
+   If your scenario needs seed data (CSVs, sample JSON, fixtures for an
+   offline run), put it under `agents/scenarios/<id>/fixtures/` and point
+   `fixtures_dir:` in the catalog entry at that path. Keep fixtures small
+   (< 1 MiB total) so the repo stays cloneable on slow links.
 4. Add an entry to `agents/context-map.md` listing which files the
    orchestrator should load for the new scenario.
 5. Add the Telegram triggers to the guided-triggers section of
