@@ -1,46 +1,42 @@
-# Scenario catalog template.
+# Scenario catalog ENTRY template (fragment).
 #
-# IMPORTANT: do NOT copy this file wholesale into `catalog/scenarios.yaml`.
-# `catalog/scenarios.yaml` already has a top-level `scenarios:` key; copying
-# the block below verbatim would create a duplicate top-level key, and most
-# YAML parsers keep only one — silently dropping existing scenarios.
+# This file is a FRAGMENT — it intentionally has no top-level `scenarios:`
+# key. Paste the body below as a new entry under the existing `scenarios:`
+# map in `catalog/scenarios.yaml`. Replace every <...> slot. Keep the
+# scenario id in snake_case and unique across the catalog.
 #
-# Instead, copy ONLY the `<scenario_id>:` block (everything starting at the
-# indented scenario id, without the outer `scenarios:` line) and paste it as
-# a new entry UNDER the existing `scenarios:` map in
-# `catalog/scenarios.yaml`. Replace every <...> slot. Keep the scenario id
-# in snake_case and unique across the catalog.
+# Worked examples to mirror (filled-in, shipping):
+#   - templates/scenarios/examples/terminal-agent/      (local-standard)
+#   - templates/scenarios/examples/market-research/     (offload)
+#   - templates/scenarios/examples/large-build-test/    (local-large)
 #
-# See docs/scenario-spec.md for field-level requirements and the acceptance
-# checklist. See docs/architecture-variants.md for how execution_mode shapes
-# the architecture of the scenario.
+# Field-level requirements + acceptance checklist: docs/scenario-spec.md.
+# Architecture variant choice:                      docs/architecture-variants.md.
+# Run `python3 scripts/validate-demo-templates.py` after editing — it will
+# fail loudly if any required field is missing.
 
-# ↓↓↓ copy ONLY from here down (the `<scenario_id>:` entry and its body) ↓↓↓
-scenarios:
+<scenario_id>:                          # snake_case, unique; used in callback data
+  label: "<Telegram button label>"      # short, fits an inline button
+  # Note: execution_mode uses underscores (matches catalog/tasks.yaml);
+  # architecture_variant below uses hyphens (matches docs/architecture-variants.md).
+  execution_mode: <local_standard|local_large|offload_system_b>
+  task_family: <task_family_id>         # must exist in catalog/tasks.yaml
+  initial_user_message: "<exact text echoed back to user on start>"
+  allowed_next_actions:
+    - show_status
+    - reset_session
+    # add other scenario ids here if switching is supported
+  fallback_scenario: <scenario_id_or_null>
 
-  <scenario_id>:                          # snake_case, unique; used in callback data
-    label: "<Telegram button label>"      # short, fits an inline button
-    # Note: execution_mode uses underscores (matches catalog/tasks.yaml);
-    # architecture_variant below uses hyphens (matches docs/architecture-variants.md).
-    execution_mode: <local_standard|local_large|offload_system_b>
-    task_family: <task_family_id>         # must exist in catalog/tasks.yaml
-    initial_user_message: "<exact text echoed back to user on start>"
-    allowed_next_actions:
-      - show_status
-      - reset_session
-      # add other scenario ids here if switching is supported
-    fallback_scenario: <scenario_id_or_null>
+  # Optional but recommended fields (keep or remove as needed):
+  architecture_variant: <local-standard|local-large|offload>   # see docs/architecture-variants.md
+  artifact_output: <true|false>
+  offload_task_type: <analytics|null>   # only for execution_mode: offload_system_b
 
-    # Optional but recommended fields (keep or remove as needed):
-    architecture_variant: <local-standard|local-large|offload>   # see docs/architecture-variants.md
-    artifact_output: <true|false>
-    offload_task_type: <analytics|null>   # only for execution_mode: offload_system_b
-
-    # Optional operational hints (advisory — not enforced by the validator):
-    difficulty: <easy|medium|hard>        # operator guidance: which scenario to start a demo with
-    estimated_duration_seconds: <int>     # rough wall-clock for one run; surfaced in the menu
-    fixtures_dir: <relative-path|null>    # e.g. agents/scenarios/<id>/fixtures/ — pre-seeded inputs
-                                          # so the scenario runs offline / air-gapped
-    preferred_model_alias: <fast|default|reasoning|sambanova|null>  # LiteLLM alias hint;
-                                                                     # runtime may still override
-# ↑↑↑ stop copying here; do NOT include the outer `scenarios:` line above ↑↑↑
+  # Optional operational hints (advisory — not enforced by the validator):
+  difficulty: <easy|medium|hard>        # operator guidance: which scenario to start a demo with
+  estimated_duration_seconds: <int>     # rough wall-clock for one run; surfaced in the menu
+  fixtures_dir: <relative-path|null>    # e.g. agents/scenarios/<id>/fixtures/ — pre-seeded inputs
+                                        # so the scenario runs offline / air-gapped
+  preferred_model_alias: <fast|default|reasoning|sambanova|null>  # LiteLLM alias hint;
+                                                                   # runtime may still override

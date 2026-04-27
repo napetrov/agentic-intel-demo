@@ -40,7 +40,7 @@ READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-300}"
 # the heuristic for the pinned ref while still letting an operator
 # override the path for a different upstream version. Set to the empty
 # string to fall through to the legacy condition=Ready+phase fallback.
-# Tracked as gap #5 in docs/operator-gap-analysis.md.
+# Tracked as gap #5 in docs/internal/operator-gap-analysis.md.
 #
 # Use an explicit conditional rather than ${READY_JSONPATH-{.status.phase}}:
 # the `}` inside the default word closes the brace expansion early,

@@ -11,7 +11,7 @@ spec:
     # repo-pin time. The runtime image is published independently from
     # the operator binary — confirm the tag your operator ref expects
     # before promoting this past dry-run. Tracked as gap #4 in
-    # docs/operator-gap-analysis.md.
+    # docs/internal/operator-gap-analysis.md.
     tag: v0.30.0
     pullPolicy: IfNotPresent
   env:

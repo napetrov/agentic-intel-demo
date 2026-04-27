@@ -52,7 +52,7 @@ elif [ "${OPENCLAW_OPERATOR_REF}" = "v0.30.0" ] && [ -z "${OPENCLAW_OPERATOR_REF
   # an explicit override (any non-default ref) is treated as a
   # deliberate choice and stays silent. Set
   # OPENCLAW_OPERATOR_REF_VERIFIED=1 once you've validated v0.30.0
-  # on your stand. Tracked as gap #1 in docs/operator-gap-analysis.md.
+  # on your stand. Tracked as gap #1 in docs/internal/operator-gap-analysis.md.
   echo "[install-openclaw-operator] NOTE: using upstream candidate ref ${OPENCLAW_OPERATOR_REF}." >&2
   echo "                            Validate against your stand and either set" >&2
   echo "                            OPENCLAW_OPERATOR_REF_VERIFIED=1 or pin OPENCLAW_OPERATOR_REF=<tag>." >&2

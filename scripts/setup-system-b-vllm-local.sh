@@ -2,7 +2,7 @@
 # Bring up vLLM serving Qwen3-4B on the *current* kube context, without
 # SSHing into a fixed host.
 #
-# This is the kubectl-only counterpart to scripts/setup-system-b-vllm.sh,
+# This is the kubectl-only counterpart to scripts/archive/setup-system-b-vllm.sh,
 # which assumes ssh access to the `onedal-build` host plus a local helm
 # checkout of Enterprise-Inference. That path is not portable. This
 # script targets the kube-context the operator picks up via
@@ -47,7 +47,7 @@ if [ -z "$CHART_REPO" ] || [[ "$CHART_REPO" == *"<your-org>"* ]]; then
 
   The vLLM helm chart this script installs lives in an upstream fork
   the demo doesn't redistribute (the same gap as the openclaw-operator
-  ref). Tracked as gap #7 in docs/operator-gap-analysis.md.
+  ref). Tracked as gap #7 in docs/internal/operator-gap-analysis.md.
 
   Two ways forward:
 

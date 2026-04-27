@@ -4,6 +4,17 @@ Demo-first repository area for a reproducible two-system prototype:
 - System A: Intel CPU Kubernetes environment for OpenClaw instances managed by `openclaw-operator`
 - System B: GNR Intel CPU Kubernetes environment for local SLM, offload analytics, and shared services
 
+## Where to start
+
+| You want to… | Go to |
+|---|---|
+| **Run the shipped demo end-to-end** | `docs/runbooks/tier2-bring-up.md` |
+| Understand what the demo does before reading any setup | `docs/demo-overview.md` |
+| Develop / debug the control-plane or offload-worker locally | "Local dev/smoke (Tier 1)" below |
+| Add a new scenario | `docs/scenario-spec.md` + `templates/scenarios/` |
+| Deploy on a different topology (single-node, multi-system) | `docs/architecture-spec.md` + `templates/architecture/` |
+| Contribute | `CONTRIBUTING.md` |
+
 ## Goals
 - Keep the user interacting with an agent, not with Kubernetes or physical systems
 - Manage OpenClaw instance lifecycle only through `openclaw-operator`
@@ -14,25 +25,41 @@ Demo-first repository area for a reproducible two-system prototype:
 - Prefer ready-made components over custom platform work
 
 ## Documents
-- **`docs/runbooks/tier2-bring-up.md` — canonical "from empty cluster to demo task" runbook (operator-first, single source of truth).**
-- `docs/demo-overview.md` — concise demo operating model for Telegram-first entry and two-system execution
-- `docs/demo-setup.md` — tiered bring-up guide (web simulation, local services, two-system k8s + operator)
-- `docs/contracts/session-lifecycle.md` — System A-owned lifecycle and user-visible state model
-- `docs/contracts/task-routing.md` — policy-driven routing for standard, local-large, and offload paths
-- `docs/contracts/offload-result-contract.md` — strict System A ↔ System B execution/result boundary
-- `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker
-- `docs/operator-gap-analysis.md` — what is still missing for operator-first reproducibility
-- `docs/implementation-guide.md` — implementation notes and migration context for the current demo
-- `docs/architecture.md` — architecture breakdown and execution model
-- `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers, Kubernetes-first)
-- `docs/architecture-variants.md` — how architecture differs per execution mode (local-standard / local-large / offload) within the two-system reference
-- `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios
-- `docs/archive/mvp-plan.md` — historical context; describes the removed raw control-plane/session-pod path. Current minimum path lives in `docs/demo-setup.md` and `docs/operator-runbook.md`.
-- `docs/reusable-components.md` — what to reuse vs what to build
-- `docs/repo-layout.md` — reference repo-layout notes and earlier structure proposal
-- `docs/reproducibility.md` — what must be written down to make the demo reproducible
-- `docs/improvement-plan.md` — analysis of the current repo, what was runnable locally, bugs found, and prioritized improvements
-- `docs/flowise-integration.md` — optional Flowise alt-orchestrator deployment (Docker + k8s) and flow specs
+
+### Start here
+- **`docs/runbooks/tier2-bring-up.md` — canonical "from empty cluster to demo task" runbook. The only path that runs the shipped demo end-to-end.**
+- `docs/demo-overview.md` — one-page operating model (Telegram-first entry, two-system execution).
+- `docs/demo-setup.md` — tiered bring-up reference. Tier 2 is the demo path; Tier 0 / Tier 1 are local dev/smoke.
+
+### Architecture and contracts
+- `docs/architecture.md` — architecture breakdown and execution model for the shipped two-system reference.
+- `docs/architecture-spec.md` — pluggable architecture spec (1..N clusters, pluggable token providers).
+- `docs/architecture-variants.md` — how architecture differs per execution mode (`local-standard` / `local-large` / `offload`).
+- `docs/contracts/session-lifecycle.md` — System A-owned lifecycle and user-visible state model.
+- `docs/contracts/task-routing.md` — policy-driven routing for standard, local-large, and offload paths.
+- `docs/contracts/offload-result-contract.md` — strict System A ↔ System B execution/result boundary.
+
+### Operator and reproducibility
+- `docs/operator-install.md` — how to install the upstream `openclaw-operator`.
+- `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker.
+- `docs/reproducibility.md` — values to fill in, secrets to provision, recovery playbook.
+- `docs/versions-tested.md` — combinations validated end-to-end (single source of truth for "what works").
+- `docs/port-map.md` — fixed NodePort assignments and k3s install flags.
+
+### References
+- `docs/api-reference.md` — control-plane HTTP contract.
+- `docs/agent-tool-reference.md` — tool registry exposed to the agent.
+- `docs/health-probes.md` — what `/health`, `/ready`, `/probe/*` mean per component.
+- `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios.
+- `docs/implementation-guide.md` — implementation notes and migration context.
+- `docs/reusable-components.md` — what to reuse vs what to build.
+- `docs/flowise-integration.md`, `docs/sambanova-integration.md` — optional integrations.
+
+### Internal / archive (skip on first read)
+- `docs/internal/operator-gap-analysis.md` — open-gap tracker for operator-first reproducibility.
+- `docs/internal/operator-config-checklist.md` — readiness checklist (🔴/🟡/✅), maintainer-facing.
+- `docs/internal/improvement-plan.md` — audit-style analysis snapshot (2026-04 trial run).
+- `docs/archive/mvp-plan.md` — historical pre-operator path.
 
 ## Authoring new demo scenarios
 External authors adding a new guided scenario should start here:
@@ -63,7 +90,7 @@ The current validated direction is:
   (full scenario path: scenario → control-plane → offload-worker →
   MinIO artifact)
 
-Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
+Use `docs/operator-runbook.md` and `docs/internal/operator-gap-analysis.md` as the source of truth for operator-specific bring-up and remaining work.
 
 ## Local dev/smoke (Tier 1, no cluster)
 
@@ -262,7 +289,7 @@ the `demoServices` localStorage key to a JSON array.
 - `scripts/smoke-test-offload-k8s.sh` — Tier 2 offload roundtrip: System A control-plane → System B offload-worker → MinIO artifact.
 - `scripts/check-openclaw-tools.sh` — scan recent session-pod logs for tool-invocation traces (run after DM-ing /demo).
 - `scripts/check-tier2-logs.sh` — canonical live-logs helper (operator/session/gateway/litellm/vllm/offload/minio) with the right `--context` for each.
-- `scripts/setup-system-b-vllm.sh` — historical SSH-into-`onedal-build` vLLM bring-up
+- `scripts/archive/setup-system-b-vllm.sh` — archived; historical SSH-into-`onedal-build` vLLM bring-up. Use `scripts/setup-system-b-vllm-local.sh` instead.
 - `scripts/setup-system-b-vllm-local.sh` — kubectl/helm vLLM bring-up against the current kube context (no SSH)
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
 - `scripts/load-offload-worker-image.sh` — build + load the offload-worker image into k3s/k3d when GHCR is unreachable

@@ -60,7 +60,7 @@ The original MVP docs assumed:
 The working System B path uses **vLLM**, not ollama.
 
 That means:
-- the old ollama-based setup path has been removed; use `scripts/setup-system-b-vllm.sh` as the current working path
+- the old ollama-based setup path has been removed; use `scripts/setup-system-b-vllm-local.sh` (canonical, kubectl/helm against the current context) as the current working path. The historical SSH-based `setup-system-b-vllm.sh` now lives under `scripts/archive/`.
 - the System B model service is OpenAI-compatible via vLLM directly
 - the deployed model is `Qwen/Qwen3-4B-Instruct-2507`
 - the validated working context length is `32768`
@@ -219,8 +219,9 @@ To make the setup reproducible, align the repo with the working implementation.
 ### Validated scripts
 The old ollama-based `scripts/legacy/setup-system-b.sh` has been removed.
 The current validated System B path uses vLLM:
-- `scripts/setup-system-b-vllm.sh`
+- `scripts/setup-system-b-vllm-local.sh` (canonical; kubectl/helm against the current context)
 - `scripts/check-system-b-vllm.sh`
+- `scripts/archive/setup-system-b-vllm.sh` (historical SSH-into-`onedal-build`; reference only)
 
 System A disk hygiene:
 - `scripts/cleanup-system-a.sh`
@@ -357,9 +358,9 @@ curl http://<SYSTEM_B_IP>:30900/minio/health/live
 
 ## Recommended scripts to add
 
-## 1. `scripts/setup-system-b-vllm.sh`
-Purpose:
-- clean install of vLLM on System B
+## 1. `scripts/setup-system-b-vllm-local.sh`
+Purpose (canonical; replaces the historical SSH path now under `scripts/archive/`):
+- clean install of vLLM on System B via kubectl/helm against the current context
 - write working values file
 - run helm install/upgrade
 - wait for rollout
@@ -457,11 +458,11 @@ Important conclusion:
 - the operator path is the source of truth
 - the remaining gap is reproducibility of install/recovery and committing the missing operator-owned artifacts into the repo
 
-Use `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as the source of truth for operator-specific install, recovery, and missing work.
+Use `docs/operator-runbook.md` and `docs/internal/operator-gap-analysis.md` as the source of truth for operator-specific install, recovery, and missing work.
 
 ## Next documentation step
 After this document, create or maintain:
-1. `scripts/setup-system-b-vllm.sh`
+1. `scripts/setup-system-b-vllm-local.sh`
 2. `scripts/check-system-b-vllm.sh`
 3. `scripts/cleanup-system-a.sh`
 4. `docs/operator-runbook.md`

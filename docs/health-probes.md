@@ -10,7 +10,7 @@ Two layers, one contract:
    the UI also tracks "not yet probed" and "we cannot probe at all"
    states the server doesn't model.
 
-Closing gap #5 in `docs/operator-gap-analysis.md`.
+Closing gap #5 in `docs/internal/operator-gap-analysis.md`.
 
 ## Server-side states (control-plane `/probe/{name}`)
 

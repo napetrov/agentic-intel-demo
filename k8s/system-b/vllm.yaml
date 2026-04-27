@@ -18,7 +18,7 @@
 #    deployments, swap `image:` to a CPU-tuned build (the chart path
 #    uses an internal IPEX-LLM image; pick whichever your environment
 #    has license + access to). Tracked as gap #7 in
-#    docs/operator-gap-analysis.md — the demo doesn't ship a public
+#    docs/internal/operator-gap-analysis.md — the demo doesn't ship a public
 #    pinned CPU image.
 #
 #  * Model download: vLLM pulls weights from Hugging Face on first run.

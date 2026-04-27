@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tear down an operator-managed OpenClawInstance and its operator-owned pods.
 #
-# Operator-first rule (docs/operator-gap-analysis.md): instance deletion must
+# Operator-first rule (docs/internal/operator-gap-analysis.md): instance deletion must
 # happen through the operator's CR, not direct kubectl-delete-pod. The
 # operator owns the gateway/service/storage cleanup. This script wraps the
 # canonical delete path so demos can drop pods reliably between runs.
