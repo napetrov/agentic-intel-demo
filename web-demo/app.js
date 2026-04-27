@@ -815,6 +815,14 @@ async function runLiveWalkthrough(scenarioKey) {
   // Poll until terminal. The control-plane forwards synchronously so the
   // first GET typically already returns "completed" — the poll is here so we
   // stay correct if the relay ever switches to async.
+  const renderPollError = (detail) => {
+    renderToolActivity([
+      { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
+      { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'error' }
+    ]);
+    result.textContent = detail;
+    result.className = 'result';
+  };
   const deadline = Date.now() + 90_000;
   let status = null;
   while (Date.now() < deadline) {
@@ -823,6 +831,7 @@ async function runLiveWalkthrough(scenarioKey) {
     } catch (err) {
       if (!stillCurrent()) return;
       appendLog(`[error] poll failed: ${err.message}`);
+      renderPollError(`Live run failed while polling job ${submit.job_id}: ${err.message}`);
       finish();
       return;
     }
@@ -833,6 +842,7 @@ async function runLiveWalkthrough(scenarioKey) {
 
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
     appendLog(`[error] job did not complete within 90s`);
+    renderPollError(`Live run timed out waiting for job ${submit.job_id} (90s).`);
     finish();
     return;
   }
@@ -1023,6 +1033,13 @@ function emitAgentResult(payload, log) {
     log(`[agent error] ${payload.error || 'unknown error'}`);
     return;
   }
+  if (payload.status !== 'ok') {
+    // Anything else (missing field, unrecognized value) shouldn't render as
+    // healthy. Mirrors runLiveWalkthrough's verdict guard so the log and
+    // the Result panel agree.
+    log(`[agent error] unexpected status=${payload.status === undefined ? 'missing' : String(payload.status)}`);
+    return;
+  }
   const elapsed = typeof payload.elapsed_ms === 'number' ? `${payload.elapsed_ms} ms` : '?';
   log(`[agent ok] tool=${payload.tool} elapsed=${elapsed}`);
   if (Array.isArray(payload.trace) && payload.trace.length) {
@@ -1205,8 +1222,15 @@ async function fetchArtifactPayload(ref, log = appendAgentLog) {
     log(`[error] artifact presign failed: ${err.message}`);
     return null;
   }
+  // 10s timeout on the cross-origin MinIO fetch so a stalled/blocked request
+  // can't strand the live walkthrough or the agent-command flow indefinitely.
+  // The presigned URL carries short-lived MinIO credentials in the query
+  // string; do NOT log it to the visible UI panel — operators can inspect
+  // the failed request in DevTools if a manual retrieve is needed.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const r = await fetch(presigned.url);
+    const r = await fetch(presigned.url, { signal: ctrl.signal, cache: 'no-store' });
     if (!r.ok) {
       log(`[error] artifact fetch HTTP ${r.status}`);
       return null;
@@ -1215,8 +1239,10 @@ async function fetchArtifactPayload(ref, log = appendAgentLog) {
     return wrapper.response || wrapper.response_text || wrapper;
   } catch (err) {
     log(`[error] artifact fetch failed: ${err.message} (CORS on MinIO?)`);
-    log(`  retrieve manually: curl "${presigned.url}"`);
+    log(`  presigned URL omitted from UI log; inspect the failed request in DevTools if needed`);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

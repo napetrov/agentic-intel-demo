@@ -280,7 +280,7 @@
                 <div class="section-subtitle">Watch the agent work in real time</div>
               </div>
             </div>
-            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run demo" submits an <code>agent_invoke</code> task via the control-plane; the offload-worker forwards it to the OpenClaw gateway and the gateway's tool output streams here. Otherwise the panel falls back to the scripted walkthrough.</div>
+            <div class="panel-note">When /api/health, /api/ready, and the OpenClaw probe (<code>/api/probe/openclaw</code>) are all healthy, "Run demo" submits an <code>agent_invoke</code> task via the control-plane; the offload-worker forwards it to the OpenClaw gateway and the gateway's tool output streams here. If any of the three is unhealthy the panel falls back to the scripted walkthrough.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
