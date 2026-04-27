@@ -5,7 +5,7 @@ const SYSTEM_B_TOTAL_VCPU = 100;
 // Both call sites (form-submit guard + runAgentCommand defensive guard) use
 // the same copy so the wording can't drift as docs evolve.
 const BACKEND_REQUIRED_MSG =
-  'Backend not detected — run `docker compose up --build` (or `scripts/dev-up.sh` if container registries are blocked) to enable agent commands.';
+  'Control plane not reachable — agent commands are disabled.';
 
 const scenarios = {
   'terminal-agent': {
@@ -1635,7 +1635,7 @@ async function refreshMultiSession() {
     }
     if (noBackend) {
       setMultiSessionStatus(
-        'Backend not detected — session lifecycle needs the control-plane (run `docker compose up` from the repo root).',
+        'Control plane not reachable — session lifecycle is unavailable.',
         'warn'
       );
       renderMultiSessionRows([]);
