@@ -69,6 +69,14 @@ def _request(method: str, path: str, body: dict | None = None) -> tuple[int, dic
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", _basic_auth_header())
+    # Flowise 2.2.7 routes /api/v1/* through a single auth middleware: a
+    # short whitelist (e.g. /api/v1/ping) bypasses auth, requests carrying
+    # `x-request-from: internal` accept Basic Auth, and everything else
+    # demands a Bearer API key. /api/v1/credentials and /api/v1/variables
+    # are not on the whitelist, so without the internal marker our seed
+    # calls would 401. The admin UI sets the same header for its own
+    # backend calls.
+    req.add_header("x-request-from", "internal")
     req.add_header("Accept", "application/json")
     if data is not None:
         req.add_header("Content-Type", "application/json")
