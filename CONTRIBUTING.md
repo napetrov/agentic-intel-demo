@@ -125,7 +125,7 @@ aliases (`fast`, `default`, `reasoning`, `sambanova`).
 local demo. To add a tool:
 
 1. Add a `_tool_<name>(args)` function. Raise `ValueError` for bad input.
-2. Add a branch to `_dispatch()` (`runtimes/agent-stub/app.py:116`).
+2. Add a branch to `_dispatch()` in `runtimes/agent-stub/app.py`.
 3. If the tool should be reachable from the free-form `command` entry
    point, add a rule in `_classify_rules()` AND add the tool to the
    allow-lists referenced inside `_classify_llm()` so behaviour is
@@ -166,7 +166,9 @@ Pull requests must pass:
   compose file and every overlay.
 
 Heavier checks (kubeconform on `k8s/`, broken-link scan via lychee on
-`docs/`) run in CI only — not in the local pre-commit hook.
+`docs/`) run in CI only — not in the local pre-commit hook — but a
+failure in either still blocks merge, so address them on the PR if CI
+flags them.
 
 ## Documentation expectations
 

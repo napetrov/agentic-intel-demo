@@ -139,7 +139,7 @@ the backend. Use the per-row delete button to terminate a session.
 
 ### 5. Optional services panel (hidden until reachable)
 Surfaces optional integrations the local stack can pick up:
-Flowise (`:3000`), OpenWebUI (`:3001`), MinIO console (`:9001`). The
+Flowise (`:3000`), OpenWebUI (`:3030`), MinIO console (`:9001`). The
 panel only appears if at least one of them probes successfully.
 
 ### 6. Agent console
@@ -179,9 +179,9 @@ control-plane responses. Relevant control-plane env vars (consumed by
 
 | Var | Effect on the UI |
 |-----|------------------|
-| `OPENCLAW_GATEWAY_URL` | OpenClaw dot — `unwired` if blank |
-| `LITELLM_BASE_URL` | LiteLLM dot — `unwired` if blank |
-| `SAMBANOVA_PROBE_URL` | SambaNova dot — `unwired` if blank |
+| `OPENCLAW_GATEWAY_URL` | OpenClaw dot — `idle` (grey, "not configured") if blank |
+| `LITELLM_BASE_URL` | LiteLLM dot — `idle` (grey, "not configured") if blank |
+| `SAMBANOVA_PROBE_URL` | SambaNova dot — `idle` (grey, "not configured") if blank |
 | `SESSION_BACKEND` | Multi-agent fan-out badge (`local` / `kube`) |
 | `MINIO_ENDPOINT` | Whether artifact links resolve |
 

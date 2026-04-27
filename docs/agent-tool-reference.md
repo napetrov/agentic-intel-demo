@@ -74,8 +74,8 @@ Returns the args verbatim. Used by the classifier as a safe fallback.
 
 ### `shell`
 Runs an allow-listed binary in a sandboxed, read-only working directory
-(`/workspace`). Implementation in `_tool_shell` at
-`runtimes/agent-stub/app.py:156`.
+(`/workspace`). Implementation: `_tool_shell` in
+`runtimes/agent-stub/app.py`.
 
 Allow-list (intentionally tiny — these binaries cannot escape `/workspace`
 even if given an absolute path):
@@ -111,8 +111,8 @@ Other guards:
 
 ### `read_file`
 Reads a file under `/workspace`. Path is resolved with `Path.resolve()`
-and rejected if it escapes the workspace root (`_resolve_under_workspace`
-at `runtimes/agent-stub/app.py:206`).
+and rejected if it escapes the workspace root
+(`_resolve_under_workspace` in `runtimes/agent-stub/app.py`).
 
 Bounds: `max_bytes` defaults to 4096, capped at 65536. Reads `max_bytes+1`
 to detect truncation without a stat() race.
@@ -231,7 +231,7 @@ silently falls back to the rule path so the demo still runs offline.
 1. Add a `_tool_<name>(args)` function in `runtimes/agent-stub/app.py`.
    Keep it pure-input → pure-output; raise `ValueError` for bad input
    so `/tools/invoke` returns a structured 200 error instead of 5xx.
-2. Add a branch to `_dispatch()` near `runtimes/agent-stub/app.py:116`.
+2. Add a branch to `_dispatch()` in `runtimes/agent-stub/app.py`.
 3. If the new tool should be reachable from the free-form `command`
    entry point, add a rule branch in `_classify_rules()` AND add the
    tool to the allow-list mentioned in the LLM system prompt in
