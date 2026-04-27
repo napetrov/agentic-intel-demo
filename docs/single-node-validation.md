@@ -60,9 +60,9 @@ kubectl --kubeconfig k3s-a.yaml get nodes  # one node Ready
 kubectl --kubeconfig k3s-b.yaml get nodes  # one node Ready
 ```
 
-If you don't have root / can't run two k3s servers, `k3d` or `kind` with
+If you don't have root or can't run two k3s servers, `k3d` or `kind` with
 two clusters works equally well — the rest of this guide only depends on
-having `system-a` / `system-b` contexts.
+having `system-a` and `system-b` contexts.
 
 ---
 
@@ -131,8 +131,10 @@ upstream project — see `docs/operator-install.md`). Single-node validation
 uses the same path as a real cluster.
 
 ```bash
-APPLY=1 OPENCLAW_OPERATOR_REF=v0.30.0 ./scripts/install-openclaw-operator.sh
-./scripts/check-operator-prereqs.sh
+APPLY=1 OPENCLAW_OPERATOR_REF=v0.30.0 \
+  KUBECTL="kubectl --context system-a" \
+  ./scripts/install-openclaw-operator.sh
+./scripts/check-operator-prereqs.sh   # prints a checklist; run the suggested commands against `--context system-a`
 kubectl --context system-a apply -f examples/openclawinstance-intel-demo.yaml
 kubectl --context system-a get openclawinstance intel-demo-operator -o yaml
 ```
@@ -146,13 +148,15 @@ kubectl --context system-a get openclawinstance intel-demo-operator -o yaml
 # below has a live gateway/session to talk to. Without KEEP=1 the
 # lifecycle smoke deletes the instance at the end and the next step
 # fails with "no openclawinstance found".
-APPLY=1 KEEP=1 ./scripts/smoke-test-operator-instance.sh
+APPLY=1 KEEP=1 KUBECTL="kubectl --context system-a" \
+  ./scripts/smoke-test-operator-instance.sh
 APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
   ./scripts/smoke-test-demo-task.sh
 APPLY=1 ./scripts/smoke-test-offload-k8s.sh   # optional: full offload roundtrip
 
 # When you're done, drop the instance:
-APPLY=1 ./scripts/teardown-openclaw-instance.sh
+APPLY=1 KUBECTL="kubectl --context system-a" \
+  ./scripts/teardown-openclaw-instance.sh
 ```
 
 Then send a test message through Telegram and verify a response comes back.

@@ -289,7 +289,7 @@ the `demoServices` localStorage key to a JSON array.
 - `scripts/smoke-test-offload-k8s.sh` — Tier 2 offload roundtrip: System A control-plane → System B offload-worker → MinIO artifact.
 - `scripts/check-openclaw-tools.sh` — scan recent session-pod logs for tool-invocation traces (run after DM-ing /demo).
 - `scripts/check-tier2-logs.sh` — canonical live-logs helper (operator/session/gateway/litellm/vllm/offload/minio) with the right `--context` for each.
-- `scripts/archive/setup-system-b-vllm.sh` — archived; historical SSH-into-`onedal-build` vLLM bring-up. Use `setup-system-b-vllm-local.sh` instead.
+- `scripts/archive/setup-system-b-vllm.sh` — archived; historical SSH-into-`onedal-build` vLLM bring-up. Use `scripts/setup-system-b-vllm-local.sh` instead.
 - `scripts/setup-system-b-vllm-local.sh` — kubectl/helm vLLM bring-up against the current kube context (no SSH)
 - `scripts/check-system-b-vllm.sh` — validate running vLLM setup and context length
 - `scripts/load-offload-worker-image.sh` — build + load the offload-worker image into k3s/k3d when GHCR is unreachable

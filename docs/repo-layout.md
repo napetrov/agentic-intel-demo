@@ -3,7 +3,7 @@
 Snapshot of where things live in this repo. Keep this in sync with the actual
 tree — drift is a known maintenance hazard.
 
-```
+```text
 agentic-intel-demo/
 │
 ├── README.md                # entry point; "Where to start" table on top
@@ -149,6 +149,7 @@ agentic-intel-demo/
 ## Namespace layout
 
 ### System A
+
 | Namespace | Contents |
 |-----------|----------|
 | `agents` | session pods, session pod ServiceAccounts |
@@ -157,6 +158,7 @@ agentic-intel-demo/
 | `openclaw-operator-system` | the upstream operator's controller |
 
 ### System B
+
 | Namespace | Contents |
 |-----------|----------|
 | `system-b` | vLLM (canonical), MinIO, offload-worker, agent-stub |
