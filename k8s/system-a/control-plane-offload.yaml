@@ -87,6 +87,8 @@ spec:
               value: ${OFFLOAD_WORKER_URL}
             - name: OFFLOAD_TIMEOUT_SECONDS
               value: "60"
+            - name: OFFLOAD_ASYNC_SUBMIT
+              value: "1"
             - name: OPENCLAW_GATEWAY_URL
               value: ${OPENCLAW_GATEWAY_URL}
             - name: OPENCLAW_PROBE_PATH

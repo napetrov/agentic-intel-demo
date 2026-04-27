@@ -12,6 +12,7 @@ narrate "[scenario] terminal-agent"
 narrate "Starting isolated engineering demo"
 narrate "Flow: 1. prepare isolated engineering workspace 2. inspect the task brief 3. run a real terminal task 4. validate the result 5. summarize evidence"
 narrate "Scenario contract: route=local_standard; system owner=System A; actual terminal execution required"
+sleep 0.7
 
 narrate_blank
 narrate "[step 1/5] prepare isolated engineering workspace"
@@ -21,11 +22,13 @@ echo "+ uname -srm"
 uname -srm
 echo "+ mkdir -p /tmp"
 mkdir -p /tmp
+sleep 0.7
 
 narrate_blank
 narrate "[step 2/5] inspect the task brief"
 echo "+ sed -n '1,36p' terminal-bench-reference.md"
 sed -n '1,36p' "$TASK_BRIEF"
+sleep 0.7
 
 narrate_blank
 narrate "[step 3/5] run real terminal inventory commands"
@@ -69,6 +72,7 @@ out.write_text('\n'.join([
 ]))
 print(f'wrote {out}')
 PY
+sleep 0.7
 
 narrate_blank
 narrate "[step 4/5] validate the result"
@@ -78,6 +82,7 @@ echo "+ grep -q 'Guided scenarios found' $ARTIFACT"
 grep -q 'Guided scenarios found' "$ARTIFACT"
 echo "+ grep -q 'Final summary: PASS' $ARTIFACT"
 grep -q 'Final summary: PASS' "$ARTIFACT"
+sleep 0.7
 
 narrate_blank
 narrate "[step 5/5] summarize evidence"

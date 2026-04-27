@@ -47,6 +47,7 @@ data:
     narrate "Starting isolated engineering demo"
     narrate "Flow: 1. prepare isolated engineering workspace 2. inspect the task brief 3. run a real terminal task 4. validate the result 5. summarize evidence"
     narrate "Scenario contract: route=local_standard; system owner=System A; actual terminal execution required"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 1/5] prepare isolated engineering workspace"
@@ -56,11 +57,13 @@ data:
     uname -srm
     echo "+ mkdir -p /tmp"
     mkdir -p /tmp
+    sleep 0.7
     
     narrate_blank
     narrate "[step 2/5] inspect the task brief"
     echo "+ sed -n '1,36p' terminal-bench-reference.md"
     sed -n '1,36p' "$TASK_BRIEF"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 3/5] run real terminal inventory commands"
@@ -104,6 +107,7 @@ data:
     ]))
     print(f'wrote {out}')
     PY
+    sleep 0.7
     
     narrate_blank
     narrate "[step 4/5] validate the result"
@@ -113,6 +117,7 @@ data:
     grep -q 'Guided scenarios found' "$ARTIFACT"
     echo "+ grep -q 'Final summary: PASS' $ARTIFACT"
     grep -q 'Final summary: PASS' "$ARTIFACT"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 5/5] summarize evidence"
@@ -231,12 +236,14 @@ data:
     narrate "Starting market research demo"
     narrate "Flow: 1. frame the question 2. prepare structured analysis inputs 3. offload analysis to System B 4. collect findings 5. return a concise report"
     narrate "Scenario contract: route=offload_system_b; System A owns interaction/routing/result delivery; System B owns analytics execution"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 1/5] frame the question"
     echo "+ sed -n '1,44p' report-task.md"
     sed -n '1,44p' "$TASK_BRIEF"
     echo "question: Which SMB segment should be targeted first for an AI meeting-notes product?"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 2/5] prepare structured analysis inputs"
@@ -250,6 +257,7 @@ data:
     DATA
     echo "+ cat /tmp/market-notes.tsv"
     cat /tmp/market-notes.tsv
+    sleep 0.7
     
     narrate_blank
     narrate "[step 3/5] offload analysis to System B"
@@ -264,6 +272,7 @@ data:
     for seg, scores in sorted(by.items(), key=lambda kv: statistics.mean(kv[1]), reverse=True):
         print(f'{seg}: mean_score={statistics.mean(scores):.1f} evidence_points={len(scores)}')
     PY
+    sleep 0.7
     
     narrate_blank
     narrate "[step 4/5] collect findings"
@@ -284,6 +293,7 @@ data:
     Recommended next step: run a 2-week pilot with sales-led SMB teams, while preparing a compliance-oriented follow-up for professional services.
     REPORT
     sed -n '1,80p' "$REPORT"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 5/5] return structured result"
@@ -335,6 +345,7 @@ data:
     narrate "Starting large build/test demo"
     narrate "Flow: 1. inspect target repo/task 2. select large execution profile 3. run environment checks 4. execute build/test sequence 5. collect logs and summarize outcome"
     narrate "Scenario contract: route=local_large; System A large-profile framing; no System B offload unless policy changes"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 1/5] inspect target repo/task"
@@ -342,12 +353,14 @@ data:
     sed -n '1,44p' "$TASK_BRIEF"
     echo "+ find scenario files"
     find "$SCENARIO_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
+    sleep 0.7
     
     narrate_blank
     narrate "[step 2/5] select large execution profile"
     echo "profile: large"
     echo "requested resources: 16 vCPU / 32Gi request, 32 vCPU / 64Gi limit"
     echo "placement: System A large-profile session pod"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 3/5] run environment checks"
@@ -359,6 +372,7 @@ data:
       echo "+ python3 --version"
       python3 --version
     } | tee "$LOG"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 4/5] execute build/test sequence"
@@ -376,6 +390,7 @@ data:
     print('metadata checks passed: required build/test sections present')
     PY
     } | tee -a "$LOG"
+    sleep 0.7
     
     narrate_blank
     narrate "[step 5/5] collect logs and summarize outcome"
