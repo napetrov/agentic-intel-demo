@@ -138,36 +138,66 @@ tier2-teardown: ## Tier 2: operator-owned teardown of the demo OpenClawInstance 
 
 .PHONY: lint
 lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
-	@echo "[lint] bash -n on scripts/"
-	@find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-	@echo "[lint] shellcheck (advisory; warnings only — matches CI)"
+	@echo "[lint] bash -n on scripts/ + agents/"
+	@find scripts agents -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+	@echo "[lint] shellcheck (blocking; matches CI)"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	  find scripts -type f -name '*.sh' -print0 \
-	    | xargs -0 shellcheck -S warning || true; \
+	  find scripts agents -type f -name '*.sh' -print0 \
+	    | xargs -0 shellcheck -S warning; \
 	else \
 	  echo "  shellcheck not installed; skipping (apt-get install shellcheck)"; \
 	fi
 	@echo "[lint] python -m py_compile"
 	@find . -path ./.git -prune -o -path ./.dev-up -prune -o -path ./.test-venv -prune -o -name '*.py' -print \
 	  | while IFS= read -r f; do python3 -m py_compile "$$f"; done
-	@echo "[lint] ruff check (advisory; F + E9 — matches CI)"
+	@echo "[lint] ruff check (blocking; F + E9 — matches CI)"
 	@if command -v ruff >/dev/null 2>&1; then \
-	  ruff check --select=F,E9 runtimes/ scripts/ || true; \
+	  ruff check --select=F,E9 runtimes/ scripts/; \
 	else \
 	  echo "  ruff not installed; skipping (pip install ruff)"; \
 	fi
-	@echo "[lint] node --check on web-demo/*.js"
-	@find web-demo -maxdepth 2 -name '*.js' -print \
+	@echo "[lint] node --check on web-demo/*.js + lib/*.js"
+	@find web-demo -maxdepth 3 -name '*.js' -not -path '*/node_modules/*' -print \
 	  | while IFS= read -r f; do node --check "$$f"; done
+	@echo "[lint] check-jsonschema on catalog + architecture"
+	@if command -v check-jsonschema >/dev/null 2>&1; then \
+	  check-jsonschema --schemafile schemas/scenarios.schema.json catalog/scenarios.yaml; \
+	  check-jsonschema --schemafile schemas/tasks.schema.json catalog/tasks.yaml; \
+	  check-jsonschema --schemafile schemas/architecture.schema.json templates/architecture/examples/*/architecture.yaml; \
+	else \
+	  echo "  check-jsonschema not installed; skipping (pip install check-jsonschema)"; \
+	fi
 
 .PHONY: test
-test: ## Run unit tests (offload-worker + control-plane)
+test: ## Run unit tests (offload-worker + control-plane + web-demo unit)
 	python3 -m venv .test-venv
 	.test-venv/bin/python -m pip install -q --upgrade pip
-	.test-venv/bin/python -m pip install -q fastapi pydantic boto3 pytest httpx
+	.test-venv/bin/python -m pip install -q fastapi pydantic boto3 pytest pytest-cov httpx
 	.test-venv/bin/python -m pytest runtimes/offload-worker/tests/ -q -k 'echo or health or invalid'
-	.test-venv/bin/python -m pytest runtimes/control-plane/tests/ -q
+	.test-venv/bin/python -m pytest runtimes/control-plane/tests/ -q --cov --cov-report=term-missing
+	@if [ -d web-demo/node_modules ]; then \
+	  cd web-demo && npm run test:unit; \
+	else \
+	  echo "[test] web-demo/node_modules not found — run 'cd web-demo && npm install' first to enable Vitest"; \
+	fi
 
 .PHONY: validate-templates
 validate-templates: ## Validate scenarios + architecture templates against the specs
 	python3 scripts/validate-demo-templates.py
+
+.PHONY: docker-build-check
+docker-build-check: ## Build every Dockerfile (no push) — mirrors CI docker-build job
+	docker build -f web-demo/Dockerfile                web-demo                -t web-demo:check
+	docker build -f runtimes/offload-worker/Dockerfile runtimes/offload-worker -t offload-worker:check
+	docker build -f runtimes/control-plane/Dockerfile  runtimes/control-plane  -t control-plane:check
+	docker build -f runtimes/agent-stub/Dockerfile     runtimes/agent-stub     -t agent-stub:check
+
+.PHONY: docker-compose-check
+docker-compose-check: ## Validate every docker-compose file — mirrors CI docker-compose-config job
+	docker compose -f docker-compose.yaml config -q
+	# Overlays reference base services, so combine -f base + -f overlay.
+	# Stub creds satisfy the `${VAR:?}` "must be set" guards; never used
+	# at runtime — `make tier1-up` reads real values from .env.
+	FLOWISE_USERNAME=ci-stub FLOWISE_PASSWORD=ci-stub FLOWISE_SECRETKEY_OVERWRITE=ci-stub \
+	  docker compose -f docker-compose.yaml -f docker-compose.flowise.yaml config -q
+	docker compose -f docker-compose.yaml -f docker-compose.openwebui.yaml config -q

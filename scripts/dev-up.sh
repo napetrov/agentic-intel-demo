@@ -130,8 +130,8 @@ abort_if_failed() {
 wait_http_ok() {
   # wait_http_ok <url> <retries> <label>
   local url="$1" retries="$2" label="$3"
-  local i
-  for i in $(seq 1 "$retries"); do
+  local _i
+  for _i in $(seq 1 "$retries"); do
     if curl -sf -o /dev/null --max-time 2 "$url"; then
       log "$label ready ($url)"
       return 0

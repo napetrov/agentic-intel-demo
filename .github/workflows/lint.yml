@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: bash -n on all shell scripts
+      - name: bash -n on all shell scripts (scripts/ + agents/)
         run: |
           set -e
           fail=0
@@ -22,17 +22,18 @@ jobs:
               echo "::error file=$f::bash syntax error"
               fail=1
             fi
-          done < <(find scripts -type f -name '*.sh' -print0)
+          done < <(find scripts agents -type f -name '*.sh' -print0)
           exit $fail
-      - name: shellcheck (advisory; warnings only)
-        # Catches quoting bugs that bash -n misses. Run in
-        # advisory mode to start: a real failure in shellcheck
-        # without an existing baseline would block every PR.
-        # Once the existing scripts are clean, drop `|| true`.
+      - name: shellcheck (blocking; warnings + errors)
+        # Catches quoting bugs that bash -n misses. Repo baseline
+        # is clean — any new finding fails CI. Use `# shellcheck
+        # disable=SCxxxx` directives for justified exceptions, and
+        # `# shellcheck shell=bash` on sourced files without shebang.
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
-          shellcheck -S warning scripts/**/*.sh scripts/*.sh || true
+          find scripts agents -type f -name '*.sh' -print0 \
+            | xargs -0 shellcheck -S warning
 
   ruff:
     # Catches unused imports / undefined names that py_compile
@@ -45,9 +46,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - name: ruff check (advisory)
-        run: |
-          ruff check --select=F,E9 runtimes/ scripts/ || true
+      - name: ruff check (blocking; F + E9)
+        # Repo baseline is clean. F = pyflakes (unused imports,
+        # undefined names); E9 = syntax errors py_compile would also
+        # catch. Style rules are intentionally not enabled.
+        run: ruff check --select=F,E9 runtimes/ scripts/
 
   yaml:
     runs-on: ubuntu-latest
@@ -132,3 +135,126 @@ jobs:
           ./kubeconform -summary -strict -ignore-missing-schemas \
             -skip CustomResourceDefinition \
             k8s/ examples/ || exit 1
+
+  docker-compose-config:
+    # Catches malformed compose files (missing keys, bad indentation,
+    # unresolved env-var references) before they reach `make tier1-up`.
+    # `docker compose config` parses + validates against the compose
+    # schema; -q suppresses the rendered output, exit code is the gate.
+    #
+    # The flowise overlay uses `${VAR:?}` (must be set) for credentials
+    # — supply CI-only stubs so the parser is satisfied. These are never
+    # used at runtime; tier1-up reads real values from .env.
+    runs-on: ubuntu-latest
+    env:
+      FLOWISE_USERNAME: ci-stub
+      FLOWISE_PASSWORD: ci-stub
+      FLOWISE_SECRETKEY_OVERWRITE: ci-stub
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate base compose
+        run: docker compose -f docker-compose.yaml config -q
+      - name: validate flowise overlay (base + overlay)
+        # The flowise/openwebui files are overlays — they reference
+        # services from the base compose, so they must be combined.
+        run: |
+          docker compose -f docker-compose.yaml \
+                         -f docker-compose.flowise.yaml config -q
+      - name: validate openwebui overlay (base + overlay)
+        run: |
+          docker compose -f docker-compose.yaml \
+                         -f docker-compose.openwebui.yaml config -q
+
+  hadolint:
+    # Catches Dockerfile bugs (missing --no-install-recommends, COPY
+    # before RUN, etc.) before docker-build burns CI minutes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hadolint on every Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          # DL3008: pin apt versions — too noisy for demo images that
+          # rebuild against rolling Debian. Override per-file with
+          # `# hadolint ignore=DLxxxx` if a specific rule must lapse.
+          ignore: DL3008
+          recursive: true
+          failure-threshold: warning
+
+  markdown-links:
+    # Catches dead links in docs/ + README.md before users hit them.
+    # Lychee follows http(s) and relative links; rate-limited and
+    # cached, so flaky external sites don't fail the whole job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lychee link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-concurrency 4
+            --accept 200,206,403,429
+            --exclude-path .git
+            --exclude-path .dev-up
+            --exclude-path .test-venv
+            --exclude-path node_modules
+            './**/*.md'
+          fail: true
+
+  mypy:
+    # Type-check the most stateful runtime — control-plane owns the
+    # session manager + SQLite persistence and the web-demo's UX is
+    # tightly coupled to its response shape. py_compile + ruff catch
+    # syntax/imports; mypy catches the actual contract drift.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install runtime deps + mypy + stubs
+        working-directory: runtimes/control-plane
+        run: |
+          pip install \
+            fastapi==0.115.12 \
+            'uvicorn[standard]==0.34.2' \
+            httpx==0.28.1 \
+            boto3==1.37.38 \
+            pydantic==2.9.2 \
+            pyyaml==6.0.2 \
+            mypy==1.11.2 \
+            types-PyYAML==6.0.12.20240917 \
+            boto3-stubs==1.37.38
+      - name: mypy
+        working-directory: runtimes/control-plane
+        run: |
+          # --disable-error-code=import-untyped: third-party deps
+          # without inline annotations are not the demo's problem.
+          mypy --disable-error-code=import-untyped \
+            app.py persistence.py session_manager.py
+
+  json-schema:
+    # Validates demo catalog + architecture YAMLs against repo-local
+    # JSON Schemas. The validate-demo-templates.py script does deeper
+    # cross-config checks; these schemas catch the dumb shape errors
+    # (missing required keys, wrong types) declaratively.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install check-jsonschema==0.30.0
+      - name: scenarios.yaml
+        run: |
+          check-jsonschema --schemafile schemas/scenarios.schema.json \
+            catalog/scenarios.yaml
+      - name: tasks.yaml
+        run: |
+          check-jsonschema --schemafile schemas/tasks.schema.json \
+            catalog/tasks.yaml
+      - name: architecture examples
+        run: |
+          check-jsonschema --schemafile schemas/architecture.schema.json \
+            templates/architecture/examples/*/architecture.yaml

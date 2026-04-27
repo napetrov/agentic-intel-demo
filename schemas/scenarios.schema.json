@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agentic-intel-demo/schemas/scenarios.schema.json",
+  "title": "Demo scenarios catalog",
+  "description": "Shape contract for catalog/scenarios.yaml. Cross-config checks (flow.md text, operator-chat-config wiring, litellm aliases) live in scripts/validate-demo-templates.py.",
+  "type": "object",
+  "required": ["scenarios"],
+  "additionalProperties": false,
+  "properties": {
+    "scenarios": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": { "$ref": "#/$defs/scenario" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "required": [
+        "label",
+        "execution_mode",
+        "task_family",
+        "initial_user_message",
+        "allowed_next_actions",
+        "fallback_scenario"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "execution_mode": {
+          "type": "string",
+          "enum": ["local_standard", "local_large", "offload_system_b"]
+        },
+        "task_family": {
+          "type": "string",
+          "enum": [
+            "software_engineering",
+            "data_processing",
+            "machine_learning",
+            "system_administration"
+          ]
+        },
+        "initial_user_message": { "type": "string", "minLength": 1 },
+        "allowed_next_actions": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["show_status", "reset_session"] },
+          "uniqueItems": true
+        },
+        "fallback_scenario": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+          ]
+        }
+      }
+    }
+  }
+}

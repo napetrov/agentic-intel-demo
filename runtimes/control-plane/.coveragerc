@@ -1,0 +1,23 @@
+[run]
+# Just the runtime modules — exclude tests from the coverage baseline
+# so the gate is on production code, not on the test suite itself.
+source =
+    .
+omit =
+    tests/*
+    .test-venv/*
+    setup.py
+
+[report]
+# Show missing line ranges so a regression is immediately diagnosable
+# from CI logs.
+show_missing = True
+skip_covered = False
+# session_manager.py drops to ~75%; leave the gate at 80% (current
+# total) so a meaningful regression on any module trips it. Bump as
+# coverage grows; never lower without a written reason.
+fail_under = 80
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for scenario run.sh scripts. Sourced by each scenario; not
 # executed directly. Keeps the narration on/off switch in one place so the
 # scripts stay readable and stay in sync.
