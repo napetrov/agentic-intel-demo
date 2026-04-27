@@ -810,6 +810,105 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .status-pill.status-failed { color: var(--orange); }
 .status-pill.status-deleting { color: var(--muted); }
 
+/* ---- Agents (long-lived) panel ---- */
+.agents-panel .agents-pools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.agents-pool {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.02);
+}
+.agents-pool-head {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 8px;
+}
+.agents-pool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agents-pool-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+.agent-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,.03);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-card[data-status="Ready"] { border-color: rgba(73, 217, 135, .35); }
+.agent-card[data-status="Provisioning"] { border-color: rgba(245, 200, 80, .35); }
+.agent-card[data-status="Degraded"] { border-color: rgba(240, 132, 80, .45); }
+.agent-card[data-status="Stopped"] { border-color: rgba(240, 132, 80, .35); opacity: .7; }
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-card-name {
+  font-weight: 600;
+  flex: 1;
+}
+.agent-card-kind {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  text-transform: lowercase;
+}
+.agent-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.agent-card-caps {
+  font-style: italic;
+}
+.agent-card-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+}
+.agent-status-dot.ok { background: var(--green); }
+.agent-status-dot.warn { background: var(--yellow); }
+.agent-status-dot.error { background: var(--orange); }
+.agents-summary {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.agent-cell-ephemeral {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
 @media (max-width: 1024px) {
   .shell, .workspace, .cards { grid-template-columns: 1fr; }
   .arch-systems-split { grid-template-columns: 1fr; }
@@ -820,4 +919,5 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   }
   .rail { border-right: 0; border-bottom: 1px solid var(--line); }
   .hero { flex-direction: column; align-items: flex-start; }
+  .agents-panel .agents-pools { grid-template-columns: 1fr; }
 }

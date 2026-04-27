@@ -174,6 +174,9 @@ lint: ## Run repo-local lint suite (mirrors .github/workflows/lint.yml)
 	  check-jsonschema --schemafile schemas/scenarios.schema.json catalog/scenarios.yaml; \
 	  check-jsonschema --schemafile schemas/tasks.schema.json catalog/tasks.yaml; \
 	  check-jsonschema --schemafile schemas/architecture.schema.json templates/architecture/examples/*/architecture.yaml; \
+	  if [ -f config/agents.yaml ]; then \
+	    check-jsonschema --schemafile schemas/agents.schema.json config/agents.yaml; \
+	  fi; \
 	else \
 	  echo "  check-jsonschema not installed; skipping (pip install check-jsonschema)"; \
 	fi

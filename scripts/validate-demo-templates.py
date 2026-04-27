@@ -651,6 +651,133 @@ def validate_chat_configs(report: Report) -> None:
                     )
 
 
+AGENT_KINDS = {"openclaw", "flowise"}
+AGENT_SYSTEMS = {"system_a", "system_b"}
+# Mirror schemas/agents.schema.json: lower-case start, alphanumeric end,
+# only internal dashes, <=59 chars so the kube backend can append "-job"
+# without overrunning the 63-char DNS-1035 label budget.
+AGENT_ID_RE = re.compile(r"^[a-z]([a-z0-9-]*[a-z0-9])?$")
+AGENT_ID_MAX_LEN = 59
+AGENT_ALLOWED_KEYS = {"id", "name", "kind", "system", "capabilities", "discovery"}
+AGENT_DISCOVERY_ALLOWED_KEYS = {
+    "openclaw_instance",
+    "deployment",
+    "namespace",
+    "chatflow_id",
+}
+
+
+def validate_agents_registry(report: Report) -> None:
+    """Validate config/agents.yaml against the demo.agents/v1 shape.
+
+    The registry is optional — a missing file is fine for repos that
+    haven't seeded long-lived agents yet. Anything else (bad YAML,
+    wrong apiVersion, duplicate ids, unknown kind/system) is hard error.
+    """
+    path = REPO_ROOT / "config" / "agents.yaml"
+    where = "config/agents.yaml"
+    if not path.exists():
+        report.ok(f"{where}: skipped (file absent — registry is optional)")
+        return
+    try:
+        doc = load_yaml(path) or {}
+    except yaml.YAMLError as e:
+        report.add_error(f"{where}: YAML parse error: {e}")
+        return
+    if not isinstance(doc, dict):
+        report.add_error(f"{where}: root must be a mapping, got {type(doc).__name__}")
+        return
+    if doc.get("apiVersion") != "demo.agents/v1":
+        report.add_error(f"{where}: apiVersion must be demo.agents/v1")
+    if doc.get("kind") != "AgentRegistry":
+        report.add_error(f"{where}: kind must be AgentRegistry")
+    # `agents` is a required field per schema. A missing key (rather
+    # than an empty list) usually means the file got truncated or the
+    # author forgot to fill it in — fail loud instead of accepting it
+    # as "no agents seeded" silently.
+    if "agents" not in doc:
+        report.add_error(f"{where}: missing required field `agents`")
+        return
+    agents = doc.get("agents")
+    if not isinstance(agents, list):
+        report.add_error(f"{where}: `agents` must be a list")
+        return
+    seen_ids: set[str] = set()
+    for idx, agent in enumerate(agents):
+        prefix = f"{where}: agents[{idx}]"
+        if not isinstance(agent, dict):
+            report.add_error(f"{prefix}: must be a mapping")
+            continue
+        extra_keys = set(agent.keys()) - AGENT_ALLOWED_KEYS
+        if extra_keys:
+            report.add_error(
+                f"{prefix}: unknown field(s): {sorted(extra_keys)}; "
+                f"allowed={sorted(AGENT_ALLOWED_KEYS)}"
+            )
+        agent_id = agent.get("id")
+        if (
+            not isinstance(agent_id, str)
+            or not AGENT_ID_RE.match(agent_id)
+            or len(agent_id) > AGENT_ID_MAX_LEN
+        ):
+            report.add_error(
+                f"{prefix}: id {agent_id!r} must match {AGENT_ID_RE.pattern} "
+                f"(<= {AGENT_ID_MAX_LEN} chars)"
+            )
+        elif agent_id in seen_ids:
+            report.add_error(f"{prefix}: duplicate id {agent_id!r}")
+        else:
+            seen_ids.add(agent_id)
+        if not isinstance(agent.get("name"), str) or not agent.get("name"):
+            report.add_error(f"{prefix}: name must be a non-empty string")
+        kind = agent.get("kind")
+        if kind not in AGENT_KINDS:
+            report.add_error(
+                f"{prefix}: kind {kind!r} must be one of {sorted(AGENT_KINDS)}"
+            )
+        system = agent.get("system")
+        if system not in AGENT_SYSTEMS:
+            report.add_error(
+                f"{prefix}: system {system!r} must be one of {sorted(AGENT_SYSTEMS)}"
+            )
+        caps = agent.get("capabilities")
+        if not isinstance(caps, list) or not all(
+            isinstance(c, str) and c for c in caps
+        ):
+            report.add_error(
+                f"{prefix}: capabilities must be a list of non-empty strings"
+            )
+        elif len(set(caps)) != len(caps):
+            # Duplicate capability strings on one agent are almost always
+            # a typo (`["shell", "shell"]`) — surface them so the operator
+            # can dedupe rather than relying on the consumer to handle it.
+            report.add_error(f"{prefix}: capabilities must not contain duplicates")
+        discovery = agent.get("discovery")
+        if discovery is not None:
+            if not isinstance(discovery, dict):
+                report.add_error(f"{prefix}: discovery must be a mapping when present")
+            else:
+                extra = set(discovery.keys()) - AGENT_DISCOVERY_ALLOWED_KEYS
+                if extra:
+                    report.add_error(
+                        f"{prefix}: unknown discovery field(s): {sorted(extra)}; "
+                        f"allowed={sorted(AGENT_DISCOVERY_ALLOWED_KEYS)}"
+                    )
+                for key, value in discovery.items():
+                    # Each discovery entry is either a non-empty string
+                    # ("which CR / Deployment / chatflow to look up") or
+                    # null ("not yet wired"). An empty string is almost
+                    # always a typo — would silently fail the cluster
+                    # lookup with a confusing 404.
+                    if value is None:
+                        continue
+                    if not isinstance(value, str) or not value:
+                        report.add_error(
+                            f"{prefix}: discovery.{key} must be a non-empty string or null"
+                        )
+    report.ok(f"{where}: {len(agents)} agent(s)")
+
+
 def main() -> int:
     report = Report()
 
@@ -660,6 +787,7 @@ def main() -> int:
 
     validate_scenarios(report, supported_modes_union)
     validate_chat_configs(report)
+    validate_agents_registry(report)
 
     for note in report.checked:
         print(f"OK  {note}")

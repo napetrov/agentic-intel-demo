@@ -1,0 +1,69 @@
+# Long-lived agent registry — read by the control plane at startup and
+# surfaced via GET /agents. Editing this file does NOT create or destroy
+# the underlying runtimes; it just declares what the operator considers
+# part of the demo pool. In Tier 2 the kube backend overlays live status
+# from the cluster (OpenClawInstance phase, Flowise Deployment readiness)
+# on top of the seed; in Tier 1 the seed is shown as-is.
+#
+# Two kinds today:
+#   openclaw — an OpenClawInstance (managed by openclaw-operator). The
+#              control plane discovers it; it does NOT create or delete
+#              the CR. Live add/remove of OpenClaw agents is a v2 story
+#              and goes through the operator path
+#              (scripts/install-openclaw-operator.sh + smoke tests).
+#   flowise  — a chatflow inside a Flowise Deployment. Authoring a
+#              chatflow stays the documented one-time UI step from
+#              docs/flowise-integration.md; this file just references the
+#              flow id once it exists.
+#
+# Schema lives in schemas/agents.schema.json and is enforced by
+# scripts/validate-demo-templates.py (`make validate-templates`).
+
+apiVersion: demo.agents/v1
+kind: AgentRegistry
+
+agents:
+  - id: openclaw-a-1
+    name: "OpenClaw on System A"
+    kind: openclaw
+    system: system_a
+    capabilities: [shell, read_file, list_files, summarize]
+    discovery:
+      # Name of the OpenClawInstance CR the kube backend should look up.
+      openclaw_instance: openclaw-intel-demo
+      namespace: openclaw
+
+  - id: flowise-a-1
+    name: "Flowise terminal-agent flow"
+    kind: flowise
+    system: system_a
+    capabilities: [terminal-agent]
+    discovery:
+      # Name of the Flowise Deployment hosting this chatflow + the
+      # chatflow id (filled in by the operator once the flow is
+      # imported in the Flowise UI; null = "not yet imported").
+      deployment: flowise
+      namespace: flowise
+      chatflow_id: null
+
+  - id: openclaw-b-1
+    name: "OpenClaw on System B"
+    kind: openclaw
+    system: system_b
+    capabilities: [shell, summarize]
+    discovery:
+      # Today System B's stand-in is the agent-stub Deployment in Tier 1
+      # and a System B-pinned OpenClawInstance in Tier 2. Either way the
+      # control plane only reads status.
+      openclaw_instance: openclaw-system-b
+      namespace: openclaw
+
+  - id: flowise-b-1
+    name: "Flowise market-research flow"
+    kind: flowise
+    system: system_b
+    capabilities: [market-research]
+    discovery:
+      deployment: flowise
+      namespace: flowise
+      chatflow_id: null

@@ -244,6 +244,7 @@ else
       SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
       JOBS_DB_PATH="${JOBS_DB_PATH:-$STATE_DIR/jobs.db}" \
       SESSIONS_DB_PATH="${SESSIONS_DB_PATH:-$STATE_DIR/sessions.db}" \
+      AGENT_REGISTRY_PATH="${AGENT_REGISTRY_PATH:-$REPO_ROOT/config/agents.yaml}" \
       nohup "$UVICORN" app:app --host 127.0.0.1 --port "$CONTROL_PLANE_PORT" \
       >"$LOG_DIR/control-plane.log" 2>&1 &
     echo $! >"$PID_DIR/control-plane.pid"

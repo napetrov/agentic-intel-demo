@@ -115,7 +115,11 @@ services:
 
   control-plane:
     build:
-      context: ./runtimes/control-plane
+      # Repo root context so the build can COPY both the
+      # control-plane sources AND config/agents.yaml (the long-lived
+      # agent registry seed baked into the image as a default).
+      context: .
+      dockerfile: runtimes/control-plane/Dockerfile
     environment:
       OFFLOAD_WORKER_URL: http://offload-worker:8080
       OFFLOAD_TIMEOUT_SECONDS: "120"
@@ -140,8 +144,14 @@ services:
       # ignore the shell.
       JOBS_DB_PATH: ${JOBS_DB_PATH:-/var/lib/control-plane/jobs.db}
       SESSIONS_DB_PATH: ${SESSIONS_DB_PATH:-/var/lib/control-plane/sessions.db}
+      # Long-lived agent registry seed. The image bakes a default path
+      # at /etc/control-plane/agents.yaml; mount the in-tree file there
+      # so a fresh `compose up` shows the four default agents in GET
+      # /agents (and the new "Agents (long-lived)" UI panel).
+      AGENT_REGISTRY_PATH: /etc/control-plane/agents.yaml
     volumes:
       - control-plane-data:/var/lib/control-plane
+      - ./config/agents.yaml:/etc/control-plane/agents.yaml:ro
     depends_on:
       offload-worker:
         condition: service_healthy
