@@ -1491,6 +1491,7 @@ const multiSessionForm = document.getElementById('multi-session-form');
 const multiSessionScenario = document.getElementById('multi-session-scenario');
 const multiSessionProfile = document.getElementById('multi-session-profile');
 const multiSessionTarget = document.getElementById('multi-session-target');
+const multiSessionAgent = document.getElementById('multi-session-agent');
 const multiSessionCount = document.getElementById('multi-session-count');
 const multiSessionSpawn = document.getElementById('multi-session-spawn');
 const multiSessionStatus = document.getElementById('multi-session-status');
@@ -1534,18 +1535,32 @@ function formatTargetSystem(rec) {
   return t;
 }
 
+// For terminal rows (Completed/Failed) the wall-clock age column carries
+// no useful signal — the task already ran and the elapsed-since-create
+// just keeps growing. Swap in the actual run duration
+// (completed_at − started_at) once both timestamps are available; fall
+// back to age otherwise so partial records (e.g. a session restored from
+// the SQLite cache without started_at) still render something.
+function formatAgeOrDuration(rec, now) {
+  if (TERMINAL_STATUSES.has(rec.status) && rec.completed_at && rec.started_at) {
+    return `${formatAge(rec.completed_at - rec.started_at)} (run)`;
+  }
+  return formatAge(now - (rec.created_at || now));
+}
+
 function renderMultiSessionRows(records) {
   if (!multiSessionRows) return;
   if (!records.length) {
-    multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="8">No sessions yet. Spawn some above.</td></tr>';
+    multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="9">No tasks yet. Spawn some above.</td></tr>';
     return;
   }
   const now = Date.now() / 1000;
   multiSessionRows.innerHTML = records
     .map((rec) => {
-      const age = formatAge(now - (rec.created_at || now));
+      const ageOrDuration = formatAgeOrDuration(rec, now);
       const podOrJob = rec.pod_name || rec.job_name || '—';
       const statusClass = `status-${(rec.status || 'unknown').toLowerCase()}`;
+      const agentLabel = rec.agent_id ? rec.agent_id : 'ephemeral';
       // Don't show a Delete button for already-terminal rows — it works
       // (returns 404 if the backend GC'd it), but adds noise.
       const canDelete = !TERMINAL_STATUSES.has(rec.status);
@@ -1558,9 +1573,10 @@ function renderMultiSessionRows(records) {
           <td>${escapeHtml(rec.scenario || '—')}</td>
           <td>${escapeHtml(rec.profile || '—')}</td>
           <td>${escapeHtml(formatTargetSystem(rec))}</td>
+          <td>${rec.agent_id ? `<code>${escapeHtml(agentLabel)}</code>` : `<span class="agent-cell-ephemeral">${escapeHtml(agentLabel)}</span>`}</td>
           <td><span class="session-status ${statusClass}">${escapeHtml(rec.status || '—')}</span></td>
           <td><code>${escapeHtml(podOrJob)}</code></td>
-          <td>${escapeHtml(age)}</td>
+          <td>${escapeHtml(ageOrDuration)}</td>
           <td>${deleteBtn}</td>
         </tr>
       `;
@@ -1658,14 +1674,17 @@ function scheduleMultiSessionPoll(ms) {
   }, ms);
 }
 
-async function spawnSessionBatch(scenario, profile, count, targetSystem) {
+async function spawnSessionBatch(scenario, profile, count, targetSystem, agentId) {
   // targetSystem is the form's raw value: '' = "scenario default" (omit
   // from the wire payload so the server records null) or 'system_a' /
-  // 'system_b'. The status line shows the explicit choice when made so
-  // the operator sees what they're about to submit.
+  // 'system_b'. agentId is similarly optional: '' = ephemeral (today's
+  // behavior), otherwise pin every spawned task to that registered
+  // agent. The status line shows both explicit choices so the operator
+  // sees what they're about to submit.
   const targetLabel = targetSystem ? ` → ${targetSystem}` : '';
+  const agentLabel = agentId ? ` @ ${agentId}` : '';
   setMultiSessionStatus(
-    `Submitting ${count} × ${scenario} (${profile})${targetLabel}…`,
+    `Submitting ${count} × ${scenario} (${profile})${targetLabel}${agentLabel}…`,
     'pending'
   );
   multiSessionSpawn.disabled = true;
@@ -1674,6 +1693,7 @@ async function spawnSessionBatch(scenario, profile, count, targetSystem) {
   try {
     const payload = { scenario, profile, count };
     if (targetSystem) payload.target_system = targetSystem;
+    if (agentId) payload.agent_id = agentId;
     const body = await fetchJson(`${API_BASE}/sessions/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1715,8 +1735,9 @@ if (multiSessionForm) {
     const scenario = multiSessionScenario.value;
     const profile = multiSessionProfile.value;
     const targetSystem = multiSessionTarget ? multiSessionTarget.value : '';
+    const agentId = multiSessionAgent ? multiSessionAgent.value : '';
     const count = Math.max(1, Math.min(50, parseInt(multiSessionCount.value, 10) || 1));
-    spawnSessionBatch(scenario, profile, count, targetSystem);
+    spawnSessionBatch(scenario, profile, count, targetSystem, agentId);
   });
 }
 
@@ -1775,6 +1796,117 @@ if (multiSessionRows) {
 // so we don't need a setInterval here.
 if (multiSessionPanel) {
   refreshMultiSession();
+}
+
+// ---------- Agents panel (long-lived) ----------
+//
+// Read-only view over /api/agents. Renders a per-system pool with status
+// dots and powers the "Agent" picker on the Tasks form. Polled on a slow
+// timer (30s) — agents are long-lived, so high-frequency polling is
+// wasted bandwidth. Picker is rebuilt on every poll so freshly added
+// agents (operator runs an OpenClawInstance smoke test, the registry
+// picks it up) become selectable without a page reload.
+
+const agentsPanel = document.getElementById('agents-panel');
+const agentsPoolA = document.getElementById('agents-pool-system_a');
+const agentsPoolB = document.getElementById('agents-pool-system_b');
+const agentsSummary = document.getElementById('agents-summary');
+const agentsRefresh = document.getElementById('agents-refresh');
+
+const AGENT_STATUS_CLASS = {
+  Ready: 'ok',
+  Provisioning: 'warn',
+  Degraded: 'warn',
+  Stopped: 'error',
+  Unknown: ''
+};
+
+function renderAgentRow(agent) {
+  const dotClass = AGENT_STATUS_CLASS[agent.status] || '';
+  const cap = (agent.capabilities || []).join(', ') || '—';
+  const msg = agent.message ? ` · ${escapeHtml(agent.message)}` : '';
+  return `
+    <div class="agent-card" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status)}">
+      <div class="agent-card-head">
+        <span class="agent-status-dot ${dotClass}" title="${escapeHtml(agent.status)} (${escapeHtml(agent.source)})"></span>
+        <span class="agent-card-name">${escapeHtml(agent.name)}</span>
+        <span class="agent-card-kind">${escapeHtml(agent.kind)}</span>
+      </div>
+      <div class="agent-card-meta">
+        <code>${escapeHtml(agent.id)}</code>
+        <span class="agent-card-caps">${escapeHtml(cap)}</span>
+      </div>
+      <div class="agent-card-status">${escapeHtml(agent.status)}${msg}</div>
+    </div>
+  `;
+}
+
+function renderAgentPool(el, agents) {
+  if (!el) return;
+  if (!agents.length) {
+    el.innerHTML = '<div class="agents-pool-empty">no agents registered</div>';
+    return;
+  }
+  el.innerHTML = agents.map(renderAgentRow).join('');
+}
+
+// Refill the Tasks-form Agent picker. Preserve the current selection if
+// the picked agent is still registered; otherwise fall back to "ephemeral".
+function refreshAgentPicker(agents) {
+  if (!multiSessionAgent) return;
+  const current = multiSessionAgent.value;
+  const opts = ['<option value="">ephemeral (no agent)</option>'];
+  agents.forEach((a) => {
+    const sysShort = a.system === 'system_a' ? 'A' : a.system === 'system_b' ? 'B' : a.system;
+    const label = `${a.id} — ${a.kind} on Sys ${sysShort} (${a.status})`;
+    opts.push(
+      `<option value="${escapeHtml(a.id)}"${current === a.id ? ' selected' : ''}>${escapeHtml(label)}</option>`
+    );
+  });
+  multiSessionAgent.innerHTML = opts.join('');
+  if (!agents.some((a) => a.id === current)) {
+    multiSessionAgent.value = '';
+  }
+}
+
+let agentsPollTimer = null;
+
+async function refreshAgents() {
+  try {
+    const body = await fetchJson(`${API_BASE}/agents`, { timeoutMs: 5000 });
+    const agents = Array.isArray(body && body.agents) ? body.agents : [];
+    const a = agents.filter((x) => x.system === 'system_a');
+    const b = agents.filter((x) => x.system === 'system_b');
+    renderAgentPool(agentsPoolA, a);
+    renderAgentPool(agentsPoolB, b);
+    refreshAgentPicker(agents);
+    if (agentsSummary) {
+      const ready = agents.filter((x) => x.status === 'Ready').length;
+      agentsSummary.textContent = agents.length
+        ? `agents: ${agents.length} (${ready} Ready)`
+        : 'agents: none registered';
+    }
+  } catch (err) {
+    if (agentsSummary) {
+      const noBackend = err && err.status === 404;
+      agentsSummary.textContent = noBackend
+        ? 'agents: backend not detected'
+        : `agents: fetch failed (${err.message})`;
+    }
+    renderAgentPool(agentsPoolA, []);
+    renderAgentPool(agentsPoolB, []);
+  } finally {
+    if (agentsPollTimer) clearTimeout(agentsPollTimer);
+    agentsPollTimer = setTimeout(refreshAgents, 30_000);
+  }
+}
+
+if (agentsRefresh) {
+  agentsRefresh.addEventListener('click', () => refreshAgents());
+}
+
+if (agentsPanel) {
+  refreshAgents();
 }
 
 // ---------- Optional service launchers ----------

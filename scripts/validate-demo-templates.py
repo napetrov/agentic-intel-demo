@@ -651,6 +651,76 @@ def validate_chat_configs(report: Report) -> None:
                     )
 
 
+AGENT_KINDS = {"openclaw", "flowise"}
+AGENT_SYSTEMS = {"system_a", "system_b"}
+AGENT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,58}$")
+
+
+def validate_agents_registry(report: Report) -> None:
+    """Validate config/agents.yaml against the demo.agents/v1 shape.
+
+    The registry is optional — a missing file is fine for repos that
+    haven't seeded long-lived agents yet. Anything else (bad YAML,
+    wrong apiVersion, duplicate ids, unknown kind/system) is hard error.
+    """
+    path = REPO_ROOT / "config" / "agents.yaml"
+    where = "config/agents.yaml"
+    if not path.exists():
+        report.ok(f"{where}: skipped (file absent — registry is optional)")
+        return
+    try:
+        doc = load_yaml(path) or {}
+    except yaml.YAMLError as e:
+        report.add_error(f"{where}: YAML parse error: {e}")
+        return
+    if not isinstance(doc, dict):
+        report.add_error(f"{where}: root must be a mapping, got {type(doc).__name__}")
+        return
+    if doc.get("apiVersion") != "demo.agents/v1":
+        report.add_error(f"{where}: apiVersion must be demo.agents/v1")
+    if doc.get("kind") != "AgentRegistry":
+        report.add_error(f"{where}: kind must be AgentRegistry")
+    agents = doc.get("agents") or []
+    if not isinstance(agents, list):
+        report.add_error(f"{where}: `agents` must be a list")
+        return
+    seen_ids: set[str] = set()
+    for idx, agent in enumerate(agents):
+        prefix = f"{where}: agents[{idx}]"
+        if not isinstance(agent, dict):
+            report.add_error(f"{prefix}: must be a mapping")
+            continue
+        agent_id = agent.get("id")
+        if not isinstance(agent_id, str) or not AGENT_ID_RE.match(agent_id):
+            report.add_error(
+                f"{prefix}: id {agent_id!r} must match {AGENT_ID_RE.pattern}"
+            )
+        elif agent_id in seen_ids:
+            report.add_error(f"{prefix}: duplicate id {agent_id!r}")
+        else:
+            seen_ids.add(agent_id)
+        if not isinstance(agent.get("name"), str) or not agent.get("name"):
+            report.add_error(f"{prefix}: name must be a non-empty string")
+        kind = agent.get("kind")
+        if kind not in AGENT_KINDS:
+            report.add_error(
+                f"{prefix}: kind {kind!r} must be one of {sorted(AGENT_KINDS)}"
+            )
+        system = agent.get("system")
+        if system not in AGENT_SYSTEMS:
+            report.add_error(
+                f"{prefix}: system {system!r} must be one of {sorted(AGENT_SYSTEMS)}"
+            )
+        caps = agent.get("capabilities")
+        if not isinstance(caps, list) or not all(
+            isinstance(c, str) and c for c in caps
+        ):
+            report.add_error(
+                f"{prefix}: capabilities must be a list of non-empty strings"
+            )
+    report.ok(f"{where}: {len(agents)} agent(s)")
+
+
 def main() -> int:
     report = Report()
 
@@ -660,6 +730,7 @@ def main() -> int:
 
     validate_scenarios(report, supported_modes_union)
     validate_chat_configs(report)
+    validate_agents_registry(report)
 
     for note in report.checked:
         print(f"OK  {note}")

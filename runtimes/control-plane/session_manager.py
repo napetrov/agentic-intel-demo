@@ -100,6 +100,14 @@ class SessionRecord:
     # catalog default. Surfaced so the UI can render each session in the
     # correct system pool (System A vs System B).
     target_system: Optional[str] = None
+    # Optional attribution to a long-lived agent in the registry
+    # (config/agents.yaml). Today this is a label only — routing still
+    # goes through target_system + scenario; agent_id lets the UI show
+    # "task t-x ran on agent flowise-a-1" and lets `kubectl get jobs
+    # -l agent-id=...` find every Job a given agent has hosted.
+    # Validation (must be a registered id) happens at the API edge so
+    # the backend can stay agnostic of the registry.
+    agent_id: Optional[str] = None
     # Backend-specific extras (e.g. raw k8s phase) live here so callers
     # can introspect without leaking k8s types into the public schema.
     extras: dict[str, Any] = field(default_factory=dict)
@@ -119,6 +127,7 @@ class SessionBackend(Protocol):
         profile: str,
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> SessionRecord: ...
     def get(self, session_id: str) -> Optional[SessionRecord]: ...
     def list(self) -> list[SessionRecord]: ...
@@ -243,6 +252,7 @@ class LocalSessionBackend:
         profile: str,
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> SessionRecord:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}; allowed={sorted(PROFILES)}")
@@ -265,6 +275,7 @@ class LocalSessionBackend:
                 memory_request=specs["memory_request"],
                 message="simulated session created (local backend)",
                 target_system=target_system,
+                agent_id=agent_id,
             )
             # Durable write first — if SQLite barfs, the in-memory cache
             # stays empty and the caller sees the failure instead of a
@@ -433,6 +444,7 @@ class KubeSessionBackend:
         scenario: str,
         profile: str,
         target_system: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> tuple[dict, str]:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}")
@@ -468,6 +480,14 @@ class KubeSessionBackend:
             # _record_for_job read it back as non-null, silently
             # breaking the contract. Clear it explicitly.
             labels.pop("target-system", None)
+        if agent_id:
+            # Same reasoning as target-system: round-trip the agent
+            # attribution through Job labels so `kubectl get jobs
+            # -l agent-id=flowise-a-1` works and a control-plane restart
+            # can re-derive which agent each running session belongs to.
+            labels["agent-id"] = agent_id
+        else:
+            labels.pop("agent-id", None)
 
         job_spec = spec.setdefault("spec", {})
         job_spec.setdefault("ttlSecondsAfterFinished", self._ttl)
@@ -488,6 +508,10 @@ class KubeSessionBackend:
             # stale value from the template so pod selectors don't trip
             # on inherited routing.
             pod_labels.pop("target-system", None)
+        if agent_id:
+            pod_labels["agent-id"] = agent_id
+        else:
+            pod_labels.pop("agent-id", None)
         pod_spec = pod_template.setdefault("spec", {})
         containers = pod_spec.get("containers") or []
         if not containers:
@@ -504,6 +528,8 @@ class KubeSessionBackend:
         envs.append({"name": "PROFILE", "value": profile})
         if target_system:
             envs.append({"name": "TARGET_SYSTEM", "value": target_system})
+        if agent_id:
+            envs.append({"name": "AGENT_ID", "value": agent_id})
         # Profile-driven resources override whatever the template set.
         container["resources"] = {
             "requests": {
@@ -567,6 +593,7 @@ class KubeSessionBackend:
         # the choice made at create time — even if the control-plane
         # process restarted between create and the next poll.
         target_system = labels.get("target-system") or None
+        agent_id = labels.get("agent-id") or None
         specs = PROFILES.get(profile, PROFILES[DEFAULT_PROFILE])
         status, started_at, completed_at, message = self._status_from_job(job, pods)
         created_at = (
@@ -590,6 +617,7 @@ class KubeSessionBackend:
             memory_request=specs["memory_request"],
             message=message,
             target_system=target_system,
+            agent_id=agent_id,
         )
 
     def create(
@@ -598,6 +626,7 @@ class KubeSessionBackend:
         profile: str,
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> SessionRecord:
         target_system = _validate_target_system(target_system)
         sid = session_id or _new_session_id()
@@ -610,7 +639,9 @@ class KubeSessionBackend:
         # untouched.
         try:
             spec, job_name = self._render_job(
-                sid, scenario, profile, target_system=target_system
+                sid, scenario, profile,
+                target_system=target_system,
+                agent_id=agent_id,
             )
             self._batch.create_namespaced_job(namespace=self._namespace, body=spec)
         except self._client.exceptions.ApiException as exc:
@@ -646,6 +677,7 @@ class KubeSessionBackend:
                 memory_request=specs["memory_request"],
                 message="job created; status not yet available",
                 target_system=target_system,
+                agent_id=agent_id,
             )
         return self._record_for_job(sid, job, pods=[])
 

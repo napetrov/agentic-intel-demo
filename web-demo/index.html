@@ -174,11 +174,38 @@
           </div>
         </section>
 
+        <section class="panel agents-panel" id="agents-panel" aria-labelledby="agents-title">
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title" id="agents-title">Agents (long-lived)</div>
+              <div class="section-subtitle">Persistent agents on each system — OpenClaw instances and Flowise chatflows. Read-only here; lifecycle goes through the operator path. Tasks below can target a specific agent by id.</div>
+            </div>
+            <div class="panel-actions agents-actions">
+              <span class="agents-summary" id="agents-summary" title="Counts reported by /api/agents">agents: probing…</span>
+              <button class="ghost small" id="agents-refresh" type="button" title="Refresh agent list and statuses">Refresh</button>
+            </div>
+          </div>
+          <div class="agents-pools">
+            <div class="agents-pool" data-system="system_a">
+              <div class="agents-pool-head">System A</div>
+              <div class="agents-pool-body" id="agents-pool-system_a">
+                <div class="agents-pool-empty">no agents registered</div>
+              </div>
+            </div>
+            <div class="agents-pool" data-system="system_b">
+              <div class="agents-pool-head">System B</div>
+              <div class="agents-pool-body" id="agents-pool-system_b">
+                <div class="agents-pool-empty">no agents registered</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="panel multi-session-panel" id="multi-session-panel" aria-labelledby="multi-session-title">
           <div class="panel-head panel-head-wrap">
             <div>
-              <div class="section-title" id="multi-session-title">Multi-agent fan-out</div>
-              <div class="section-subtitle">Spawn N concurrent sessions to load the system. In k8s each session is a Job; locally each is simulated.</div>
+              <div class="section-title" id="multi-session-title">Tasks (short-lived) — multi-agent fan-out</div>
+              <div class="section-subtitle">Spawn N concurrent tasks to load the system. In k8s each task is a Job; locally each is simulated. Optionally pin every spawned task to a registered agent above.</div>
             </div>
             <div class="panel-actions multi-session-actions">
               <span class="multi-session-backend" id="multi-session-backend" title="Backend reported by /api/sessions">backend: probing…</span>
@@ -200,10 +227,14 @@
               <option value="large">large (16 vCPU)</option>
             </select>
             <label for="multi-session-target" class="multi-session-label">Target system</label>
-            <select id="multi-session-target" class="multi-session-select" title="Pick which system runs the spawned agents. Default uses the scenario's catalog route.">
+            <select id="multi-session-target" class="multi-session-select" title="Pick which system runs the spawned tasks. Default uses the scenario's catalog route.">
               <option value="">scenario default</option>
               <option value="system_a">System A (local)</option>
               <option value="system_b">System B (offload)</option>
+            </select>
+            <label for="multi-session-agent" class="multi-session-label">Agent</label>
+            <select id="multi-session-agent" class="multi-session-select" title="Pin every spawned task to a registered long-lived agent. Empty = ephemeral (today's behavior).">
+              <option value="">ephemeral (no agent)</option>
             </select>
             <label for="multi-session-count" class="multi-session-label">Count</label>
             <input
@@ -226,18 +257,19 @@
             <table class="multi-session-table" id="multi-session-table">
               <thead>
                 <tr>
-                  <th scope="col">Session</th>
+                  <th scope="col">Task</th>
                   <th scope="col">Scenario</th>
                   <th scope="col">Profile</th>
                   <th scope="col">Target</th>
+                  <th scope="col">Agent</th>
                   <th scope="col">Status</th>
                   <th scope="col">Pod / Job</th>
-                  <th scope="col">Age</th>
+                  <th scope="col" title="Wall-clock age while pending/running; total run duration once the task is Completed/Failed.">Age / Duration</th>
                   <th scope="col" aria-label="Actions"></th>
                 </tr>
               </thead>
               <tbody id="multi-session-rows">
-                <tr class="multi-session-empty"><td colspan="8">No sessions yet. Spawn some above.</td></tr>
+                <tr class="multi-session-empty"><td colspan="9">No tasks yet. Spawn some above.</td></tr>
               </tbody>
             </table>
           </div>

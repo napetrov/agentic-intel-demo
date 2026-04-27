@@ -162,6 +162,31 @@ output. To target a real remote OpenClaw instead of the stub, set
 `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN` in your shell before
 `docker compose up`.
 
+### Long-lived agents vs short-lived tasks
+
+The demo distinguishes two concepts:
+
+* **Agent (long-lived)** — a registered, addressable runtime that stays
+  up across many tasks. Two kinds today: **OpenClaw** (one
+  `OpenClawInstance`, managed by `openclaw-operator`) and **Flowise**
+  (one chatflow inside a Flowise Deployment). The pool is declared in
+  `config/agents.yaml` and surfaced read-only via `GET /api/agents` and
+  the "Agents (long-lived)" panel in the web UI. Lifecycle stays
+  operator-driven: OpenClaw agents are added through the operator path
+  (`scripts/install-openclaw-operator.sh` + smoke tests), Flowise
+  chatflows through the documented one-time UI step in
+  `docs/flowise-integration.md`. The control plane never writes CRs.
+* **Task (short-lived)** — one unit of work spawned through the
+  `/sessions` API (kept on that wire path for backwards compatibility;
+  the UI labels them "tasks"). Today's fan-out spawns ephemeral Jobs;
+  with the new optional `agent_id` field on `POST /sessions`, every
+  task can be attributed to a registered agent and rendered in the
+  Agent column of the table.
+
+In Tier 2 the kube backend overlays live cluster status (CR phase,
+Deployment readiness) on top of each seed agent; in Tier 1 the seed is
+shown as-is with `status: Unknown`.
+
 ### Multi-agent fan-out (concurrent sessions)
 
 The control plane exposes a `/sessions` API for spawning many agent

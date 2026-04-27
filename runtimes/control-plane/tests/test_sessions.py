@@ -352,7 +352,14 @@ class _FlakyBackend:
         self.calls = 0
         self._records: list[sm.SessionRecord] = []
 
-    def create(self, scenario, profile, session_id=None, target_system=None):
+    def create(
+        self,
+        scenario,
+        profile,
+        session_id=None,
+        target_system=None,
+        agent_id=None,
+    ):
         self.calls += 1
         if self.calls > self.succeed_n:
             raise self.exc
@@ -364,6 +371,7 @@ class _FlakyBackend:
             created_at=time.time(),
             backend=self.name,
             target_system=target_system,
+            agent_id=agent_id,
         )
         self._records.append(rec)
         return rec

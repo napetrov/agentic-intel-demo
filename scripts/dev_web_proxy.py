@@ -117,5 +117,27 @@ async def api_sessions_delete(session_id: str) -> Response:
     return await _forward("DELETE", f"{CONTROL_PLANE}/sessions/{session_id}")
 
 
+# Agents API — long-lived agent registry (read-only in v1). Same routes
+# as nginx.conf so dev-up and docker-compose serve the same /api contract.
+@app.get("/api/agents/kinds")
+async def api_agents_kinds() -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/agents/kinds")
+
+
+@app.get("/api/agents/systems")
+async def api_agents_systems() -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/agents/systems")
+
+
+@app.get("/api/agents")
+async def api_agents_list() -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/agents")
+
+
+@app.get("/api/agents/{agent_id}")
+async def api_agents_get(agent_id: str) -> Response:
+    return await _forward("GET", f"{CONTROL_PLANE}/agents/{agent_id}")
+
+
 # Static last so /api/* wins. html=True makes "/" serve index.html.
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")

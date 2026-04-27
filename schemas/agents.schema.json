@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agentic-intel-demo/schemas/agents.schema.json",
+  "title": "Demo agent registry seed",
+  "description": "Shape contract for config/agents.yaml. The control plane reads this at startup and surfaces it via GET /agents; the kube backend overlays live cluster discovery on top.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "agents"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "demo.agents/v1" },
+    "kind": { "const": "AgentRegistry" },
+    "agents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/agent" }
+    }
+  },
+  "$defs": {
+    "agent": {
+      "type": "object",
+      "required": ["id", "name", "kind", "system", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,58}$",
+          "description": "DNS-1035 compatible id (lower-case, dash-separated, <=59 chars to stay inside the k8s label budget once `-job` is appended)."
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["openclaw", "flowise"] },
+        "system": { "type": "string", "enum": ["system_a", "system_b"] },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "discovery": { "$ref": "#/$defs/discovery" }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "openclaw_instance": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "deployment": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "namespace": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "chatflow_id": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

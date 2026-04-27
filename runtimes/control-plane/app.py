@@ -45,6 +45,11 @@ from session_manager import (  # noqa: E402  (after sys.path tweak)
     SessionBackend,
     make_backend,
 )
+from agent_registry import (  # noqa: E402
+    AGENT_KINDS,
+    AGENT_SYSTEMS,
+    make_registry,
+)
 
 app = FastAPI(title="demo-control-plane", version="0.1.0")
 logger = logging.getLogger("control-plane")
@@ -382,6 +387,13 @@ SESSION_BATCH_MAX = int(os.environ.get("SESSION_BATCH_MAX", "50"))
 _session_backend: SessionBackend = make_backend()
 logger.info("session backend: %s", _session_backend.name)
 
+# Long-lived agent registry. Read-only in v1: declared in
+# config/agents.yaml, optionally overlaid with live cluster status when
+# AGENT_DISCOVERY=kube. A malformed registry file is a startup error so
+# the operator sees it in deployment logs (mirrors make_backend()).
+_agent_registry = make_registry()
+logger.info("agent registry seeded with %d agent(s)", len(_agent_registry.ids()))
+
 
 # K8s DNS-1035 labels (used for Job names) cap at 63 chars; KubeSessionBackend
 # appends "-job" (4 chars) to session_id when forming the Job name, so the
@@ -402,6 +414,10 @@ class SessionCreateRequest(BaseModel):
     # Validated against TARGET_SYSTEMS in the route handler so the error
     # body lists the allowed values.
     target_system: Optional[str] = Field(default=None)
+    # Optional attribution to a long-lived agent in the registry. None =
+    # ephemeral (today's behavior). Validated against the registry at
+    # the API edge (unknown id → 400) so the backend stays decoupled.
+    agent_id: Optional[str] = Field(default=None, max_length=_K8S_LABEL_MAX)
 
 
 class SessionBatchRequest(BaseModel):
@@ -412,6 +428,7 @@ class SessionBatchRequest(BaseModel):
     # gt=0: zero sessions is a no-op the client could just not send.
     count: int = Field(gt=0)
     target_system: Optional[str] = Field(default=None)
+    agent_id: Optional[str] = Field(default=None, max_length=_K8S_LABEL_MAX)
 
 
 class SessionResponse(BaseModel):
@@ -429,6 +446,7 @@ class SessionResponse(BaseModel):
     memory_request: Optional[str] = None
     message: Optional[str] = None
     target_system: Optional[str] = None
+    agent_id: Optional[str] = None
 
 
 class SessionListResponse(BaseModel):
@@ -472,6 +490,27 @@ def list_target_systems() -> dict[str, Any]:
     }
 
 
+def _validate_agent_id_request(agent_id: Optional[str]) -> None:
+    """Reject unknown agent_id values at the API edge.
+
+    Mirrors the pattern used for target_system: keep the backend agnostic
+    of the registry, surface a clear allow-list error to the caller. An
+    empty registry (e.g. no config/agents.yaml) means *any* agent_id is
+    rejected — that's deliberate, since there's nothing to attribute to.
+    """
+    if agent_id is None:
+        return
+    known = _agent_registry.ids()
+    if agent_id not in known:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown agent_id {agent_id!r}; "
+                f"registered={sorted(known) or '[]'}"
+            ),
+        )
+
+
 def _validate_target_system_request(target_system: Optional[str]) -> None:
     """Reject unknown target_system values at the API edge.
 
@@ -501,12 +540,14 @@ def create_session(req: SessionCreateRequest) -> SessionResponse:
             detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
         )
     _validate_target_system_request(req.target_system)
+    _validate_agent_id_request(req.agent_id)
     try:
         rec = _session_backend.create(
             scenario=req.scenario,
             profile=req.profile,
             session_id=req.session_id,
             target_system=req.target_system,
+            agent_id=req.agent_id,
         )
     except ValueError as exc:
         # Duplicate session_id and unknown-profile both surface here.
@@ -547,6 +588,7 @@ def create_session_batch(
             detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
         )
     _validate_target_system_request(req.target_system)
+    _validate_agent_id_request(req.agent_id)
     created = []
     error: Optional[str] = None
     for _ in range(req.count):
@@ -555,6 +597,7 @@ def create_session_batch(
                 scenario=req.scenario,
                 profile=req.profile,
                 target_system=req.target_system,
+                agent_id=req.agent_id,
             )
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
@@ -621,6 +664,85 @@ def delete_session(session_id: str) -> dict[str, str]:
     if not deleted:
         raise HTTPException(status_code=404, detail=f"unknown session {session_id!r}")
     return {"session_id": session_id, "status": "deleting"}
+
+
+# ---------------------------------------------------------------------------
+# Agents API — long-lived agent registry (read-only in v1)
+# ---------------------------------------------------------------------------
+#
+# The registry is seeded from config/agents.yaml at startup. In Tier 2 the
+# kube backend overlays live cluster status (OpenClawInstance phase,
+# Flowise Deployment readiness) on each entry. There are no write routes
+# yet — adding/removing agents goes through the operator path
+# (scripts/install-openclaw-operator.sh + the documented Flowise UI step
+# in docs/flowise-integration.md). See agent_registry.py for details.
+#
+# Routes:
+#   GET  /agents             list all registered agents
+#   GET  /agents/{agent_id}  poll one agent
+#   GET  /agents/kinds       enum of allowed `kind` values
+#   GET  /agents/systems     enum of allowed `system` values
+
+
+class AgentResponse(BaseModel):
+    id: str
+    name: str
+    kind: str
+    system: str
+    capabilities: list[str]
+    status: str
+    source: str
+    message: Optional[str] = None
+    discovery: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentListResponse(BaseModel):
+    total: int
+    by_system: dict[str, int]
+    by_status: dict[str, int]
+    agents: list[AgentResponse]
+
+
+def _summarize_agents(records) -> tuple[dict[str, int], dict[str, int]]:
+    by_system: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    for rec in records:
+        by_system[rec.system] = by_system.get(rec.system, 0) + 1
+        by_status[rec.status] = by_status.get(rec.status, 0) + 1
+    return by_system, by_status
+
+
+@app.get("/agents/kinds")
+def list_agent_kinds() -> dict[str, Any]:
+    """Allowed `kind` values for registered agents. Surfaced so the UI
+    can render the kind picker without hard-coding the list."""
+    return {"kinds": sorted(AGENT_KINDS)}
+
+
+@app.get("/agents/systems")
+def list_agent_systems() -> dict[str, Any]:
+    """Allowed `system` values for registered agents."""
+    return {"systems": sorted(AGENT_SYSTEMS)}
+
+
+@app.get("/agents", response_model=AgentListResponse)
+def list_agents() -> AgentListResponse:
+    records = _agent_registry.list()
+    by_system, by_status = _summarize_agents(records)
+    return AgentListResponse(
+        total=len(records),
+        by_system=by_system,
+        by_status=by_status,
+        agents=[AgentResponse(**rec.to_public()) for rec in records],
+    )
+
+
+@app.get("/agents/{agent_id}", response_model=AgentResponse)
+def get_agent(agent_id: str) -> AgentResponse:
+    rec = _agent_registry.get(agent_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent {agent_id!r}")
+    return AgentResponse(**rec.to_public())
 
 
 # ---------------------------------------------------------------------------
