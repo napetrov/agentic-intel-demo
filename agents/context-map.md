@@ -34,6 +34,17 @@ Use:
 - docs/contracts/task-routing.md
 - config/demo-systems.yaml
 
+### TaskFlow Pull
+Use:
+- agents/common.md
+- agents/orchestrator.md
+- agents/scenarios/taskflow-pull/flow.md
+- agents/scenarios/taskflow-pull/task-brief.md
+- agents/scenarios/taskflow-pull/fixtures/tasks.json
+- agents/tasks/engineering/general.md
+- docs/contracts/task-routing.md
+- config/demo-systems.yaml
+
 ## Freeform task families
 
 ### General engineering

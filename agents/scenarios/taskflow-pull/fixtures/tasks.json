@@ -1,0 +1,56 @@
+{
+  "source": "fixture",
+  "fetched_at": "2026-04-27T00:00:00Z",
+  "tasks": [
+    {
+      "id": 101,
+      "title": "Audit overdue invoices for Q1",
+      "priority": "high",
+      "status": "overdue",
+      "due_date": "2026-04-10",
+      "assignee": "alice",
+      "demo_action": "escalate",
+      "comments_count": 3
+    },
+    {
+      "id": 102,
+      "title": "Refactor task-priority model",
+      "priority": "medium",
+      "status": "open",
+      "due_date": "2026-05-15",
+      "assignee": "bob",
+      "demo_action": "summarize",
+      "comments_count": 1
+    },
+    {
+      "id": 103,
+      "title": "Document escalation business rules",
+      "priority": "low",
+      "status": "open",
+      "due_date": "2026-05-30",
+      "assignee": "carol",
+      "demo_action": "audit",
+      "comments_count": 0
+    },
+    {
+      "id": 104,
+      "title": "Backfill analytics dashboard",
+      "priority": "high",
+      "status": "done",
+      "due_date": "2026-04-01",
+      "assignee": "dave",
+      "demo_action": "audit",
+      "comments_count": 5
+    },
+    {
+      "id": 105,
+      "title": "Reassign stalled onboarding tasks",
+      "priority": "medium",
+      "status": "overdue",
+      "due_date": "2026-04-20",
+      "assignee": "alice",
+      "demo_action": "audit",
+      "comments_count": 2
+    }
+  ]
+}

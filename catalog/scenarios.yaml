@@ -28,3 +28,13 @@ scenarios:
       - show_status
       - reset_session
     fallback_scenario: terminal_agent
+
+  taskflow_pull:
+    label: "TaskFlow Pull"
+    execution_mode: local_standard
+    task_family: software_engineering
+    initial_user_message: "Starting TaskFlow scenario pull"
+    allowed_next_actions:
+      - show_status
+      - reset_session
+    fallback_scenario: terminal_agent

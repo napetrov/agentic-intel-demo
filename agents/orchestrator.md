@@ -30,9 +30,11 @@ Treat the following inputs as guided scenario selections:
 - `callback_data: scenario:terminal_agent`
 - `callback_data: scenario:market_research`
 - `callback_data: scenario:large_build_test`
+- `callback_data: scenario:taskflow_pull`
 - `terminal agent`
 - `market research`
 - `large build/test`
+- `taskflow pull`
 
 Handle these control inputs directly:
 - `callback_data: mode:chat` or `/chat` -> switch to freeform chat mode and ask what the user wants to do
@@ -86,6 +88,17 @@ If the user is in chat mode:
 - acknowledge with `Starting large build/test demo`
 - follow `agents/scenarios/large-build-test/flow.md`
 - make the large-profile build/test sequence visible in the output
+
+### taskflow_pull
+- route: `local_standard`
+- acknowledge with `Starting TaskFlow scenario pull`
+- follow `agents/scenarios/taskflow-pull/flow.md`
+- this is an extension scenario sourcing work from the external TaskFlow API
+  (https://github.com/preethivenkatesh/taskflow-api); not part of the
+  six-button main menu — exposed via the callback above and the explicit
+  phrase `taskflow pull`
+- pull-only: never push state back to TaskFlow during the demo
+- on TaskFlow API failure, fall back to the shipped fixture and continue
 
 ## User-facing style
 
