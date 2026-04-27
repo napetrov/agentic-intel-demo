@@ -722,6 +722,30 @@ def test_kube_render_job_omits_target_system_label_when_default():
     assert all(e.get("name") != "TARGET_SYSTEM" for e in envs)
 
 
+def test_kube_render_job_clears_inherited_target_system_label_on_default():
+    """Codex P2: an operator-managed template can already carry
+    `target-system` (e.g. set by a previous edit or a default). When the
+    caller passes target_system=None, _render_job MUST clear that label
+    on both the Job and the Pod template — otherwise _record_for_job
+    reads it back as non-null and the API contract for defaulted
+    sessions silently breaks."""
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "metadata": {"labels": {"target-system": "system_a"}},
+            "spec": {
+                "template": {
+                    "metadata": {"labels": {"target-system": "system_a"}},
+                    "spec": {"containers": [{"name": "agent", "image": "x"}]},
+                }
+            },
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small", target_system=None)
+    assert "target-system" not in spec["metadata"]["labels"]
+    pod_labels = spec["spec"]["template"]["metadata"]["labels"]
+    assert "target-system" not in pod_labels
+
+
 def test_kube_create_wraps_template_read_apiexception():
     """_render_job() runs before the create_namespaced_job try/except — if
     _load_template's ConfigMap GET fails (RBAC / missing CM), the raw

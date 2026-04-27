@@ -459,6 +459,15 @@ class KubeSessionBackend:
             # and so a downstream controller (federation, scheduler webhook)
             # can route the Job to the right cluster/nodepool.
             labels["target-system"] = target_system
+        else:
+            # `target_system=None` means "use scenario default" — the
+            # API contract is that the session round-trips with
+            # target_system=null. If the operator-managed template
+            # already carried a `target-system` label, leaving it in
+            # place would tag this Job as that stale system and make
+            # _record_for_job read it back as non-null, silently
+            # breaking the contract. Clear it explicitly.
+            labels.pop("target-system", None)
 
         job_spec = spec.setdefault("spec", {})
         job_spec.setdefault("ttlSecondsAfterFinished", self._ttl)
@@ -474,6 +483,11 @@ class KubeSessionBackend:
         )
         if target_system:
             pod_labels["target-system"] = target_system
+        else:
+            # Same reasoning as the Job-level label above — clear any
+            # stale value from the template so pod selectors don't trip
+            # on inherited routing.
+            pod_labels.pop("target-system", None)
         pod_spec = pod_template.setdefault("spec", {})
         containers = pod_spec.get("containers") or []
         if not containers:
