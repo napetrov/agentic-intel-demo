@@ -1020,8 +1020,8 @@ async function runLiveWalkthrough(scenarioKey) {
   const stdout = String(scenarioResult.stdout || '').trimEnd();
   const stderr = String(scenarioResult.stderr || '').trimEnd();
   appendLog(`[live 5/5] System B scenario script completed; rendering stdout/stderr`);
-  if (stdout) appendLog(stdout.length > 1600 ? `${stdout.slice(0, 1600)}\n…[stdout truncated in live log]` : stdout);
-  if (stderr) appendLog(`--- stderr ---\n${stderr.length > 800 ? `${stderr.slice(0, 800)}\n…[stderr truncated]` : stderr}`);
+  if (stdout) appendLog(stdout);
+  if (stderr) appendLog(`--- stderr ---\n${stderr}`);
 
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (${liveInput})`, status: 'done' },
@@ -1088,8 +1088,7 @@ function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedM
   lines.push(`elapsed   ${elapsed}${agentElapsedMs !== null ? ` (gateway ${agentElapsedMs} ms)` : ''}`);
   if (resultRef) lines.push(`stored    ${resultRef}`);
   if (output) {
-    const compact = output.length > 1200 ? `${output.slice(0, 1200)}\n…[truncated]` : output;
-    lines.push('', 'Output', compact);
+    lines.push('', 'Output', output);
   }
   lines.push('', `Final: ${verdict}`);
   return lines.join('\n');
