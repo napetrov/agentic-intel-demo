@@ -179,8 +179,14 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"task_type":"shell","payload":{"scenario":"terminal-agent"},"session_id":"ci"}' \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
-          curl -sf "http://127.0.0.1:8080/api/offload/$job" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); r=d.get("result") or {}; assert d["status"]=="completed" and r.get("exit_code")==0 and "[scenario] terminal-agent" in (r.get("stdout") or ""), d'
+          for i in $(seq 1 20); do
+            status_json=$(curl -sf "http://127.0.0.1:8080/api/offload/$job")
+            if STATUS_JSON="$status_json" python3 -c 'import json,os,sys; d=json.loads(os.environ["STATUS_JSON"]); sys.exit(0 if d.get("status")=="completed" else 1)'; then
+              break
+            fi
+            sleep 1
+          done
+          STATUS_JSON="$status_json" python3 -c 'import json,os; d=json.loads(os.environ["STATUS_JSON"]); r=d.get("result") or {}; assert d["status"]=="completed" and r.get("exit_code")==0 and "[scenario] terminal-agent" in (r.get("stdout") or ""), d'
           # The agent_invoke fallback path: a misclassified verb must
           # echo back, never 5xx.
           curl -sf -X POST http://127.0.0.1:8080/api/offload \

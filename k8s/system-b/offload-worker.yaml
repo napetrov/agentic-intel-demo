@@ -9,6 +9,29 @@ metadata:
   name: offload-scenarios
   namespace: system-b
 data:
+  _lib.sh: |
+    # shellcheck shell=bash
+    # Shared helpers for scenario run.sh scripts. Sourced by each scenario; not
+    # executed directly. Keeps the narration on/off switch in one place so the
+    # scripts stay readable and stay in sync.
+    #
+    # Narration ([scenario], [step X/Y]) is on by default for the polished demo
+    # walkthrough. Set DEMO_QUIET=1 (forwarded by the offload-worker when the
+    # caller passes payload.quiet=true) to suppress narration so the recipient
+    # sees only real command output and the structured result fragment.
+    
+    narrate() {
+      if [ "${DEMO_QUIET:-0}" != "1" ]; then
+        echo "$@"
+      fi
+    }
+    
+    narrate_blank() {
+      if [ "${DEMO_QUIET:-0}" != "1" ]; then
+        echo
+      fi
+    }
+
   terminal-agent.run.sh: |
     #!/usr/bin/env bash
     # Demo scenario: terminal-agent
@@ -17,13 +40,19 @@ data:
     # returned to the caller as stdout; stderr is captured separately. Keep total
     # stdout under ~3.5 KB so the result fits inline (the worker pushes anything
     # over 4 KB to MinIO, which complicates the demo path).
+    #
+    # Set DEMO_QUIET=1 (or pass payload.quiet=true to /api/offload) to suppress the
+    # [scenario]/[step] narration lines so the transcript shows only real command
+    # output and the structured result fragment.
     set -euo pipefail
     
     SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=../_lib.sh
+    . "$SCENARIO_DIR/../_lib.sh"
     TASK_BRIEF="$SCENARIO_DIR/terminal-bench-reference.md"
     
-    echo "[scenario] terminal-agent"
-    echo "[step 1/5] inspect task brief"
+    narrate "[scenario] terminal-agent"
+    narrate "[step 1/5] inspect task brief"
     if [ -f "$TASK_BRIEF" ]; then
       echo "--- $(basename "$TASK_BRIEF") (first 8 lines) ---"
       sed -n '1,8p' "$TASK_BRIEF"
@@ -31,13 +60,13 @@ data:
       echo "task-brief: not found at $TASK_BRIEF"
     fi
     
-    echo
-    echo "[step 2/5] resolve scenario directory"
+    narrate_blank
+    narrate "[step 2/5] resolve scenario directory"
     echo "scenario-dir: $SCENARIO_DIR"
     ls -1 "$SCENARIO_DIR"
     
-    echo
-    echo "[step 3/5] simulate engineering command batch"
+    narrate_blank
+    narrate "[step 3/5] simulate engineering command batch"
     echo "+ uname -srm"
     uname -srm
     echo "+ date -u +%FT%TZ"
@@ -45,16 +74,16 @@ data:
     echo "+ pwd"
     pwd
     
-    echo
-    echo "[step 4/5] emit structured result fragment"
+    narrate_blank
+    narrate "[step 4/5] emit structured result fragment"
     cat <<JSON
-    {"scenario":"terminal-agent","route":"system-a","status":"ok"}
+    {"scenario":"terminal-agent","route":"system-b","status":"ok"}
     JSON
     
-    echo
-    echo "[step 5/5] summary"
-    echo "Terminal Agent execution complete on System A (CWF) primary path."
-    echo "Inference route: LiteLLM -> SambaNova. Tools used: read, exec, summarize."
+    narrate_blank
+    narrate "[step 5/5] summary"
+    narrate "Terminal Agent execution complete on System B offload worker path."
+    narrate "Offload route: System A control-plane -> System B worker. Tools used: read, exec, summarize."
 
   terminal-agent.terminal-bench-reference.md: |
     # Terminal Agent Demo — Reference Task Spec
@@ -156,13 +185,19 @@ data:
     #!/usr/bin/env bash
     # Demo scenario: market-research
     # Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
+    #
+    # Set DEMO_QUIET=1 (or pass payload.quiet=true to /api/offload) to suppress the
+    # [scenario]/[step] narration so the transcript shows only the synthetic source
+    # notes and the structured result fragment.
     set -euo pipefail
     
     SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=../_lib.sh
+    . "$SCENARIO_DIR/../_lib.sh"
     TASK_BRIEF="$SCENARIO_DIR/report-task.md"
     
-    echo "[scenario] market-research"
-    echo "[step 1/4] read research brief"
+    narrate "[scenario] market-research"
+    narrate "[step 1/4] read research brief"
     if [ -f "$TASK_BRIEF" ]; then
       echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
       sed -n '1,6p' "$TASK_BRIEF"
@@ -170,8 +205,8 @@ data:
       echo "task-brief: not found at $TASK_BRIEF"
     fi
     
-    echo
-    echo "[step 2/4] gather synthetic source notes"
+    narrate_blank
+    narrate "[step 2/4] gather synthetic source notes"
     cat <<NOTES
     [1] pricing pressure increasing
     [2] competitor launch window shifted
@@ -180,20 +215,20 @@ data:
     [5] integration story improving
     NOTES
     
-    echo
-    echo "[step 3/4] cluster + synthesize (offload to System B)"
+    narrate_blank
+    narrate "[step 3/4] cluster + synthesize (offload to System B)"
     echo "+ route: System B (GNR) for retrieval/synthesis"
     echo "+ inference: LiteLLM -> SambaNova"
     echo "clusters identified: 2"
     echo "summary length: short"
     
-    echo
-    echo "[step 4/4] result fragment"
+    narrate_blank
+    narrate "[step 4/4] result fragment"
     cat <<JSON
     {"scenario":"market-research","route":"system-b","status":"ok","clusters":2}
     JSON
-    echo
-    echo "Brief ready: top signals, risks, follow-up questions."
+    narrate_blank
+    narrate "Brief ready: top signals, risks, follow-up questions."
 
   market-research.report-task.md: |
     # Market Research Demo Task
@@ -229,13 +264,19 @@ data:
     #!/usr/bin/env bash
     # Demo scenario: large-build-test
     # Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
+    #
+    # Set DEMO_QUIET=1 (or pass payload.quiet=true to /api/offload) to suppress the
+    # [scenario]/[step] narration so the transcript shows only the routing /
+    # shard / result lines.
     set -euo pipefail
     
     SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=../_lib.sh
+    . "$SCENARIO_DIR/../_lib.sh"
     TASK_BRIEF="$SCENARIO_DIR/build-task.md"
     
-    echo "[scenario] large-build-test"
-    echo "[step 1/5] inspect heavy-profile brief"
+    narrate "[scenario] large-build-test"
+    narrate "[step 1/5] inspect heavy-profile brief"
     if [ -f "$TASK_BRIEF" ]; then
       echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
       sed -n '1,6p' "$TASK_BRIEF"
@@ -243,30 +284,30 @@ data:
       echo "task-brief: not found at $TASK_BRIEF"
     fi
     
-    echo
-    echo "[step 2/5] reserve queue slot"
+    narrate_blank
+    narrate "[step 2/5] reserve queue slot"
     echo "primary lane: system-a"
     echo "fallback lane: system-b"
     echo "inference routes: SambaNova,SLM-on-GNR"
     
-    echo
-    echo "[step 3/5] split build/test plan"
+    narrate_blank
+    narrate "[step 3/5] split build/test plan"
     echo "+ compile lane: System A"
     echo "+ test-shard offload: System B"
     
-    echo
-    echo "[step 4/5] run shards (simulated)"
+    narrate_blank
+    narrate "[step 4/5] run shards (simulated)"
     echo "shard 1/3 ok"
     echo "shard 2/3 ok"
     echo "shard 3/3 ok"
     
-    echo
-    echo "[step 5/5] result fragment"
+    narrate_blank
+    narrate "[step 5/5] result fragment"
     cat <<JSON
     {"scenario":"large-build-test","route":"system-a+system-b","status":"ok","passed":128,"failed":0}
     JSON
-    echo
-    echo "Build/test complete. Primary on System A; offload path System B exercised."
+    narrate_blank
+    narrate "Build/test complete. Primary on System A; offload path System B exercised."
 
   large-build-test.build-task.md: |
     # Large Build/Test Demo Task
@@ -320,6 +361,8 @@ spec:
             name: offload-scenarios
             defaultMode: 0555
             items:
+              - key: _lib.sh
+                path: _lib.sh
               - key: terminal-agent.run.sh
                 path: terminal-agent/run.sh
               - key: terminal-agent.terminal-bench-reference.md

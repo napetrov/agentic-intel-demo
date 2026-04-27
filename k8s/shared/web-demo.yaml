@@ -68,12 +68,16 @@ spec:
               mountPath: /var/cache/nginx
             - name: nginx-run
               mountPath: /var/run
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
       volumes:
         - name: nginx-tmp
           emptyDir: {}
         - name: nginx-cache
           emptyDir: {}
         - name: nginx-run
+          emptyDir: {}
+        - name: nginx-conf
           emptyDir: {}
 ---
 apiVersion: v1

@@ -117,13 +117,13 @@ session_id="smoke-$(date +%s)-$$"
 scenario="${SCENARIO:-terminal-agent}"
 api_prefix="$CONTROL_PLANE_API_PREFIX"
 
-payload="$(SCENARIO="$scenario" SESSION_ID="$session_id" python3 -c '
+payload="$(SCENARIO="$scenario" SESSION_ID="$session_id" OFFLOAD_TIMEOUT_SECONDS="$OFFLOAD_TIMEOUT_SECONDS" python3 -c '
 import json, os
 print(json.dumps({
     "task_type": "shell",
     "payload": {
         "scenario": os.environ["SCENARIO"],
-        "timeout_seconds": 60,
+        "timeout_seconds": int(os.environ["OFFLOAD_TIMEOUT_SECONDS"]),
     },
     "session_id": os.environ["SESSION_ID"],
 }))

@@ -42,10 +42,10 @@ pwd
 narrate_blank
 narrate "[step 4/5] emit structured result fragment"
 cat <<JSON
-{"scenario":"terminal-agent","route":"system-a","status":"ok"}
+{"scenario":"terminal-agent","route":"system-b","status":"ok"}
 JSON
 
 narrate_blank
 narrate "[step 5/5] summary"
-narrate "Terminal Agent execution complete on System A (CWF) primary path."
-narrate "Inference route: LiteLLM -> SambaNova. Tools used: read, exec, summarize."
+narrate "Terminal Agent execution complete on System B offload worker path."
+narrate "Offload route: System A control-plane -> System B worker. Tools used: read, exec, summarize."
