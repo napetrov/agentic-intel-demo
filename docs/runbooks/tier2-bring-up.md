@@ -69,6 +69,71 @@ fill in"; the *minimum* set for a Tier 2 bring-up is:
 | `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | steps 2, 3, MinIO bucket | choose any (these create the MinIO root user) |
 | `SYSTEM_B_IP` | step 3 (LiteLLM → vLLM) | `kubectl --context system-b get nodes -o wide` → INTERNAL-IP |
 | `SAMBANOVA_API_KEY` | optional | SambaNova Cloud → API keys. Leave empty if you don't use SambaNova; the `sambanova` LiteLLM alias will surface as `unconfigured`. |
+| `GH_TOKEN` | optional | A GitHub PAT (classic or fine-grained) that agents inside the OpenClaw session pod use **internally** for `git clone/push`, `gh pr create`, issue triage, and private GHCR pulls. Never exposed on the gateway API. See "GitHub token (`GH_TOKEN`) wiring" below. |
+
+### GitHub token (`GH_TOKEN`) wiring
+
+`GH_TOKEN` is consumed entirely inside the OpenClaw instance. It is never
+returned by the gateway, never rendered into `openclaw.json`, and never
+required for the demo to boot. Wire it when the scenarios you run touch
+GitHub from tool calls — for example, an agent that pushes a branch and
+opens a PR, or a workflow that pulls a private GHCR image.
+
+How the value flows:
+
+1. You export `GH_TOKEN` and re-run `scripts/create-operator-secrets.sh`
+   (System A scope). The script writes the token into two Secrets, both
+   via `kubectl create secret --dry-run=client -o yaml | kubectl apply -f -`
+   so plaintext never lands on disk:
+   - `intel-demo-operator-secrets` (namespace `default`) — picked up by
+     the operator gateway via `envFromSecrets` in
+     `examples/openclawinstance-intel-demo.yaml`.
+   - `github-token` (namespace `agents`) — picked up by the session pod
+     via `secretKeyRef` in `k8s/system-a/session-pod-template.yaml`.
+     The mirror is necessary because `secretKeyRef` cannot cross
+     namespaces.
+2. Inside the session pod, the value is exposed under **both**
+   `GH_TOKEN` and `GITHUB_TOKEN` (same value), so tools that look for
+   either name find it. Both env vars are marked `optional: true` on the
+   `secretKeyRef`, so omitting the Secret does not block pod startup —
+   the agent just boots without a credential and `gh auth status` fails
+   loudly, which is the intended "no GitHub access wired" signal.
+3. Tools running inside the agent (`git`, `gh`, the OpenClaw exec
+   plugin, container pulls invoked by scenarios) read the env var
+   directly. Nothing is added to `openclaw.json`; the gateway has no
+   GitHub-related endpoint and never returns the token.
+
+To rotate or remove the token:
+
+```bash
+# rotate
+APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
+  TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
+  SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
+  MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+  GH_TOKEN=ghp_NEW... \
+  ./scripts/create-operator-secrets.sh
+kubectl --context system-a delete pods -n agents -l role=session-pod
+
+# remove (drop GitHub access entirely)
+kubectl --context system-a delete secret github-token -n agents
+# also re-run create-operator-secrets.sh WITHOUT GH_TOKEN exported so
+# the operator-namespace Secret stops carrying the key:
+APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
+  TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
+  SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
+  MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+  ./scripts/create-operator-secrets.sh
+```
+
+To verify presence without ever reading the value:
+
+```bash
+SCOPE=system-a ./scripts/verify-operator-secrets.sh
+# A wired stand prints: [ok] ns/agents secret/github-token has all required keys: GH_TOKEN
+# An unwired stand prints: [warn] secret/github-token in ns/agents not present — agents will run without GitHub credentials.
+# Set REQUIRE_GH_TOKEN=1 (or export GH_TOKEN before running the verify script) to upgrade the [warn] to a [FAIL].
+```
 
 ### Sensitive-data handling
 
@@ -144,7 +209,14 @@ APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
   TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
   SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
   MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+  GH_TOKEN="${GH_TOKEN:-}" \
   ./scripts/create-operator-secrets.sh
+# `GH_TOKEN` is optional. When set, the script also creates the
+# `github-token` Secret in namespace `agents` so the session pod
+# exposes it as GH_TOKEN/GITHUB_TOKEN to internal tools (git, gh,
+# private GHCR pulls). Leave it unset to skip — the demo runs fine
+# without GitHub credentials. See "GitHub token (`GH_TOKEN`) wiring"
+# above for the full flow.
 
 SYSTEM_B_VLLM_ENDPOINT="http://${SYSTEM_B_IP}:30434/v1" \
   AWS_REGION=us-east-2 \

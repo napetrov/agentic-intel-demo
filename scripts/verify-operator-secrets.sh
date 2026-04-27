@@ -32,6 +32,12 @@ set -uo pipefail
 SCOPE="${SCOPE:-all}"
 SYSTEM_A_KUBECTL="${SYSTEM_A_KUBECTL:-kubectl --context system-a}"
 SYSTEM_B_KUBECTL="${SYSTEM_B_KUBECTL:-kubectl --context system-b}"
+# The github-token Secret is optional by default — agents without GitHub
+# credentials still complete the demo. Set REQUIRE_GH_TOKEN=1 (or pass
+# GH_TOKEN=...) to upgrade absence from `[warn]` to `[FAIL]` for stands
+# that drive `git push` / `gh pr create` from inside the session pod.
+REQUIRE_GH_TOKEN="${REQUIRE_GH_TOKEN:-${GH_TOKEN:+1}}"
+REQUIRE_GH_TOKEN="${REQUIRE_GH_TOKEN:-0}"
 
 case "$SCOPE" in
   all|system-a|system-b) ;;
@@ -71,7 +77,29 @@ fi
 FAIL=0
 
 ok()   { printf '  [ok]    %s\n' "$1"; }
+warn() { printf '  [warn]  %s\n' "$1"; }
 fail() { printf '  [FAIL]  %s\n' "$1"; FAIL=$((FAIL+1)); }
+
+# check_optional_secret <kubectl-prefix> <namespace> <secret-name> <required keys...>
+#
+# Same shape as check_secret, but a missing Secret is a [warn] (or [FAIL]
+# when REQUIRE_GH_TOKEN=1). Use for credentials the demo can run without
+# but agents inside the session pod consume internally when present —
+# currently just `github-token`.
+check_optional_secret() {
+  local kubectl_cmd="$1" namespace="$2" name="$3"; shift 3
+  local -a kc=()
+  read -r -a kc <<<"$kubectl_cmd"
+  if ! "${kc[@]}" -n "$namespace" get secret "$name" >/dev/null 2>&1; then
+    if [ "$REQUIRE_GH_TOKEN" = "1" ]; then
+      fail "secret/$name in ns/$namespace MISSING (required because REQUIRE_GH_TOKEN=1) — re-run scripts/create-operator-secrets.sh with GH_TOKEN=..."
+    else
+      warn "secret/$name in ns/$namespace not present — agents will run without GitHub credentials. Set GH_TOKEN and re-run scripts/create-operator-secrets.sh to wire it."
+    fi
+    return
+  fi
+  check_secret "$kubectl_cmd" "$namespace" "$name" "$@"
+}
 
 # check_secret <kubectl-prefix> <namespace> <secret-name> <required keys...>
 check_secret() {
@@ -131,6 +159,10 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
     TELEGRAM_BOT_TOKEN
   check_secret "$SYSTEM_A_KUBECTL" agents       bedrock-creds \
     AWS_BEARER_TOKEN_BEDROCK
+  # github-token is optional (see REQUIRE_GH_TOKEN above). When wired,
+  # agents inside the session pod read it as GH_TOKEN/GITHUB_TOKEN.
+  check_optional_secret "$SYSTEM_A_KUBECTL" agents github-token \
+    GH_TOKEN
 fi
 
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then

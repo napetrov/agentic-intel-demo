@@ -27,6 +27,15 @@
 #                            SAMBANOVA_API_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 #   SCOPE=system-b:          MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 #
+# Optional env vars (system-a only):
+#   GH_TOKEN — GitHub PAT plumbed into intel-demo-operator-secrets and the
+#              session-pod `github-token` Secret in namespace `agents`. The
+#              OpenClaw instance loads it via envFromSecrets and exposes it
+#              as GH_TOKEN/GITHUB_TOKEN inside the session pod so agents
+#              can drive `git`, `gh`, and private GHCR pulls. Unset to skip
+#              wiring (the session pod will not get a token; `gh auth
+#              status` will fail loudly, which is the intended signal).
+#
 # Usage:
 #   APPLY=1 \
 #   TELEGRAM_BOT_TOKEN=... \
@@ -34,6 +43,7 @@
 #   SAMBANOVA_API_KEY=... \
 #   MINIO_ACCESS_KEY=... \
 #   MINIO_SECRET_KEY=... \
+#   GH_TOKEN=ghp_...          # optional, see above \
 #     ./scripts/create-operator-secrets.sh
 #
 #   ./scripts/create-operator-secrets.sh         # dry-run, prints rendered manifests
@@ -56,6 +66,8 @@ TELEGRAM_SECRET_NAME="${TELEGRAM_SECRET_NAME:-telegram-bot}"
 TELEGRAM_SECRET_NAMESPACE="${TELEGRAM_SECRET_NAMESPACE:-agents}"
 BEDROCK_SECRET_NAME="${BEDROCK_SECRET_NAME:-bedrock-creds}"
 BEDROCK_SECRET_NAMESPACE="${BEDROCK_SECRET_NAMESPACE:-agents}"
+GITHUB_SECRET_NAME="${GITHUB_SECRET_NAME:-github-token}"
+GITHUB_SECRET_NAMESPACE="${GITHUB_SECRET_NAMESPACE:-agents}"
 MINIO_SECRET_NAME="${MINIO_SECRET_NAME:-minio-creds}"
 MINIO_SECRET_NAMESPACE="${MINIO_SECRET_NAMESPACE:-system-b}"
 SCOPE="${SCOPE:-all}"
@@ -162,13 +174,26 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   ensure_namespace "$LITELLM_SECRET_NAMESPACE"
   ensure_namespace "$SESSION_POD_SECRET_NAMESPACE"
 
+  # GH_TOKEN is optional. When set, it lands in both the operator instance
+  # Secret (so envFromSecrets exposes it inside the gateway pod) and the
+  # `github-token` Secret in the `agents` namespace (so secretKeyRef can
+  # mount it as GH_TOKEN/GITHUB_TOKEN inside the session pod). When unset,
+  # neither Secret is touched — agents will simply have no GitHub
+  # credential at runtime.
+  operator_instance_keys=(
+    "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN"
+    "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
+    "SAMBANOVA_API_KEY=$SAMBANOVA_API_KEY"
+    "MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY"
+    "MINIO_SECRET_KEY=$MINIO_SECRET_KEY"
+  )
+  if [ -n "${GH_TOKEN:-}" ]; then
+    operator_instance_keys+=("GH_TOKEN=$GH_TOKEN")
+  fi
+
   emit "operator instance secrets" \
     "$SECRET_NAME" "$SECRET_NAMESPACE" \
-    "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
-    "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK" \
-    "SAMBANOVA_API_KEY=$SAMBANOVA_API_KEY" \
-    "MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY" \
-    "MINIO_SECRET_KEY=$MINIO_SECRET_KEY"
+    "${operator_instance_keys[@]}"
 
   emit "litellm secrets" \
     "$LITELLM_SECRET_NAME" "$LITELLM_SECRET_NAMESPACE" \
@@ -187,6 +212,20 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   emit "bedrock bearer token (session pod)" \
     "$BEDROCK_SECRET_NAME" "$BEDROCK_SECRET_NAMESPACE" \
     "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
+
+  # Mirror GH_TOKEN into the agents namespace for the session pod. The
+  # operator instance Secret lives in the operator's namespace and
+  # secretKeyRef can't cross namespaces, so this copy is what
+  # session-pod-template.yaml's `secretKeyRef` actually points at.
+  if [ -n "${GH_TOKEN:-}" ]; then
+    emit "github token (session pod)" \
+      "$GITHUB_SECRET_NAME" "$GITHUB_SECRET_NAMESPACE" \
+      "GH_TOKEN=$GH_TOKEN"
+  else
+    echo "[create-operator-secrets] GH_TOKEN unset — skipping github-token Secret."
+    echo "  Agents will run without GitHub credentials. Re-run with"
+    echo "  GH_TOKEN=ghp_... to enable git/gh/private GHCR pulls."
+  fi
 fi
 
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then

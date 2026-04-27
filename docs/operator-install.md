@@ -71,3 +71,33 @@ kubectl logs deploy/openclaw-operator-controller-manager -n openclaw-operator-sy
 kubectl apply -f k8s/shared/intel-demo-operator-secrets.yaml.template
 kubectl apply -f examples/openclawinstance-intel-demo.yaml
 ```
+
+## Passing a GitHub token (`GH_TOKEN`) to the instance
+
+The OpenClaw instance can consume a GitHub PAT internally — it is used
+by tools running inside the session pod (`git`, `gh`, private GHCR
+pulls), never exposed on the gateway API or written into
+`openclaw.json`. Wire it via the same secret pipeline as the other
+credentials:
+
+1. Add `GH_TOKEN` to `intel-demo-operator-secrets` (referenced by
+   `OpenClawInstance.spec.envFromSecrets`). Either:
+   - Edit the placeholder in
+     `k8s/shared/intel-demo-operator-secrets.yaml.template` and
+     `kubectl apply` it, **or**
+   - Re-run `scripts/create-operator-secrets.sh` with `GH_TOKEN=ghp_...`
+     exported. The script also mirrors the value into the
+     `github-token` Secret in namespace `agents`, which the
+     session-pod template references via `secretKeyRef` (cross-namespace
+     refs are not allowed, so the mirror is required).
+2. The session pod exposes the value under **both** `GH_TOKEN` and
+   `GITHUB_TOKEN`. Both `secretKeyRef`s are marked `optional: true`, so
+   omitting the Secret does not block pod startup — the agent simply
+   runs without a credential.
+3. Verify wiring without reading the value:
+   `SCOPE=system-a ./scripts/verify-operator-secrets.sh`. Set
+   `REQUIRE_GH_TOKEN=1` to upgrade the "missing token" warning to a
+   hard failure on stands where GitHub access is mandatory.
+
+See `docs/runbooks/tier2-bring-up.md` "GitHub token (`GH_TOKEN`)
+wiring" for the full flow, including rotation and removal.
