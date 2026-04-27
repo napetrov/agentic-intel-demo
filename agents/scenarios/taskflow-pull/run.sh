@@ -155,5 +155,5 @@ tail -n 20 "$ARTIFACT"
 narrate_blank
 narrate "[step 6/6] summarize evidence"
 cat <<JSON
-{"scenario":"taskflow-pull","route":"local_standard","system_owner":"System A","source_kind":"$SOURCE_KIND","source_ref":"$SOURCE_REF","task_id":$PICKED_ID,"action":"$PICKED_ACTION","status":"ok","artifact":"$ARTIFACT"}
+{"scenario":"taskflow-pull","route":"local_standard","system_owner":"System A","source_kind":"$SOURCE_KIND","source_ref":"$SOURCE_REF","task_id":"$PICKED_ID","action":"$PICKED_ACTION","status":"ok","artifact":"$ARTIFACT"}
 JSON
