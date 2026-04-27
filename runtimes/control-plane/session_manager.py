@@ -64,6 +64,13 @@ PROFILES: dict[str, dict[str, str]] = {
 }
 DEFAULT_PROFILE = "small"
 
+# Target systems the multi-agent fan-out can schedule onto. Mirrors the
+# `systems` map in config/demo-systems.yaml; kept in code so the local
+# backend can validate without the file being mounted. `None` means
+# "use the scenario default" (System A for everything today, but the
+# routing contract may evolve — keep the override path explicit).
+TARGET_SYSTEMS: frozenset[str] = frozenset({"system_a", "system_b"})
+
 # Session status vocabulary. Aligns with k8s Job conditions so the kube
 # backend can map 1:1 without inventing extra states.
 STATUS_PENDING = "Pending"
@@ -89,6 +96,10 @@ class SessionRecord:
     cpu_request: Optional[str] = None
     memory_request: Optional[str] = None
     message: Optional[str] = None
+    # Which demo system runs the agent. `None` = use the scenario's
+    # catalog default. Surfaced so the UI can render each session in the
+    # correct system pool (System A vs System B).
+    target_system: Optional[str] = None
     # Backend-specific extras (e.g. raw k8s phase) live here so callers
     # can introspect without leaking k8s types into the public schema.
     extras: dict[str, Any] = field(default_factory=dict)
@@ -102,10 +113,33 @@ class SessionRecord:
 class SessionBackend(Protocol):
     name: str
 
-    def create(self, scenario: str, profile: str, session_id: Optional[str] = None) -> SessionRecord: ...
+    def create(
+        self,
+        scenario: str,
+        profile: str,
+        session_id: Optional[str] = None,
+        target_system: Optional[str] = None,
+    ) -> SessionRecord: ...
     def get(self, session_id: str) -> Optional[SessionRecord]: ...
     def list(self) -> list[SessionRecord]: ...
     def delete(self, session_id: str) -> bool: ...
+
+
+def _validate_target_system(target_system: Optional[str]) -> Optional[str]:
+    """Reject anything outside the allow-list.
+
+    `None` is a first-class value (= "use scenario default") and passes
+    through unchanged. We intentionally don't lower-case the input — a
+    typo should fail loudly so the operator sees their mistake instead
+    of silently scheduling on the wrong system.
+    """
+    if target_system is None:
+        return None
+    if target_system not in TARGET_SYSTEMS:
+        raise ValueError(
+            f"unknown target_system {target_system!r}; allowed={sorted(TARGET_SYSTEMS)}"
+        )
+    return target_system
 
 
 def _new_session_id() -> str:
@@ -208,9 +242,11 @@ class LocalSessionBackend:
         scenario: str,
         profile: str,
         session_id: Optional[str] = None,
+        target_system: Optional[str] = None,
     ) -> SessionRecord:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}; allowed={sorted(PROFILES)}")
+        target_system = _validate_target_system(target_system)
         sid = session_id or _new_session_id()
         with self._lock:
             if sid in self._records:
@@ -228,6 +264,7 @@ class LocalSessionBackend:
                 cpu_request=specs["cpu_request"],
                 memory_request=specs["memory_request"],
                 message="simulated session created (local backend)",
+                target_system=target_system,
             )
             # Durable write first — if SQLite barfs, the in-memory cache
             # stays empty and the caller sees the failure instead of a
@@ -391,7 +428,11 @@ class KubeSessionBackend:
         return spec
 
     def _render_job(
-        self, session_id: str, scenario: str, profile: str
+        self,
+        session_id: str,
+        scenario: str,
+        profile: str,
+        target_system: Optional[str] = None,
     ) -> tuple[dict, str]:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}")
@@ -413,6 +454,20 @@ class KubeSessionBackend:
                 "managed-by": "control-plane",
             }
         )
+        if target_system:
+            # Label so an operator can `kubectl get jobs -l target-system=system_b`
+            # and so a downstream controller (federation, scheduler webhook)
+            # can route the Job to the right cluster/nodepool.
+            labels["target-system"] = target_system
+        else:
+            # `target_system=None` means "use scenario default" — the
+            # API contract is that the session round-trips with
+            # target_system=null. If the operator-managed template
+            # already carried a `target-system` label, leaving it in
+            # place would tag this Job as that stale system and make
+            # _record_for_job read it back as non-null, silently
+            # breaking the contract. Clear it explicitly.
+            labels.pop("target-system", None)
 
         job_spec = spec.setdefault("spec", {})
         job_spec.setdefault("ttlSecondsAfterFinished", self._ttl)
@@ -426,6 +481,13 @@ class KubeSessionBackend:
                 "profile": profile,
             }
         )
+        if target_system:
+            pod_labels["target-system"] = target_system
+        else:
+            # Same reasoning as the Job-level label above — clear any
+            # stale value from the template so pod selectors don't trip
+            # on inherited routing.
+            pod_labels.pop("target-system", None)
         pod_spec = pod_template.setdefault("spec", {})
         containers = pod_spec.get("containers") or []
         if not containers:
@@ -440,6 +502,8 @@ class KubeSessionBackend:
         envs.append({"name": "SESSION_ID", "value": session_id})
         envs.append({"name": "SCENARIO", "value": scenario})
         envs.append({"name": "PROFILE", "value": profile})
+        if target_system:
+            envs.append({"name": "TARGET_SYSTEM", "value": target_system})
         # Profile-driven resources override whatever the template set.
         container["resources"] = {
             "requests": {
@@ -499,6 +563,10 @@ class KubeSessionBackend:
         labels = (job.metadata.labels or {}) if hasattr(job, "metadata") else {}
         scenario = labels.get("scenario", "unknown")
         profile = labels.get("profile", DEFAULT_PROFILE)
+        # Read target_system back from the Job label so list/get reflect
+        # the choice made at create time — even if the control-plane
+        # process restarted between create and the next poll.
+        target_system = labels.get("target-system") or None
         specs = PROFILES.get(profile, PROFILES[DEFAULT_PROFILE])
         status, started_at, completed_at, message = self._status_from_job(job, pods)
         created_at = (
@@ -521,6 +589,7 @@ class KubeSessionBackend:
             cpu_request=specs["cpu_request"],
             memory_request=specs["memory_request"],
             message=message,
+            target_system=target_system,
         )
 
     def create(
@@ -528,7 +597,9 @@ class KubeSessionBackend:
         scenario: str,
         profile: str,
         session_id: Optional[str] = None,
+        target_system: Optional[str] = None,
     ) -> SessionRecord:
+        target_system = _validate_target_system(target_system)
         sid = session_id or _new_session_id()
         # Wrap the template-read AND the Job create in the same translator.
         # _render_job() calls _load_template() which does a ConfigMap GET —
@@ -538,7 +609,9 @@ class KubeSessionBackend:
         # malformed template) keep their own semantics and bubble up
         # untouched.
         try:
-            spec, job_name = self._render_job(sid, scenario, profile)
+            spec, job_name = self._render_job(
+                sid, scenario, profile, target_system=target_system
+            )
             self._batch.create_namespaced_job(namespace=self._namespace, body=spec)
         except self._client.exceptions.ApiException as exc:
             # 409 Conflict means the Job name (deterministic from session_id)
@@ -572,6 +645,7 @@ class KubeSessionBackend:
                 cpu_request=specs["cpu_request"],
                 memory_request=specs["memory_request"],
                 message="job created; status not yet available",
+                target_system=target_system,
             )
         return self._record_for_job(sid, job, pods=[])
 

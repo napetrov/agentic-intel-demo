@@ -89,12 +89,13 @@ object is a `batch/v1.Job`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/sessions` | create one session: `{scenario, profile?, session_id?}` → `SessionResponse` |
-| `POST` | `/sessions/batch` | create N sessions in one call: `{scenario, profile?, count}`. Capped by `SESSION_BATCH_MAX` (default 50) |
+| `POST` | `/sessions` | create one session: `{scenario, profile?, session_id?, target_system?}` → `SessionResponse` |
+| `POST` | `/sessions/batch` | create N sessions in one call: `{scenario, profile?, count, target_system?}`. Capped by `SESSION_BATCH_MAX` (default 50) |
 | `GET` | `/sessions` | list all sessions + `by_status` summary |
 | `GET` | `/sessions/{id}` | poll one session |
 | `DELETE` | `/sessions/{id}` | request termination (k8s: foreground-propagation Job delete) |
 | `GET` | `/sessions/profiles` | available pod profiles (small / medium / large) |
+| `GET` | `/sessions/target-systems` | allowed `target_system` values for fan-out (`system_a`, `system_b`; `null` = scenario default) |
 
 Backend selection is env-driven (`SESSION_BACKEND`):
 
