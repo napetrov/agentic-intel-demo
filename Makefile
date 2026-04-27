@@ -174,7 +174,9 @@ test: ## Run unit tests (offload-worker + control-plane + web-demo unit)
 	.test-venv/bin/python -m pip install -q --upgrade pip
 	.test-venv/bin/python -m pip install -q fastapi pydantic boto3 pytest pytest-cov httpx
 	.test-venv/bin/python -m pytest runtimes/offload-worker/tests/ -q -k 'echo or health or invalid'
-	.test-venv/bin/python -m pytest runtimes/control-plane/tests/ -q --cov --cov-report=term-missing
+	# cd into the package so .coveragerc (with the fail_under=80 gate)
+	# is auto-discovered — same working-directory the CI job uses.
+	cd runtimes/control-plane && ../../.test-venv/bin/python -m pytest tests/ -q --cov --cov-report=term-missing
 	@if [ -d web-demo/node_modules ]; then \
 	  cd web-demo && npm run test:unit; \
 	else \

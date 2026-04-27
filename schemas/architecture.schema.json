@@ -66,7 +66,11 @@
                 "type": "string",
                 "enum": ["orchestration", "execution", "mixed"]
               },
-              "runtime": { "type": "string", "enum": ["k3s", "k3d"] }
+              "runtime": {
+                "type": "string",
+                "description": "Cluster runtime. Closed enum reflects what the demo's deploy artifacts (k8s/, scripts/) actually support — extend here when adding a new runtime.",
+                "enum": ["k3s", "k3d"]
+              }
             }
           }
         }
@@ -139,6 +143,7 @@
         },
         "chat_adapters": {
           "type": "array",
+          "description": "Chat fronts wired in operator-chat-config.template.json. Closed enum reflects what's implemented; extend here when adding a new adapter (Slack, Discord, etc.).",
           "minItems": 1,
           "items": { "type": "string", "enum": ["telegram"] },
           "uniqueItems": true

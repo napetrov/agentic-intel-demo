@@ -42,12 +42,15 @@ def test_concurrent_setitem_does_not_lose_writes():
                 assert store[f"k-{tid}-{i}"] == {"tid": tid, "i": i}
 
 
-def test_concurrent_update_fields_serializes_read_modify_write():
-    """update_fields must not lose increments under contention.
+def test_external_lock_guards_manual_read_modify_write():
+    """Callers that bracket a read/modify/write with `store.lock` must
+    not lose increments under contention.
 
-    Without the RLock, the read+update+write trio inside update_fields
-    would interleave and the final counter would be far below the
-    expected total.
+    This exercises the documented external-lock idiom — `with store.lock:
+    cur = store[k]; store[k] = ...` — not `update_fields()` itself
+    (which is covered by test_update_fields_atomic_against_setitem).
+    Without the RLock, the read+__setitem__ pair would interleave and
+    the final counter would be far below the expected total.
     """
     with SqliteJsonStore() as store:
         store["counter"] = {"n": 0, "log": []}

@@ -59,6 +59,11 @@ describe('truncateValue', () => {
   it('coerces non-strings via String()', () => {
     expect(lib.truncateValue(123456, 4)).toBe('123…');
   });
+
+  it('returns "" when max <= 0 (avoids slice(0, -1) gotcha)', () => {
+    expect(lib.truncateValue('anything', 0)).toBe('');
+    expect(lib.truncateValue('anything', -5)).toBe('');
+  });
 });
 
 describe('formatAge', () => {

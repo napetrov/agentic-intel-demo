@@ -26,6 +26,9 @@
 
   function truncateValue(value, max) {
     const str = String(value);
+    // Guard against max <= 0: slice(0, -1) returns all-but-last, which
+    // would silently emit a partial string instead of "" or the input.
+    if (max <= 0) return '';
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
   }
 

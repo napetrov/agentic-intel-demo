@@ -56,8 +56,13 @@ repos:
       - id: validate-demo-templates
         # Cross-config check: catalog/scenarios.yaml ↔ flow.md ↔
         # operator-chat-config ↔ litellm. Same script CI runs.
+        # `language: python` makes pre-commit build a managed venv with
+        # PyYAML so the hook doesn't depend on whatever the host Python
+        # has installed.
         name: validate-demo-templates
-        entry: python3 scripts/validate-demo-templates.py
-        language: system
+        entry: python scripts/validate-demo-templates.py
+        language: python
+        additional_dependencies:
+          - PyYAML==6.0.2
         pass_filenames: false
         files: ^(catalog/|agents/scenarios/|templates/architecture/|config/|examples/openclawinstance-intel-demo\.yaml)
