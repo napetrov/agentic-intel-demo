@@ -476,6 +476,13 @@ function longLivedAgentsForSystem(systemKey) {
   return lastAgentRecords.filter((a) => a && a.system === systemKey);
 }
 
+// HTML fragment for the long-lived rows on a given system, or '' if none.
+// Live-flow renderers prepend this so persistent agents stay visible while
+// the architecture is pinned and the transient rows are rewritten.
+function longLivedAgentsHtmlFor(systemKey) {
+  return longLivedAgentsForSystem(systemKey).map(longLivedAgentRowHtml).join('');
+}
+
 function renderSystemA(scenario, phase) {
   const rows = [];
   let usedVcpu = 0;
@@ -596,9 +603,9 @@ function renderLiveAgentArchitecture(key, state = 'running') {
   const isRunning = state === 'running';
   const rowState = isRunning ? 'running' : 'planned';
   const terminalLabel = state === 'error' ? 'failed' : 'completed';
-  sysAAgentsEl.innerHTML = agentRowHtml('control-plane-offload', 1, rowState);
+  sysAAgentsEl.innerHTML = longLivedAgentsHtmlFor('system_a') + agentRowHtml('control-plane-offload', 1, rowState);
   renderCapacity(isRunning ? 1 : 0);
-  sysBOffloadEl.innerHTML = `
+  sysBOffloadEl.innerHTML = longLivedAgentsHtmlFor('system_b') + `
     <div class="agent-row ${rowState}">
       <span class="agent-name">agent-stub gateway</span>
       <span class="agent-cpu">System B</span>
@@ -1273,7 +1280,9 @@ function agentResultSummary(payload) {
 function renderAgentCommandOnArchitecture(tool, status = 'running') {
   setCrossArrow(true);
   const terminal = status === 'done' || status === 'error';
-  sysAAgentsEl.innerHTML = terminal
+  const sysAPersistent = longLivedAgentsHtmlFor('system_a');
+  const sysBPersistent = longLivedAgentsHtmlFor('system_b');
+  sysAAgentsEl.innerHTML = sysAPersistent + (terminal
     ? `
       <div class="agent-row planned">
         <span class="agent-name">control-plane-offload</span>
@@ -1281,10 +1290,10 @@ function renderAgentCommandOnArchitecture(tool, status = 'running') {
         <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
       </div>
     `
-    : agentRowHtml('control-plane-offload', 1, 'running');
+    : agentRowHtml('control-plane-offload', 1, 'running'));
   renderCapacity(terminal ? 0 : 1);
   if (terminal) {
-    sysBOffloadEl.innerHTML = `
+    sysBOffloadEl.innerHTML = sysBPersistent + `
       <div class="agent-row planned">
         <span class="agent-name">agent-stub gateway</span>
         <span class="agent-cpu">System B</span>
@@ -1292,7 +1301,7 @@ function renderAgentCommandOnArchitecture(tool, status = 'running') {
       </div>
     `;
   } else {
-    sysBOffloadEl.innerHTML = agentRowHtml('agent-stub gateway', 1, 'running');
+    sysBOffloadEl.innerHTML = sysBPersistent + agentRowHtml('agent-stub gateway', 1, 'running');
   }
   renderCapacityB(terminal ? 0 : 1);
   renderToolActivity([
