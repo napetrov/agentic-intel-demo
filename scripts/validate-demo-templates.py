@@ -452,6 +452,7 @@ def _check_chat_config_object(
     # template is the single canonical place for it. But if any prompt
     # exists, it must mention every scenario.
     if scenarios and system_prompts:
+        section_errors = 0
         for sid, entry in scenarios.items():
             callback = f"scenario:{sid}"
             ack = entry.get("initial_user_message")
@@ -466,22 +467,27 @@ def _check_chat_config_object(
                         f"{where}: Telegram group `{gid}` systemPrompt is "
                         f"missing {', '.join(missing)} for scenario `{sid}`"
                     )
-        report.ok(f"{where}: Telegram systemPrompt covers all scenarios")
+                    section_errors += 1
+        if section_errors == 0:
+            report.ok(f"{where}: Telegram systemPrompt covers all scenarios")
 
     # ---- customCommands ↔ orchestrator.md ----
     custom_commands = telegram.get("customCommands") or []
     if isinstance(custom_commands, list) and orchestrator_text:
+        section_errors = 0
         for i, cc in enumerate(custom_commands):
             if not isinstance(cc, dict):
                 report.add_error(
                     f"{where}: channels.telegram.customCommands[{i}] must be a mapping"
                 )
+                section_errors += 1
                 continue
             cmd = cc.get("command")
             if not isinstance(cmd, str) or not cmd:
                 report.add_error(
                     f"{where}: customCommands[{i}].command is required"
                 )
+                section_errors += 1
                 continue
             # Match `/<cmd>` as a whole token in orchestrator.md.
             pattern = re.compile(rf"(^|\s|`)/{re.escape(cmd)}(\b|`|$)")
@@ -490,11 +496,13 @@ def _check_chat_config_object(
                     f"{where}: customCommands[{i}].command `/{cmd}` not "
                     f"referenced in agents/orchestrator.md"
                 )
-        if custom_commands:
+                section_errors += 1
+        if custom_commands and section_errors == 0:
             report.ok(f"{where}: customCommands all referenced in orchestrator.md")
 
     # ---- litellm/<alias> references ↔ litellm-config.yaml ----
     if litellm_aliases:
+        section_errors = 0
         # Walk every model.primary / model.fallbacks under agents.{defaults,list[]}.
         agents_block = cfg.get("agents") or {}
         targets: list[tuple[str, str]] = []  # (where_label, model_ref)
@@ -525,6 +533,7 @@ def _check_chat_config_object(
                     f"`{alias}` (declared aliases: "
                     f"{sorted(litellm_aliases)})"
                 )
+                section_errors += 1
 
         # Also check models.providers.litellm.models[].id — these are
         # the IDs the chat surface advertises to the user; each must
@@ -543,7 +552,9 @@ def _check_chat_config_object(
                         f"`{mid}` not declared in "
                         f"config/model-routing/litellm-config.yaml::model_list"
                     )
-        report.ok(f"{where}: LiteLLM alias references resolve")
+                    section_errors += 1
+        if section_errors == 0:
+            report.ok(f"{where}: LiteLLM alias references resolve")
 
 
 def validate_chat_configs(report: Report) -> None:
