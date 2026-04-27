@@ -91,11 +91,15 @@ The router can't reach LiteLLM or LiteLLM can't reach the model.
 
 1. **Verify the `large` profile is available.**
    ```bash
-   kubectl get sessions -n agents -o wide
    curl -fsS http://control-plane.platform.svc.cluster.local:8080/sessions/profiles | jq
+   curl -fsS http://control-plane.platform.svc.cluster.local:8080/sessions | jq '.sessions[] | select(.profile=="large")'
+   kubectl get jobs -n agents -o wide
    ```
-   Confirm the `large` profile exists and the cluster has nodes that
-   can satisfy its CPU/memory requests.
+   The control plane is the source of truth for profiles and session
+   records — there is no `Sessions` CRD; each session is a
+   `batch/v1.Job` in the `agents` namespace. Confirm the `large`
+   profile exists and the cluster has nodes that can satisfy its
+   CPU/memory requests (`small`/`medium`/`large`).
 2. **Inspect the Job.**
    ```bash
    kubectl describe job <session-id>-job -n agents

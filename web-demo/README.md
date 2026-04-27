@@ -124,9 +124,10 @@ matching log lines in the workspace panel further down.
 
 ### 4. Multi-agent fan-out
 Spawn N concurrent sessions to demonstrate density. Picks scenario,
-profile (`small`, `default`, `large`), and count, then `POST /sessions/batch`
+profile (`small` (default), `medium`, `large`), and count, then `POST /sessions/batch`
 to the control plane. The session table polls `/sessions` and shows live
-status per session (`pending` → `running` → `completed`/`error`).
+status per session (`Pending` → `Running` → `Completed`/`Failed`;
+`Deleting` on termination).
 
 The "backend" badge top-right reflects which backend the control plane
 is using — `local` (in-memory simulation; the dev / docker-compose

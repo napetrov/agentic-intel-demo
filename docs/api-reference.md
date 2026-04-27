@@ -6,9 +6,10 @@ sessions. The web demo, the Telegram orchestrator, and the smoke-test
 scripts all talk to it over the same HTTP contract documented below.
 
 In Tier 1 (docker-compose / `scripts/dev-up.sh`) the control plane is
-reachable on port `8000` directly, or behind the web demo's nginx at
-`/api/*`. In Tier 2 (k8s) it is the `control-plane` service in the
-`system-a` namespace; the web demo proxies to it on the cluster network.
+reachable on host port `8090` (compose maps `127.0.0.1:8090 → container 8080`),
+or behind the web demo's nginx at `/api/*`. In Tier 2 (k8s) it is the
+`control-plane` service in the `platform` namespace, listening on port
+`8080`; the web demo proxies to it on the cluster network.
 
 FastAPI's auto-generated interactive schema is also available at
 `GET /docs` (Swagger) and `GET /redoc` whenever the process is running;
@@ -218,7 +219,7 @@ List all sessions known to the active backend.
 {
   "backend": "local" | "kube",
   "total": <int>,
-  "by_status": { "running": 2, "completed": 5, ... },
+  "by_status": { "Running": 2, "Completed": 5, ... },
   "sessions": [ { ...SessionResponse... } ],
   "error": null
 }
@@ -228,8 +229,9 @@ List all sessions known to the active backend.
 Poll one session. `404` if unknown.
 
 ### `DELETE /sessions/{session_id}`
-Request termination. Returns `200 {"session_id": ..., "status": "deleting"}`.
-`404` if unknown.
+Request termination. Returns `200 {"session_id": ..., "status": "Deleting"}`.
+`404` if unknown. The session record stays in `Deleting` until the
+backend confirms the underlying Job is gone.
 
 ### `SessionResponse` shape
 
@@ -238,7 +240,7 @@ Request termination. Returns `200 {"session_id": ..., "status": "deleting"}`.
   "session_id": "sess-<10 hex>",
   "scenario": "...",
   "profile": "...",
-  "status": "pending" | "running" | "completed" | "error",
+  "status": "Pending" | "Running" | "Completed" | "Failed" | "Deleting",
   "created_at": <unix seconds>,
   "started_at": <unix seconds | null>,
   "completed_at": <unix seconds | null>,
