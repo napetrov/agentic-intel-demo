@@ -13,6 +13,7 @@ These values are set explicitly in k8s manifests — never auto-assigned.
 | MinIO API | system-b | **30900** | HTTP (S3) | Control Plane artifact relay |
 | MinIO Console | system-b | **30901** | HTTP | Admin/debug only |
 | Offload API | system-b | **30800** | HTTP | Control Plane offload gateway |
+| Agent gateway stub | system-b | **30789** | HTTP | Optional direct debug for `agent_invoke`; offload-worker uses the in-cluster `agent-stub` Service |
 
 ## System A — services exposed externally (for scripts, smoke tests)
 

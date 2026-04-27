@@ -339,6 +339,10 @@ jobs:
           RUNTIME: k3d
           K3D_CLUSTER: demo
         run: bash scripts/load-offload-worker-image.sh
+      - name: build + load agent-stub image into k3d
+        run: |
+          docker build -t demo-agent-stub:latest runtimes/agent-stub
+          k3d image import demo-agent-stub:latest -c demo
       - name: apply MinIO manifests with test creds
         run: |
           # CI node is 2 vCPU / 7 GiB; the production manifest requests
@@ -372,6 +376,19 @@ jobs:
             sleep 2
           done
           kubectl -n system-b logs pod/mc || true
+      - name: apply agent-stub manifest
+        run: |
+          set -euo pipefail
+          patched=$(mktemp)
+          sed -e 's|cpu: "500m"|cpu: "250m"|' \
+              -e 's|memory: "256Mi"|memory: "192Mi"|' \
+              -e 's|ghcr.io/napetrov/agentic-intel-demo/agent-stub:main|demo-agent-stub:latest|' \
+              -e 's|imagePullPolicy: Always|imagePullPolicy: Never|' \
+              k8s/system-b/agent-stub.yaml > "$patched"
+          grep -q 'image: demo-agent-stub:latest' "$patched" \
+            || { echo "::error::sed image-rewrite did not match; check agent-stub manifest"; exit 1; }
+          kubectl apply -f "$patched"
+          kubectl -n system-b wait --for=condition=available deploy/agent-stub --timeout=180s
       - name: apply offload-worker manifest
         run: |
           set -euo pipefail
@@ -424,6 +441,13 @@ jobs:
             -d '{"task_type":"echo","payload":{"hello":"ci"}}')
           echo "$body"
           echo "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["status"]=="ok", d; assert d["result"]["echo"]["hello"]=="ci", d'
+      - name: POST /run agent_invoke whoami
+        run: |
+          body=$(curl -sf -X POST http://localhost:30800/run \
+            -H 'content-type: application/json' \
+            -d '{"task_type":"agent_invoke","payload":{"tool":"command","args":{"text":"whoami"}},"session_id":"ci"}')
+          echo "$body"
+          echo "$body" | python3 -c 'import sys,json; d=json.load(sys.stdin); r=d.get("result") or {}; resp=r.get("response") or {}; inner=((resp.get("result") or {}).get("result") or {}); assert d["status"]=="ok", d; assert resp.get("status")=="ok", d; assert inner.get("exit_code")==0, d; assert (inner.get("stdout") or "").strip(), d'
       - name: dump debug info on failure
         if: failure()
         run: |
