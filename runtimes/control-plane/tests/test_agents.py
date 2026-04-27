@@ -135,6 +135,24 @@ def test_load_seed_rejects_duplicate_id(tmp_path):
         ar.load_seed(str(p))
 
 
+def test_load_seed_rejects_invalid_id(tmp_path):
+    """The id contract (lower-case start, alphanumeric end, internal
+    dashes only, <=59 chars) must be enforced at seed-load time, not
+    later at the nginx edge or during k8s Job creation."""
+    for bad_id in ["UPPER", "with space", "dot.id", "trailing-", "-leading", "1starts"]:
+        p = _write_seed(
+            tmp_path,
+            f"""
+            apiVersion: demo.agents/v1
+            kind: AgentRegistry
+            agents:
+              - {{id: "{bad_id}", name: A, kind: openclaw, system: system_a, capabilities: []}}
+            """,
+        )
+        with pytest.raises(ValueError, match="id"):
+            ar.load_seed(str(p))
+
+
 def test_load_seed_rejects_unknown_kind(tmp_path):
     p = _write_seed(
         tmp_path,

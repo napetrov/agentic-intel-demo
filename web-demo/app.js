@@ -1870,10 +1870,18 @@ function refreshAgentPicker(agents) {
 }
 
 let agentsPollTimer = null;
+// Monotonic sequence guard. The Refresh button + the 30s timer can
+// race when the backend is slow: an earlier in-flight request may
+// resolve AFTER a newer one and overwrite a fresh successful render
+// with stale rows or stale "fetch failed" copy. Each call captures its
+// own seq before the await; only the latest gets to mutate UI state.
+let agentsRefreshSeq = 0;
 
 async function refreshAgents() {
+  const seq = ++agentsRefreshSeq;
   try {
     const body = await fetchJson(`${API_BASE}/agents`, { timeoutMs: 5000 });
+    if (seq !== agentsRefreshSeq) return;
     const agents = Array.isArray(body && body.agents) ? body.agents : [];
     const a = agents.filter((x) => x.system === 'system_a');
     const b = agents.filter((x) => x.system === 'system_b');
@@ -1887,6 +1895,7 @@ async function refreshAgents() {
         : 'agents: none registered';
     }
   } catch (err) {
+    if (seq !== agentsRefreshSeq) return;
     if (agentsSummary) {
       const noBackend = err && err.status === 404;
       agentsSummary.textContent = noBackend
@@ -1901,8 +1910,13 @@ async function refreshAgents() {
     // call collapses the picker back to the "ephemeral" option only.
     refreshAgentPicker([]);
   } finally {
-    if (agentsPollTimer) clearTimeout(agentsPollTimer);
-    agentsPollTimer = setTimeout(refreshAgents, 30_000);
+    // Only the latest call schedules the next tick; earlier calls
+    // returning here after a newer one started must not stack timers
+    // (would compound into multiple polls per cycle).
+    if (seq === agentsRefreshSeq) {
+      if (agentsPollTimer) clearTimeout(agentsPollTimer);
+      agentsPollTimer = setTimeout(refreshAgents, 30_000);
+    }
   }
 }
 

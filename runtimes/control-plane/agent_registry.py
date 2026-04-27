@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Optional
@@ -32,6 +33,11 @@ logger = logging.getLogger("control-plane.agents")
 
 AGENT_KINDS: frozenset[str] = frozenset({"openclaw", "flowise"})
 AGENT_SYSTEMS: frozenset[str] = frozenset({"system_a", "system_b"})
+# Mirror schemas/agents.schema.json AND the nginx edge regex AND the
+# kube session-job label budget. Keep the three in sync — divergence
+# between them is exactly what this validation prevents.
+AGENT_ID_RE = re.compile(r"^[a-z]([a-z0-9-]*[a-z0-9])?$")
+AGENT_ID_MAX_LEN = 59
 
 # Status vocabulary surfaced to the UI. We keep it small on purpose:
 # `Unknown` covers "kube backend can't reach the cluster" and "local
@@ -68,6 +74,15 @@ def _validate_agent_dict(idx: int, raw: dict[str, Any]) -> AgentRecord:
     for key in ("id", "name", "kind", "system"):
         if not isinstance(raw.get(key), str) or not raw.get(key):
             raise ValueError(f"agents[{idx}]: {key} must be a non-empty string")
+    # Enforce the runtime contract on `id` at load time so a hand-edited
+    # AGENT_REGISTRY_PATH can't sneak in something the nginx edge would
+    # 404 on or the kube backend would 422 on at Job creation. Same
+    # regex + length cap as schemas/agents.schema.json and nginx.conf.
+    if len(raw["id"]) > AGENT_ID_MAX_LEN or not AGENT_ID_RE.fullmatch(raw["id"]):
+        raise ValueError(
+            f"agents[{idx}]: id {raw['id']!r} must match {AGENT_ID_RE.pattern} "
+            f"(<= {AGENT_ID_MAX_LEN} chars)"
+        )
     if raw["kind"] not in AGENT_KINDS:
         raise ValueError(
             f"agents[{idx}]: unknown kind {raw['kind']!r}; allowed={sorted(AGENT_KINDS)}"
