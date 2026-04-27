@@ -40,7 +40,7 @@ const scenarios = {
     // backend is reachable. The worker forwards this to /tools/invoke; the
     // gateway classifies the input and runs a real tool, so the command log
     // shows actual tool output instead of a scripted narration.
-    agentInvoke: { tool: 'command', args: { text: 'uname -srm' } },
+    agentInvoke: { tool: 'command', args: { text: 'read BOOTSTRAP.md' } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run terminal-agent --isolated' },
       { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
@@ -203,7 +203,7 @@ const scenarios = {
       Tools: 'exec, read, summarize',
       Artifacts: '3'
     },
-    agentInvoke: { tool: 'command', args: { text: 'list .' } },
+    agentInvoke: { tool: 'command', args: { text: 'read AGENTS.md' } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run large-build-test --burst' },
       { icon: '📖', tool: 'read_file', value: 'agents/scenarios/large-build-test/build-task.md' },
@@ -820,7 +820,8 @@ async function runLiveWalkthrough(scenarioKey) {
   const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const liveRoute = 'web demo → System A control plane → System B offload-worker → System B agent-stub';
   const liveAgent = 'System B agent-stub';
-  const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'whoami' } };
+  const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'read BOOTSTRAP.md' } };
+  const liveInput = invoke.args && invoke.args.text ? invoke.args.text : invoke.tool;
 
   renderLiveAgentArchitecture(scenarioKey, 'running');
 
@@ -837,10 +838,12 @@ async function runLiveWalkthrough(scenarioKey) {
     `Live run: ${scenarioKey}`,
     `Route: ${liveRoute}`,
     `Agent: ${liveAgent}`,
-    `Input: ${invoke.args && invoke.args.text ? invoke.args.text : invoke.tool}`,
-    ''
+    `Input: ${liveInput}`,
+    '',
+    `[live 1/5] Health checks are green; preparing agent_invoke payload`,
+    `[live 2/5] POST /api/offload → System A control-plane`
   ].join('\n');
-  result.textContent = `Live run submitted for ${scenarioKey}; waiting for job result…`;
+  result.textContent = `Live backend run started for ${scenarioKey}; submitting ${liveInput}…`;
   result.className = 'result empty-state';
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'active' }
@@ -881,7 +884,14 @@ async function runLiveWalkthrough(scenarioKey) {
   }
   if (!stillCurrent()) return;
 
-  appendLog(`job_id=${submit.job_id} status=${submit.status}`);
+  appendLog(`[live 3/5] control-plane accepted job_id=${submit.job_id} initial_status=${submit.status}`);
+  renderMetrics({
+    Status: 'accepted',
+    Route: 'System A → System B',
+    Agent: liveAgent,
+    Tool: invoke.tool,
+    'Job ID': submit.job_id
+  });
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
     { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'active' }
@@ -911,6 +921,14 @@ async function runLiveWalkthrough(scenarioKey) {
       return;
     }
     if (!stillCurrent()) return;
+    appendLog(`[live 4/5] polled ${submit.job_id}: status=${status.status}`);
+    renderMetrics({
+      Status: status.status,
+      Route: 'System A → System B',
+      Agent: liveAgent,
+      Tool: invoke.tool,
+      'Job ID': submit.job_id
+    });
     if (status.status === 'completed' || status.status === 'error') break;
     await sleep(500);
   }
@@ -975,6 +993,7 @@ async function runLiveWalkthrough(scenarioKey) {
     return;
   }
 
+  appendLog(`[live 5/5] System B agent-stub returned JSON tool trace; rendering backend output`);
   emitAgentResult(agentPayload, appendLog);
 
   const elapsedMs = (status.completed_at && status.submitted_at)
