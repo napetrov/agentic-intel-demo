@@ -655,6 +655,12 @@ class KubeSessionBackend:
             for cfg in defaults.values()
             for k in cfg["node_selector"]
         }
+        # Only TEE-owned runtime class names are managed by this
+        # branch. A non-TEE runtimeClassName configured in
+        # session-job-template (e.g. `gvisor` or a baseline Kata class
+        # for sandboxing) is the operator's deliberate choice and must
+        # survive a plain (non-confidential) render — Codex P1.
+        tee_runtime_classes = {cfg["runtime_class"] for cfg in defaults.values()}
         if confidential:
             tee = defaults[confidential]
             pod_spec["runtimeClassName"] = tee["runtime_class"]
@@ -669,7 +675,13 @@ class KubeSessionBackend:
             existing_selector.update(tee["node_selector"])
             pod_spec["nodeSelector"] = existing_selector
         else:
-            pod_spec.pop("runtimeClassName", None)
+            # Only scrub a runtimeClassName if it's one of the TEE-owned
+            # values — anything else is the template author's deliberate
+            # choice (baseline Kata, gvisor, etc.) and must survive a
+            # plain render.
+            current_rc = pod_spec.get("runtimeClassName")
+            if current_rc in tee_runtime_classes:
+                pod_spec.pop("runtimeClassName", None)
             existing_selector = pod_spec.get("nodeSelector") or {}
             if isinstance(existing_selector, dict):
                 for k in all_node_selector_keys:

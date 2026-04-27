@@ -905,6 +905,52 @@ def test_kube_render_job_clears_stale_tdx_when_confidential_omitted(monkeypatch)
     assert all(e.get("name") != "CONFIDENTIAL" for e in envs)
 
 
+def test_kube_render_job_preserves_non_tee_runtime_class(monkeypatch):
+    """Codex P1: a non-TEE runtimeClassName configured in
+    session-job-template (e.g. baseline `gvisor` for sandboxing) must
+    survive a plain render. Only TEE-owned runtime class names are
+    managed by the confidential branch."""
+    monkeypatch.setenv("TDX_RUNTIME_CLASS", "kata-qemu-tdx")
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "runtimeClassName": "gvisor",
+                        "containers": [{"name": "agent", "image": "x"}],
+                    }
+                }
+            }
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small")
+    pod_spec = spec["spec"]["template"]["spec"]
+    assert pod_spec["runtimeClassName"] == "gvisor"
+
+
+def test_kube_render_job_strips_only_tee_runtime_class_when_omitted(monkeypatch):
+    """Symmetric to the test above: when a prior render left the TEE
+    runtime class behind, the next plain render scrubs it. Without this
+    a control-plane restart would silently keep scheduling onto the
+    constrained TDX node pool."""
+    monkeypatch.setenv("TDX_RUNTIME_CLASS", "kata-qemu-tdx")
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "runtimeClassName": "kata-qemu-tdx",
+                        "containers": [{"name": "agent", "image": "x"}],
+                    }
+                }
+            }
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small")
+    pod_spec = spec["spec"]["template"]["spec"]
+    assert "runtimeClassName" not in pod_spec
+
+
 def test_kube_render_job_rejects_unknown_confidential():
     backend = _kube_backend_with_stubs(
         load_template=lambda: {

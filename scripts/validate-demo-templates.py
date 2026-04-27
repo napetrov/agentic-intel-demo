@@ -857,10 +857,14 @@ def validate_agents_registry(
                     f"{prefix}: confidential {confidential!r} must be one of "
                     f"{sorted(CONFIDENTIAL_KINDS)} or omitted"
                 )
-            elif (
-                confidential_kinds_declared
-                and confidential not in confidential_kinds_declared
-            ):
+            elif confidential not in confidential_kinds_declared:
+                # Codex P2: don't short-circuit when the architecture set
+                # is empty. An agent declaring `confidential: tdx` without
+                # ANY architecture example declaring a matching
+                # `confidential_runtimes[]` entry is an inconsistent
+                # template and must fail loud, otherwise CI would
+                # silently accept "the operator forgot the architecture
+                # half of the wiring".
                 report.add_error(
                     f"{prefix}: confidential `{confidential}` is not declared by "
                     f"any shipped architecture example's "
