@@ -68,9 +68,13 @@
   /**
    * Per-task cost in USD, evaluated at the sweet-spot throughput.
    *  hourly_usd / 60 = $/min ; throughput in tasks/min ; result $/task.
+   *
+   * Returns null when throughput is zero or missing — economics are
+   * "unavailable" in that case, not "free". Callers must treat null
+   * explicitly (tile renderers below show "n/a" rather than $0).
    */
   function costPerTask(instance, throughputPerMin) {
-    if (!throughputPerMin) return 0;
+    if (!throughputPerMin || throughputPerMin <= 0) return null;
     return instance.hourly_usd / 60 / throughputPerMin;
   }
 
@@ -78,28 +82,34 @@
     const dps = scenario.scaling.datapoints;
     const sweet = findSweetSpot(dps);
     const knee = findKnee(dps);
-    const maxThroughput = Math.max(...dps.map((d) => d.throughput_per_min));
-    const cpt = costPerTask(instance, sweet ? sweet.throughput_per_min : 0);
-    const cpt1k = cpt * 1000;
+    const maxThroughput = dps.length
+      ? Math.max(...dps.map((d) => d.throughput_per_min))
+      : 0;
     // All economic tiles below use the *sweet-spot* throughput. Picking
     // the peak throughput makes per-task cost look better but it lives
     // in the queueing zone (p95 way above baseline), so it's not where
     // a real operator would run. Anchoring on sweet-spot keeps the
     // "this is what you'd actually run" story internally consistent.
     const throughputAtSweet = sweet ? sweet.throughput_per_min : 0;
+    const haveThroughput = throughputAtSweet > 0;
+    const cpt = costPerTask(instance, throughputAtSweet);
+    const cpt1k = cpt == null ? null : cpt * 1000;
     return {
       sweetSpot: sweet,
       knee: knee,
       maxThroughput: maxThroughput,
-      sweetThroughput: throughputAtSweet,
+      sweetThroughput: haveThroughput ? throughputAtSweet : null,
       costPerTaskUsd: cpt,
       costPer1kTasksUsd: cpt1k,
-      tasksPerDay: throughputAtSweet * 60 * 24,
+      tasksPerDay: haveThroughput ? throughputAtSweet * 60 * 24 : null,
       dailyCostUsd: instance.hourly_usd * 24,
       comparator: comparator || null,
-      savingsRatio: comparator
-        ? comparator.cost_per_1k_tasks_usd / Math.max(cpt1k, 0.0001)
-        : null,
+      // savings ratio = comparator-cost / our-cost. >1 means we're cheaper.
+      // null when our cost is unknown, so the tile can render "n/a".
+      savingsRatio:
+        comparator && cpt1k != null && cpt1k > 0
+          ? comparator.cost_per_1k_tasks_usd / cpt1k
+          : null,
     };
   }
 
@@ -122,6 +132,14 @@
     throughput: (ctx) => {
       const { derived } = ctx;
       const perMin = derived.sweetThroughput;
+      if (perMin == null) {
+        return {
+          label: "Throughput",
+          value: "n/a",
+          sub: "no positive throughput in scaling datapoints",
+          accent: "default",
+        };
+      }
       const perHour = perMin * 60;
       const peak = derived.maxThroughput;
       return {
@@ -134,6 +152,14 @@
 
     cost_per_task: (ctx) => {
       const { derived } = ctx;
+      if (derived.costPer1kTasksUsd == null) {
+        return {
+          label: "Cost per 1 000 tasks",
+          value: "n/a",
+          sub: "throughput unavailable — cannot derive per-task cost",
+          accent: "default",
+        };
+      }
       // Headline as $/1k tasks — easier to read than fractional cents.
       return {
         label: "Cost per 1 000 tasks",
@@ -155,15 +181,36 @@
       }
       const cmp = derived.comparator;
       const ratio = derived.savingsRatio;
-      const ratioText =
-        ratio >= 10
-          ? `${fmtInt.format(ratio)}× cheaper`
-          : `${fmtFloat1.format(ratio)}× cheaper`;
+      if (ratio == null) {
+        return {
+          label: `vs ${cmp.label}`,
+          value: "n/a",
+          sub: "scenario cost unavailable — cannot compute ratio",
+          accent: "default",
+        };
+      }
+      // ratio = comparator-cost / our-cost. >1 → we're cheaper, <1 → we're
+      // more expensive. A naive "X× cheaper" string flips meaning when the
+      // scenario is more expensive than the comparator (e.g. 0.8× cheaper
+      // is wrong); split on direction explicitly.
+      const fmtMul = (x) =>
+        x >= 10 ? `${fmtInt.format(x)}×` : `${fmtFloat1.format(x)}×`;
+      let value, accent;
+      if (ratio >= 1.05) {
+        value = `${fmtMul(ratio)} cheaper`;
+        accent = "accent-good";
+      } else if (ratio <= 0.95) {
+        value = `${fmtMul(1 / ratio)} more expensive`;
+        accent = "accent-warm";
+      } else {
+        value = "≈ comparable";
+        accent = "default";
+      }
       return {
         label: `vs ${cmp.label}`,
-        value: ratioText,
+        value,
         sub: `${fmtUSD2.format(derived.costPer1kTasksUsd)} vs ${fmtUSD2.format(cmp.cost_per_1k_tasks_usd)} per 1 000 tasks`,
-        accent: "accent-good",
+        accent,
       };
     },
 
@@ -195,6 +242,14 @@
 
     daily_volume: (ctx) => {
       const { derived } = ctx;
+      if (derived.tasksPerDay == null) {
+        return {
+          label: "Daily volume",
+          value: "n/a",
+          sub: "throughput unavailable",
+          accent: "default",
+        };
+      }
       return {
         label: "Daily volume",
         value: `${fmtInt.format(derived.tasksPerDay)} tasks`,
@@ -206,6 +261,14 @@
     human_equivalent: (ctx) => {
       const { workload, derived } = ctx;
       const hoursPer1k = (workload.human_minutes_per_task * 1000) / 60;
+      if (derived.sweetThroughput == null || derived.costPer1kTasksUsd == null) {
+        return {
+          label: "Human-time equivalent",
+          value: `${fmtInt.format(hoursPer1k)} h saved`,
+          sub: `1 000 tasks ≈ ${fmtInt.format(hoursPer1k)} human-hours · instance time/cost unavailable`,
+          accent: "accent",
+        };
+      }
       const minutesOnInstance = 1000 / derived.sweetThroughput;
       return {
         label: "Human-time equivalent",
