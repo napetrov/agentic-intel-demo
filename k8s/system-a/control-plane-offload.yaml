@@ -23,6 +23,10 @@
 #   SYSTEM_B_MINIO_ENDPOINT — reachable URL of MinIO on System B. Same
 #                           single-cluster vs. two-cluster note as above
 #                           (see k8s/system-b/minio.yaml NodePort 30900).
+#   OPENCLAW_GATEWAY_URL — reachable URL of the agent gateway / agent-stub.
+#                           In the two-cluster Tier 2 topology this points at
+#                           System B's agent-stub NodePort (see
+#                           k8s/system-b/agent-stub.yaml).
 #   MINIO_ACCESS_KEY / MINIO_SECRET_KEY — MinIO creds shared with
 #                           System B's minio-creds secret. Kubernetes does
 #                           not allow cross-namespace secretRefs, so the
@@ -83,6 +87,10 @@ spec:
               value: ${OFFLOAD_WORKER_URL}
             - name: OFFLOAD_TIMEOUT_SECONDS
               value: "60"
+            - name: OPENCLAW_GATEWAY_URL
+              value: ${OPENCLAW_GATEWAY_URL}
+            - name: OPENCLAW_PROBE_PATH
+              value: "/health"
             - name: MINIO_ENDPOINT
               value: ${SYSTEM_B_MINIO_ENDPOINT}
             - name: MINIO_BUCKET
