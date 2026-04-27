@@ -312,6 +312,7 @@ let currentIncludeSubagent = false;
 let lastSessionRecords = [];
 let runTimers = [];
 let liveRunId = 0;
+let liveArchitecturePinned = false;
 const originalRunLabel = runDemoBtn.textContent;
 
 // Pure helpers (profileToVcpu/escapeHtml/truncateValue/formatAge/
@@ -356,6 +357,7 @@ function cancelRun() {
   // scenario). runLiveWalkthrough checks `myRunId === liveRunId` after each
   // await and bails out early when this counter advances.
   liveRunId += 1;
+  liveArchitecturePinned = false;
   restoreRunButton();
 }
 
@@ -472,6 +474,7 @@ function renderSystemA(scenario, phase) {
 // Re-render System A using the current scenario + multi-session state.
 // Called when /api/sessions polling produces a fresh snapshot.
 function redrawSystemA() {
+  if (liveArchitecturePinned) return;
   const scenario = currentScenario ? scenarios[currentScenario] : null;
   renderSystemA(scenario, currentPhase);
 }
@@ -531,11 +534,13 @@ function renderOffload(scenario, phase, includeSubagent) {
 // Called from the /api/sessions poll loop alongside redrawSystemA so
 // system_b-targeted fan-out sessions appear in the right pool.
 function redrawSystemB() {
+  if (liveArchitecturePinned) return;
   const scenario = currentScenario ? scenarios[currentScenario] : null;
   renderSystemB(scenario, currentPhase, currentIncludeSubagent);
 }
 
 function renderLiveAgentArchitecture(key, state = 'running') {
+  liveArchitecturePinned = true;
   currentScenario = key;
   currentPhase = state === 'running' ? 'running' : 'planned';
   setDataMode(`Live agent command: ${key}`);
@@ -1099,6 +1104,7 @@ runDemoBtn.addEventListener('click', () => {
 
   clearRunTimers();
   liveRunId += 1;
+  liveArchitecturePinned = false;
   runDemoBtn.textContent = liveBackendAvailable ? 'Running (live)…' : 'Running...';
   runDemoBtn.disabled = true;
 
