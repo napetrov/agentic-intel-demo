@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenClaw Agentic Intel Demo</title>
-    <link rel="stylesheet" href="./styles.css?v=20260427c" />
+    <link rel="stylesheet" href="./styles.css?v=20260427d" />
   </head>
   <body>
     <div class="shell">
@@ -125,7 +125,7 @@
               <div class="capacity-bar" role="progressbar" aria-label="System A vCPU utilization" aria-valuemin="0" aria-valuemax="512" aria-valuenow="0">
                 <div id="sys-a-bar-fill" class="capacity-bar-fill" style="width: 0%"></div>
               </div>
-              <div class="agent-pool-label">Agents pool</div>
+              <div class="agent-pool-label">Agents pool <span class="agent-pool-hint">long-lived agents + spawned tasks</span></div>
               <div class="agent-list" id="sys-a-agents" aria-live="polite">
                 <div class="agent-row-empty">no agents (idle — select a scenario or spawn sessions)</div>
               </div>
@@ -164,37 +164,10 @@
                 </div>
               </div>
               <div class="agent-pool">
-                <div class="agent-pool-label">Agents pool <span class="agent-pool-hint">(direct spawn or offload from System A)</span></div>
+                <div class="agent-pool-label">Agents pool <span class="agent-pool-hint">long-lived agents + offloads from System A</span></div>
                 <div class="offload-list" id="sys-b-offload" aria-live="polite">
                   <div class="agent-row-empty">no agents on this system</div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel agents-panel" id="agents-panel" aria-labelledby="agents-title">
-          <div class="panel-head panel-head-wrap">
-            <div>
-              <div class="section-title" id="agents-title">Agents (long-lived)</div>
-              <div class="section-subtitle">Persistent agents on each system — OpenClaw instances and Flowise chatflows. Read-only here; lifecycle goes through the operator path. Tasks below can target a specific agent by id.</div>
-            </div>
-            <div class="panel-actions agents-actions">
-              <span class="agents-summary" id="agents-summary" title="Counts reported by /api/agents">agents: probing…</span>
-              <button class="ghost small" id="agents-refresh" type="button" title="Refresh agent list and statuses">Refresh</button>
-            </div>
-          </div>
-          <div class="agents-pools">
-            <div class="agents-pool" data-system="system_a">
-              <div class="agents-pool-head">System A</div>
-              <div class="agents-pool-body" id="agents-pool-system_a">
-                <div class="agents-pool-empty">no agents registered</div>
-              </div>
-            </div>
-            <div class="agents-pool" data-system="system_b">
-              <div class="agents-pool-head">System B</div>
-              <div class="agents-pool-body" id="agents-pool-system_b">
-                <div class="agents-pool-empty">no agents registered</div>
               </div>
             </div>
           </div>
@@ -204,10 +177,11 @@
           <div class="panel-head panel-head-wrap">
             <div>
               <div class="section-title" id="multi-session-title">Tasks (short-lived) — multi-agent fan-out</div>
-              <div class="section-subtitle">Spawn N concurrent tasks to load the system. In k8s each task is a Job; locally each is simulated. Optionally pin every spawned task to a registered agent above.</div>
+              <div class="section-subtitle">Spawn N concurrent tasks to load the system. In k8s each task is a Job; locally each is simulated. Tasks render in the architecture above and consume vCPU on the system where they start. Optionally pin each task to a long-lived agent (also shown in the architecture).</div>
             </div>
             <div class="panel-actions multi-session-actions">
               <span class="multi-session-backend" id="multi-session-backend" title="Backend reported by /api/sessions">backend: probing…</span>
+              <span class="agents-summary" id="agents-summary" title="Long-lived agents reported by /api/agents and rendered in the architecture above">agents: probing…</span>
               <button class="ghost small" id="multi-session-refresh" type="button" title="Refresh the session table now">Refresh</button>
               <button class="ghost small" id="multi-session-clear" type="button" title="Delete all sessions tracked here (local list only — does not affect other clients)">Clear list</button>
             </div>
@@ -383,7 +357,7 @@
         </section>
       </main>
     </div>
-    <script src="./lib/pure.js?v=20260427c"></script>
-    <script src="./app.js?v=20260427c"></script>
+    <script src="./lib/pure.js?v=20260427d"></script>
+    <script src="./app.js?v=20260427d"></script>
   </body>
 </html>
