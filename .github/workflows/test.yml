@@ -472,7 +472,11 @@ jobs:
         target:
           - { name: web-demo,        context: web-demo,                dockerfile: web-demo/Dockerfile }
           - { name: offload-worker,  context: runtimes/offload-worker, dockerfile: runtimes/offload-worker/Dockerfile }
-          - { name: control-plane,   context: runtimes/control-plane,  dockerfile: runtimes/control-plane/Dockerfile }
+          # control-plane builds from the repo root so its Dockerfile
+          # can COPY both runtimes/control-plane/* sources and the
+          # config/agents.yaml seed (baked into the image as the default
+          # long-lived agent registry pool). Mirrors docker-compose.yaml.
+          - { name: control-plane,   context: .,                       dockerfile: runtimes/control-plane/Dockerfile }
           - { name: agent-stub,      context: runtimes/agent-stub,     dockerfile: runtimes/agent-stub/Dockerfile }
     steps:
       - uses: actions/checkout@v4
