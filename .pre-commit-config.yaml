@@ -33,8 +33,12 @@ repos:
     hooks:
       - id: ruff
         # Match the CI scope + ruleset exactly: F + E9 only,
-        # runtimes/ + scripts/.
-        args: [--select=F,E9, runtimes/, scripts/]
+        # runtimes/ + scripts/. Use block list — YAML flow-sequence
+        # would split `--select=F,E9` on the comma into two args.
+        args:
+          - --select=F,E9
+          - runtimes/
+          - scripts/
         # ruff already handles its own file selection; pass empty
         # files list so the hook doesn't double-pass paths.
         pass_filenames: false
