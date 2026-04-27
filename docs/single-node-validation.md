@@ -142,10 +142,17 @@ kubectl --context system-a get openclawinstance intel-demo-operator -o yaml
 ## Step 5 — End-to-end smoke test
 
 ```bash
-APPLY=1 ./scripts/smoke-test-operator-instance.sh
+# KEEP=1 leaves the OpenClawInstance Running so the demo-task smoke
+# below has a live gateway/session to talk to. Without KEEP=1 the
+# lifecycle smoke deletes the instance at the end and the next step
+# fails with "no openclawinstance found".
+APPLY=1 KEEP=1 ./scripts/smoke-test-operator-instance.sh
 APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
   ./scripts/smoke-test-demo-task.sh
 APPLY=1 ./scripts/smoke-test-offload-k8s.sh   # optional: full offload roundtrip
+
+# When you're done, drop the instance:
+APPLY=1 ./scripts/teardown-openclaw-instance.sh
 ```
 
 Then send a test message through Telegram and verify a response comes back.
