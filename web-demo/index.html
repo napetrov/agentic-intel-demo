@@ -59,6 +59,11 @@
               <span class="scenario-title">Large Build/Test</span>
               <span class="scenario-desc">Heavy execution flow with routing, queueing, and handoff visibility across the stack.</span>
             </button>
+            <button class="scenario-card" data-scenario="taskflow-pull">
+              <span class="tag">Demo scenario</span>
+              <span class="scenario-title">TaskFlow Pull</span>
+              <span class="scenario-desc">External-source extension: pull one task from the TaskFlow API (or shipped fixture), select by business rules, and run it bounded on System A.</span>
+            </button>
           </div>
           <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
         </section>
@@ -192,6 +197,7 @@
               <option value="terminal-agent">terminal-agent</option>
               <option value="market-research">market-research</option>
               <option value="large-build-test">large-build-test</option>
+              <option value="taskflow-pull">taskflow-pull</option>
             </select>
             <label for="multi-session-profile" class="multi-session-label">Profile</label>
             <select id="multi-session-profile" class="multi-session-select">
