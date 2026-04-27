@@ -1141,17 +1141,79 @@ function renderAgentResult(payload) {
   emitAgentResult(payload, appendAgentLog);
 }
 
+function agentResultSummary(payload) {
+  if (!payload || typeof payload !== 'object') return { ok: false, tool: 'unknown', lines: ['No agent response.'] };
+  if (payload.status === 'error') return { ok: false, tool: payload.tool || 'agent', lines: [`Agent error: ${payload.error || 'unknown error'}`] };
+  if (payload.status !== 'ok') return { ok: false, tool: payload.tool || 'agent', lines: [`Unexpected agent status: ${payload.status || 'missing'}`] };
+
+  const result = payload.result || {};
+  const chosen = result.chosen_tool || payload.tool || 'agent';
+  const rationale = result.rationale || '';
+  const inner = result.result && result.chosen_tool ? result.result : result;
+  const lines = [
+    'Route: web demo → System A control plane → System B offload-worker → System B agent-stub',
+    `Agent: System B agent-stub`,
+    `Tool selected: ${chosen}${rationale ? ` — ${rationale}` : ''}`,
+  ];
+
+  if (chosen === 'shell') {
+    lines.push(`Command: ${(inner.argv || []).join(' ') || 'shell'}`);
+    lines.push(`Exit code: ${inner.exit_code}`);
+    if (inner.stdout) lines.push(`Output:\n${inner.stdout.trimEnd()}`);
+    if (inner.stderr) lines.push(`Stderr:\n${inner.stderr.trimEnd()}`);
+  } else if (chosen === 'read_file') {
+    lines.push(`Read: ${inner.path || '(unknown file)'}`);
+    lines.push((inner.content || '').trimEnd() || '(empty file)');
+  } else if (chosen === 'list_files') {
+    lines.push(`List: ${inner.root || '.'}`);
+    const entries = (inner.entries || []).map((e) => `${e.kind === 'dir' ? 'dir ' : 'file'} ${e.name}`);
+    lines.push(entries.length ? entries.join('\n') : '(no entries)');
+  } else if (chosen === 'summarize') {
+    lines.push(inner.first_sentence ? `Summary: ${inner.first_sentence}` : 'Summary complete.');
+  } else if (chosen === 'echo') {
+    const echoed = inner.echo && inner.echo.text ? inner.echo.text : (inner.text || '');
+    lines.push(`No execution rule matched, so the gateway echoed the input instead of running a command.`);
+    if (echoed) lines.push(`Echo: ${echoed}`);
+  } else {
+    lines.push(JSON.stringify(inner, null, 2));
+  }
+  return { ok: true, tool: chosen, lines };
+}
+
+function renderAgentCommandOnArchitecture(tool, status = 'running') {
+  setCrossArrow(true);
+  if (status === 'done') {
+    sysBOffloadEl.innerHTML = `
+      <div class="agent-row planned">
+        <span class="agent-name">agent-stub gateway</span>
+        <span class="agent-cpu">System B</span>
+        <span class="agent-status">completed</span>
+      </div>
+    `;
+  } else {
+    sysBOffloadEl.innerHTML = agentRowHtml('agent-stub gateway', 1, 'running');
+  }
+  renderCapacityB(status === 'done' ? 0 : 1);
+  renderToolActivity([
+    { icon: '🌐', tool: 'submit', value: 'POST /api/offload', status: 'done' },
+    { icon: '🧭', tool: 'route', value: 'System A → System B', status: 'done' },
+    { icon: '🤖', tool: 'agent-stub', value: tool || 'classifying', status: status === 'error' ? 'error' : status }
+  ]);
+}
+
 async function runAgentCommand(text) {
   if (!liveBackendAvailable) {
     setAgentStatus(BACKEND_REQUIRED_MSG, 'warn');
     return;
   }
   const sessionId = `web-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  setAgentStatus(`submitting "${text}"…`, 'pending');
+  setAgentStatus(`running on System B agent-stub…`, 'pending');
   // Each invocation is its own transcript — clearing avoids piling history on
   // top of an old run that may have errored or been about a different tool.
   resetAgentLog();
-  appendAgentLog(`$ POST /api/offload {task_type:"agent_invoke", tool:"command", text:${JSON.stringify(text)}}`);
+  appendAgentLog(`Input: ${text}`);
+  appendAgentLog(`Route: web demo → System A control plane → System B offload-worker → System B agent-stub`);
+  renderAgentCommandOnArchitecture('classifying', 'active');
 
   // Deadline guards the entire submit+poll flow. Each fetchJson call gets
   // an explicit timeout derived from the remaining budget; without this,
@@ -1178,7 +1240,7 @@ async function runAgentCommand(text) {
     return;
   }
 
-  appendAgentLog(`job_id=${submit.job_id} status=${submit.status}`);
+  appendAgentLog(`Job: ${submit.job_id} (${submit.status})`);
 
   // The control-plane forwards synchronously, so the first GET typically
   // already returns terminal. Poll briefly to stay correct if that ever
@@ -1238,7 +1300,9 @@ async function runAgentCommand(text) {
     return;
   }
 
-  renderAgentResult(agentPayload);
+  const summary = agentResultSummary(agentPayload);
+  resetAgentLog();
+  summary.lines.forEach(appendAgentLog);
 
   // Surface gateway-level errors honestly: when the agent itself reported
   // status="error" (e.g. read on a missing file), the badge must reflect
@@ -1252,10 +1316,11 @@ async function runAgentCommand(text) {
     );
   } else {
     setAgentStatus(
-      chosen ? `agent ran ${chosen} (job ${submit.job_id})` : `agent returned ok (job ${submit.job_id})`,
+      chosen ? `System B agent-stub ran ${chosen} (job ${submit.job_id})` : `System B agent-stub returned ok (job ${submit.job_id})`,
       'ok'
     );
   }
+  renderAgentCommandOnArchitecture(chosen || summary.tool, isAgentError ? 'error' : 'done');
 }
 
 async function fetchArtifactPayload(ref, log = appendAgentLog) {
