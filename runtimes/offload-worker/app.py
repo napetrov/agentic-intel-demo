@@ -206,6 +206,9 @@ def _dispatch_shell(payload: dict) -> dict:
         "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
         "HOME": "/tmp",
     }
+    taskflow_api_url = os.environ.get("TASKFLOW_API_URL")
+    if taskflow_api_url:
+        safe_env["TASKFLOW_API_URL"] = taskflow_api_url
 
     # Optional narration toggle: when the caller sets payload.quiet=true (or
     # the worker is started with DEMO_QUIET=1 in the environment) the scenario

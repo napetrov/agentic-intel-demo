@@ -229,6 +229,33 @@ def test_shell_nonzero_exit_reports_error(monkeypatch, tmp_path):
     assert body["result"] is None
 
 
+def test_shell_forwards_taskflow_api_url_only_when_configured(monkeypatch, tmp_path):
+    """taskflow-pull needs TASKFLOW_API_URL, but worker secrets stay scrubbed."""
+    env_dir = tmp_path / "env-scenario"
+    env_dir.mkdir()
+    (env_dir / "run.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "echo TASKFLOW_API_URL=${TASKFLOW_API_URL:-missing}\n"
+        "echo MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-missing}\n"
+    )
+    monkeypatch.setattr(app_module, "SCENARIO_SCRIPTS_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "ALLOWED_SCENARIOS", frozenset({"env-scenario"}))
+    monkeypatch.setenv("TASKFLOW_API_URL", "https://taskflow.example.test")
+    monkeypatch.setenv("MINIO_SECRET_KEY", "should-not-leak")
+
+    r = client.post(
+        "/run",
+        json={"task_type": "shell", "payload": {"scenario": "env-scenario"}},
+    )
+
+    body = r.json()
+    assert body["status"] == "ok", body
+    out = body["result"]["stdout"]
+    assert "TASKFLOW_API_URL=https://taskflow.example.test" in out
+    assert "MINIO_SECRET_KEY=missing" in out
+    assert "should-not-leak" not in out
+
+
 # ---- agent_invoke task type --------------------------------------------
 
 class _FakeResp:
