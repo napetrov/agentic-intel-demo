@@ -1895,6 +1895,11 @@ async function refreshAgents() {
     }
     renderAgentPool(agentsPoolA, []);
     renderAgentPool(agentsPoolB, []);
+    // Drop any options the picker carried over from the last
+    // successful poll so the operator can't submit a task pinned to
+    // an agent the backend may already have removed. The empty-list
+    // call collapses the picker back to the "ephemeral" option only.
+    refreshAgentPicker([]);
   } finally {
     if (agentsPollTimer) clearTimeout(agentsPollTimer);
     agentsPollTimer = setTimeout(refreshAgents, 30_000);

@@ -653,7 +653,18 @@ def validate_chat_configs(report: Report) -> None:
 
 AGENT_KINDS = {"openclaw", "flowise"}
 AGENT_SYSTEMS = {"system_a", "system_b"}
-AGENT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,58}$")
+# Mirror schemas/agents.schema.json: lower-case start, alphanumeric end,
+# only internal dashes, <=59 chars so the kube backend can append "-job"
+# without overrunning the 63-char DNS-1035 label budget.
+AGENT_ID_RE = re.compile(r"^[a-z]([a-z0-9-]*[a-z0-9])?$")
+AGENT_ID_MAX_LEN = 59
+AGENT_ALLOWED_KEYS = {"id", "name", "kind", "system", "capabilities", "discovery"}
+AGENT_DISCOVERY_ALLOWED_KEYS = {
+    "openclaw_instance",
+    "deployment",
+    "namespace",
+    "chatflow_id",
+}
 
 
 def validate_agents_registry(report: Report) -> None:
@@ -680,7 +691,14 @@ def validate_agents_registry(report: Report) -> None:
         report.add_error(f"{where}: apiVersion must be demo.agents/v1")
     if doc.get("kind") != "AgentRegistry":
         report.add_error(f"{where}: kind must be AgentRegistry")
-    agents = doc.get("agents") or []
+    # `agents` is a required field per schema. A missing key (rather
+    # than an empty list) usually means the file got truncated or the
+    # author forgot to fill it in — fail loud instead of accepting it
+    # as "no agents seeded" silently.
+    if "agents" not in doc:
+        report.add_error(f"{where}: missing required field `agents`")
+        return
+    agents = doc.get("agents")
     if not isinstance(agents, list):
         report.add_error(f"{where}: `agents` must be a list")
         return
@@ -690,10 +708,21 @@ def validate_agents_registry(report: Report) -> None:
         if not isinstance(agent, dict):
             report.add_error(f"{prefix}: must be a mapping")
             continue
-        agent_id = agent.get("id")
-        if not isinstance(agent_id, str) or not AGENT_ID_RE.match(agent_id):
+        extra_keys = set(agent.keys()) - AGENT_ALLOWED_KEYS
+        if extra_keys:
             report.add_error(
-                f"{prefix}: id {agent_id!r} must match {AGENT_ID_RE.pattern}"
+                f"{prefix}: unknown field(s): {sorted(extra_keys)}; "
+                f"allowed={sorted(AGENT_ALLOWED_KEYS)}"
+            )
+        agent_id = agent.get("id")
+        if (
+            not isinstance(agent_id, str)
+            or not AGENT_ID_RE.match(agent_id)
+            or len(agent_id) > AGENT_ID_MAX_LEN
+        ):
+            report.add_error(
+                f"{prefix}: id {agent_id!r} must match {AGENT_ID_RE.pattern} "
+                f"(<= {AGENT_ID_MAX_LEN} chars)"
             )
         elif agent_id in seen_ids:
             report.add_error(f"{prefix}: duplicate id {agent_id!r}")
@@ -718,6 +747,34 @@ def validate_agents_registry(report: Report) -> None:
             report.add_error(
                 f"{prefix}: capabilities must be a list of non-empty strings"
             )
+        elif len(set(caps)) != len(caps):
+            # Duplicate capability strings on one agent are almost always
+            # a typo (`["shell", "shell"]`) — surface them so the operator
+            # can dedupe rather than relying on the consumer to handle it.
+            report.add_error(f"{prefix}: capabilities must not contain duplicates")
+        discovery = agent.get("discovery")
+        if discovery is not None:
+            if not isinstance(discovery, dict):
+                report.add_error(f"{prefix}: discovery must be a mapping when present")
+            else:
+                extra = set(discovery.keys()) - AGENT_DISCOVERY_ALLOWED_KEYS
+                if extra:
+                    report.add_error(
+                        f"{prefix}: unknown discovery field(s): {sorted(extra)}; "
+                        f"allowed={sorted(AGENT_DISCOVERY_ALLOWED_KEYS)}"
+                    )
+                for key, value in discovery.items():
+                    # Each discovery entry is either a non-empty string
+                    # ("which CR / Deployment / chatflow to look up") or
+                    # null ("not yet wired"). An empty string is almost
+                    # always a typo — would silently fail the cluster
+                    # lookup with a confusing 404.
+                    if value is None:
+                        continue
+                    if not isinstance(value, str) or not value:
+                        report.add_error(
+                            f"{prefix}: discovery.{key} must be a non-empty string or null"
+                        )
     report.ok(f"{where}: {len(agents)} agent(s)")
 
 

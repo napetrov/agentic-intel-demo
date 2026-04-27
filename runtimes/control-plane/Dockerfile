@@ -4,13 +4,25 @@ WORKDIR /app
 
 RUN useradd --create-home --uid 1000 --shell /bin/bash appuser
 
-COPY requirements.txt /app/requirements.txt
+# Build context is the repo root (see docker-compose.yaml) so this
+# Dockerfile can pull both the control-plane sources and the agent
+# registry seed under config/. Sources are copied one-by-one (rather
+# than `COPY runtimes/control-plane /app`) so unrelated files in that
+# directory don't sneak into the image.
+COPY runtimes/control-plane/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY app.py /app/app.py
-COPY session_manager.py /app/session_manager.py
-COPY persistence.py /app/persistence.py
-COPY agent_registry.py /app/agent_registry.py
+COPY runtimes/control-plane/app.py /app/app.py
+COPY runtimes/control-plane/session_manager.py /app/session_manager.py
+COPY runtimes/control-plane/persistence.py /app/persistence.py
+COPY runtimes/control-plane/agent_registry.py /app/agent_registry.py
+
+# Bake the agent registry seed into the image so `docker run` (no
+# compose, no volume mount) boots with the four default long-lived
+# agents visible. The compose file bind-mounts the live in-tree file
+# over this path so dev iteration on agents.yaml takes effect on
+# restart without a rebuild.
+COPY config/agents.yaml /etc/control-plane/agents.yaml
 
 # Default location for the durable job/session sqlite databases. The
 # compose file mounts a named volume here so a `docker compose restart`

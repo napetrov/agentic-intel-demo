@@ -498,3 +498,118 @@ def test_render_job_clears_stale_agent_label_when_omitted():
     )
     assert "agent-id" not in spec["metadata"]["labels"]
     assert "agent-id" not in spec["spec"]["template"]["metadata"]["labels"]
+    # The pod-runtime contract has the same shape: no AGENT_ID env when
+    # agent_id is omitted, regardless of what the template carried.
+    envs = {
+        e["name"]: e["value"]
+        for e in spec["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert "AGENT_ID" not in envs
+
+
+def test_render_job_dedupes_owned_env_keys_from_template():
+    """A template that already carries SESSION_ID/AGENT_ID etc. must NOT
+    end up with duplicate or stale entries — the control plane's render
+    overwrites those keys, leaves everything else (model creds, etc.)
+    intact. Without dedupe, k8s either keeps the LAST entry (brittle) or
+    rejects the spec depending on client version."""
+    import session_manager as sm
+
+    be = object.__new__(sm.KubeSessionBackend)
+    be._namespace = "agents"
+    be._template_namespace = "agents"
+    be._template_configmap = "session-job-template"
+    be._session_image = None
+    be._ttl = 600
+
+    template = {
+        "metadata": {},
+        "spec": {
+            "template": {
+                "metadata": {},
+                "spec": {
+                    "containers": [
+                        {
+                            "name": "agent",
+                            "image": "demo:latest",
+                            "env": [
+                                {"name": "AGENT_ID", "value": "stale"},
+                                {"name": "SESSION_ID", "value": "stale"},
+                                {"name": "SCENARIO", "value": "stale"},
+                                {"name": "PROFILE", "value": "stale"},
+                                {"name": "TARGET_SYSTEM", "value": "stale"},
+                                {"name": "MODEL_API_KEY", "value": "keep-me"},
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    }
+    be._load_template = lambda: template
+
+    spec, _ = be._render_job(
+        session_id="sess-xyz",
+        scenario="terminal-agent",
+        profile="small",
+        target_system="system_b",
+        agent_id="openclaw-b-1",
+    )
+    envs = spec["spec"]["template"]["spec"]["containers"][0]["env"]
+    # Each owned key must appear exactly once with the new value.
+    by_name: dict[str, list[str]] = {}
+    for e in envs:
+        by_name.setdefault(e["name"], []).append(e["value"])
+    assert by_name["AGENT_ID"] == ["openclaw-b-1"]
+    assert by_name["SESSION_ID"] == ["sess-xyz"]
+    assert by_name["SCENARIO"] == ["terminal-agent"]
+    assert by_name["PROFILE"] == ["small"]
+    assert by_name["TARGET_SYSTEM"] == ["system_b"]
+    # Unrelated template envs survive untouched.
+    assert by_name["MODEL_API_KEY"] == ["keep-me"]
+
+
+# --------------------- Stricter seed validation ----------------------------
+
+
+def test_load_seed_rejects_falsy_capabilities(tmp_path):
+    """`capabilities: 0` used to slip through `or []` coercion as a
+    vacuously-valid empty list, hiding the typo."""
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - {id: a, name: A, kind: openclaw, system: system_a, capabilities: 0}
+        """,
+    )
+    with pytest.raises(ValueError, match="capabilities"):
+        ar.load_seed(str(p))
+
+
+def test_load_seed_rejects_falsy_discovery(tmp_path):
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - {id: a, name: A, kind: openclaw, system: system_a, capabilities: [], discovery: 0}
+        """,
+    )
+    with pytest.raises(ValueError, match="discovery"):
+        ar.load_seed(str(p))
+
+
+def test_load_seed_rejects_non_list_agents(tmp_path):
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents: 0
+        """,
+    )
+    with pytest.raises(ValueError, match="`agents` must be a list"):
+        ar.load_seed(str(p))

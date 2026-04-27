@@ -115,7 +115,11 @@ services:
 
   control-plane:
     build:
-      context: ./runtimes/control-plane
+      # Repo root context so the build can COPY both the
+      # control-plane sources AND config/agents.yaml (the long-lived
+      # agent registry seed baked into the image as a default).
+      context: .
+      dockerfile: runtimes/control-plane/Dockerfile
     environment:
       OFFLOAD_WORKER_URL: http://offload-worker:8080
       OFFLOAD_TIMEOUT_SECONDS: "120"

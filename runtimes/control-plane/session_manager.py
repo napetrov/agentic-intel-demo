@@ -520,9 +520,17 @@ class KubeSessionBackend:
         if self._session_image:
             container["image"] = self._session_image
         # Inject scenario / profile envs so the agent process knows what
-        # it was launched for. We append rather than replace so template
-        # envs (model creds, etc.) survive.
+        # it was launched for. The list-of-dicts shape k8s requires has
+        # no built-in uniqueness — appending without dedupe would let a
+        # template that already carries (say) AGENT_ID=stale produce a
+        # pod with two AGENT_ID entries (k8s keeps the LAST one, but the
+        # behavior is brittle and varies by client). Strip control-
+        # plane-owned keys first, then append the canonical values, so
+        # the rendered spec is deterministic regardless of template
+        # provenance. Other template envs (model creds, etc.) survive.
         envs = container.setdefault("env", [])
+        _OWNED_ENV_KEYS = {"SESSION_ID", "SCENARIO", "PROFILE", "TARGET_SYSTEM", "AGENT_ID"}
+        envs[:] = [e for e in envs if e.get("name") not in _OWNED_ENV_KEYS]
         envs.append({"name": "SESSION_ID", "value": session_id})
         envs.append({"name": "SCENARIO", "value": scenario})
         envs.append({"name": "PROFILE", "value": profile})

@@ -77,14 +77,22 @@ def _validate_agent_dict(idx: int, raw: dict[str, Any]) -> AgentRecord:
             f"agents[{idx}]: unknown system {raw['system']!r}; "
             f"allowed={sorted(AGENT_SYSTEMS)}"
         )
-    caps_raw = raw.get("capabilities") or []
+    # Don't coerce falsy values (`""`, `0`, `[]`) into the empty default —
+    # `caps_raw or []` would let `capabilities: 0` slip through as a
+    # vacuously-valid empty list, hiding the typo. Only `None` (key
+    # absent) defaults; everything else is type-checked verbatim.
+    caps_raw = raw.get("capabilities")
+    if caps_raw is None:
+        caps_raw = []
     if not isinstance(caps_raw, list) or not all(
         isinstance(c, str) and c for c in caps_raw
     ):
         raise ValueError(
             f"agents[{idx}]: capabilities must be a list of non-empty strings"
         )
-    discovery = raw.get("discovery") or {}
+    discovery = raw.get("discovery")
+    if discovery is None:
+        discovery = {}
     if not isinstance(discovery, dict):
         raise ValueError(f"agents[{idx}]: discovery must be a mapping")
     return AgentRecord(
@@ -121,7 +129,12 @@ def load_seed(path: Optional[str]) -> list[AgentRecord]:
         raise ValueError(f"{p}: apiVersion must be demo.agents/v1")
     if doc.get("kind") != "AgentRegistry":
         raise ValueError(f"{p}: kind must be AgentRegistry")
-    raw_agents = doc.get("agents") or []
+    # Same no-falsy-coercion rule as inside _validate_agent_dict — a
+    # `agents: 0` typo should fail loudly instead of producing an
+    # empty pool that looks correctly seeded.
+    raw_agents = doc.get("agents")
+    if raw_agents is None:
+        raw_agents = []
     if not isinstance(raw_agents, list):
         raise ValueError(f"{p}: `agents` must be a list")
     seen: set[str] = set()
@@ -210,13 +223,22 @@ class AgentDiscovery:
             ) from exc
 
         self._client = client
-        if kubeconfig_path:
-            config.load_kube_config(config_file=kubeconfig_path)
-        else:
-            try:
-                config.load_incluster_config()
-            except config.ConfigException:
-                config.load_kube_config()
+        # Wrap config-loading in a broad except so non-ConfigException
+        # errors (OSError on missing kubeconfig, TypeError, RefreshError
+        # from google-auth, etc.) surface as RuntimeError. make_registry
+        # only catches RuntimeError; without this wrap a bad in-cluster
+        # token or missing ~/.kube/config would crash control-plane
+        # startup instead of degrading to seed-only.
+        try:
+            if kubeconfig_path:
+                config.load_kube_config(config_file=kubeconfig_path)
+            else:
+                try:
+                    config.load_incluster_config()
+                except config.ConfigException:
+                    config.load_kube_config()
+        except Exception as exc:
+            raise RuntimeError(f"kube config load failed: {exc}") from exc
         self._apps = client.AppsV1Api()
         self._custom = client.CustomObjectsApi()
 

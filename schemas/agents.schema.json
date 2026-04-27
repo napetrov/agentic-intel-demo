@@ -22,8 +22,10 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{1,58}$",
-          "description": "DNS-1035 compatible id (lower-case, dash-separated, <=59 chars to stay inside the k8s label budget once `-job` is appended)."
+          "minLength": 1,
+          "maxLength": 59,
+          "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+          "description": "DNS-1035 compatible id (lower-case start, alphanumeric end, internal dashes only; <=59 chars so `-job` can be appended without exceeding the 63-char k8s label budget)."
         },
         "name": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "enum": ["openclaw", "flowise"] },
