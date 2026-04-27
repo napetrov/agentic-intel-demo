@@ -541,17 +541,19 @@ function renderLiveAgentArchitecture(key, state = 'running') {
   setDataMode(`Live agent command: ${key}`);
   setOrchestrationActive(['openclaw']);
   setServiceState({});
-  const rowState = state === 'running' ? 'running' : 'planned';
+  const isRunning = state === 'running';
+  const rowState = isRunning ? 'running' : 'planned';
+  const terminalLabel = state === 'error' ? 'failed' : 'completed';
   sysAAgentsEl.innerHTML = agentRowHtml('control-plane-offload', 1, rowState);
-  renderCapacity(state === 'running' ? 1 : 0);
+  renderCapacity(isRunning ? 1 : 0);
   sysBOffloadEl.innerHTML = `
     <div class="agent-row ${rowState}">
       <span class="agent-name">agent-stub gateway</span>
       <span class="agent-cpu">System B</span>
-      <span class="agent-status">${state === 'running' ? 'running' : 'completed'}</span>
+      <span class="agent-status">${isRunning ? 'running' : terminalLabel}</span>
     </div>
   `;
-  renderCapacityB(state === 'running' ? 1 : 0);
+  renderCapacityB(isRunning ? 1 : 0);
   setCrossArrow(true);
   renderConsole({
     mode: 'live agent_invoke',
@@ -874,6 +876,11 @@ async function runLiveWalkthrough(scenarioKey) {
 
   const stillCurrent = () => myRunId === liveRunId;
   const finish = () => { if (stillCurrent()) restoreRunButton(); };
+  const finalizeLive = (state) => {
+    if (!stillCurrent()) return;
+    renderLiveAgentArchitecture(scenarioKey, state);
+    finish();
+  };
   const appendLog = (line) => {
     if (!stillCurrent()) return;
     commandLogEl.textContent += (commandLogEl.textContent.endsWith('\n') ? '' : '\n') + line;
@@ -891,7 +898,7 @@ async function runLiveWalkthrough(scenarioKey) {
     if (!stillCurrent()) return;
     appendLog(`[error] submit failed: ${err.message}`);
     result.textContent = `Live run failed: ${err.message}`;
-    finish();
+    finalizeLive('error');
     return;
   }
   if (!stillCurrent()) return;
@@ -922,7 +929,7 @@ async function runLiveWalkthrough(scenarioKey) {
       if (!stillCurrent()) return;
       appendLog(`[error] poll failed: ${err.message}`);
       renderPollError(`Live run failed while polling job ${submit.job_id}: ${err.message}`);
-      finish();
+      finalizeLive('error');
       return;
     }
     if (!stillCurrent()) return;
@@ -933,13 +940,13 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
     appendLog(`[error] job did not complete within 90s`);
     renderPollError(`Live run timed out waiting for job ${submit.job_id} (90s).`);
-    finish();
+    finalizeLive('error');
     return;
   }
   if (status.status === 'error') {
     appendLog(`[worker error] ${status.error || 'unknown error'}`);
     result.textContent = `Live run errored: ${status.error || 'see log'}`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -959,7 +966,7 @@ async function runLiveWalkthrough(scenarioKey) {
       appendLog(`[warn] gateway returned non-JSON body (${text.length} chars):`);
       appendLog(text.slice(0, 500) + (text.length > 500 ? ' …[truncated]' : ''));
       result.textContent = `Live run finished, but the gateway returned a non-JSON body (job ${submit.job_id}).`;
-      finish();
+      finalizeLive('error');
       return;
     } else {
       agentPayload = wrapper;
@@ -969,13 +976,13 @@ async function runLiveWalkthrough(scenarioKey) {
     if (!stillCurrent()) return;
     if (!agentPayload) {
       result.textContent = `Live run finished, but response artifact fetch failed (job ${submit.job_id}).`;
-      finish();
+      finalizeLive('error');
       return;
     }
   } else {
     appendLog(`[agent] empty response (no inline result, no artifact ref)`);
     result.textContent = `Live run returned no payload (job ${submit.job_id}).`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -986,7 +993,7 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!agentPayload || typeof agentPayload !== 'object' || Array.isArray(agentPayload)) {
     appendLog(`[agent] gateway response was not a JSON object (got ${typeof agentPayload})`);
     result.textContent = `Live run finished, but the gateway response wasn't a JSON object (job ${submit.job_id}).`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -1026,7 +1033,7 @@ async function runLiveWalkthrough(scenarioKey) {
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
   });
-  renderLiveAgentArchitecture(scenarioKey, 'done');
+  renderLiveAgentArchitecture(scenarioKey, succeeded ? 'done' : 'error');
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
@@ -1239,18 +1246,19 @@ function agentResultSummary(payload) {
 
 function renderAgentCommandOnArchitecture(tool, status = 'running') {
   setCrossArrow(true);
-  if (status === 'done') {
+  const terminal = status === 'done' || status === 'error';
+  if (terminal) {
     sysBOffloadEl.innerHTML = `
       <div class="agent-row planned">
         <span class="agent-name">agent-stub gateway</span>
         <span class="agent-cpu">System B</span>
-        <span class="agent-status">completed</span>
+        <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
       </div>
     `;
   } else {
     sysBOffloadEl.innerHTML = agentRowHtml('agent-stub gateway', 1, 'running');
   }
-  renderCapacityB(status === 'done' ? 0 : 1);
+  renderCapacityB(terminal ? 0 : 1);
   renderToolActivity([
     { icon: '🌐', tool: 'submit', value: 'POST /api/offload', status: 'done' },
     { icon: '🧭', tool: 'route', value: 'System A → System B', status: 'done' },
@@ -1294,6 +1302,7 @@ async function runAgentCommand(text) {
   } catch (err) {
     setAgentStatus(`submit failed: ${err.message}`, 'error');
     appendAgentLog(`[error] submit failed: ${err.message}`);
+    renderAgentCommandOnArchitecture('submit failed', 'error');
     return;
   }
 
@@ -1314,6 +1323,7 @@ async function runAgentCommand(text) {
     } catch (err) {
       setAgentStatus(`poll failed: ${err.message}`, 'error');
       appendAgentLog(`[error] poll failed: ${err.message}`);
+      renderAgentCommandOnArchitecture('poll failed', 'error');
       return;
     }
     if (status.status === 'completed' || status.status === 'error') break;
@@ -1323,11 +1333,13 @@ async function runAgentCommand(text) {
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
     setAgentStatus('agent did not respond within 30s', 'error');
     appendAgentLog(`[error] agent did not respond within 30s`);
+    renderAgentCommandOnArchitecture('timeout', 'error');
     return;
   }
   if (status.status === 'error') {
     setAgentStatus(`worker error: ${status.error || 'unknown'}`, 'error');
     appendAgentLog(`[worker error] ${status.error || 'unknown'}`);
+    renderAgentCommandOnArchitecture('worker error', 'error');
     return;
   }
 
@@ -1349,11 +1361,13 @@ async function runAgentCommand(text) {
         `agent finished, but response is stored as artifact ${status.result_ref} (fetch failed)`,
         'warn'
       );
+      renderAgentCommandOnArchitecture('artifact fetch failed', 'error');
       return;
     }
   } else {
     appendAgentLog(`[agent] empty response (no inline result, no artifact ref)`);
     setAgentStatus(`agent returned no payload (job ${submit.job_id})`, 'warn');
+    renderAgentCommandOnArchitecture('empty response', 'error');
     return;
   }
 
@@ -1364,7 +1378,7 @@ async function runAgentCommand(text) {
   // Surface gateway-level errors honestly: when the agent itself reported
   // status="error" (e.g. read on a missing file), the badge must reflect
   // that. The log already shows the error; don't end with "agent returned ok".
-  const isAgentError = agentPayload && agentPayload.status === 'error';
+  const isAgentError = (agentPayload && agentPayload.status === 'error') || !summary.ok;
   const chosen = agentPayload && agentPayload.result && agentPayload.result.chosen_tool;
   if (isAgentError) {
     setAgentStatus(
