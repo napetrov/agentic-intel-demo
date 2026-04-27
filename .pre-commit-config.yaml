@@ -65,4 +65,8 @@ repos:
         additional_dependencies:
           - PyYAML==6.0.2
         pass_filenames: false
-        files: ^(catalog/|agents/scenarios/|templates/architecture/|config/|examples/openclawinstance-intel-demo\.yaml)
+        # Trigger on the inputs the script reads AND on the script
+        # itself — otherwise validator-logic edits silently skip the
+        # hook, which is the exact opposite of what you want when you're
+        # changing the validator.
+        files: ^(catalog/|agents/scenarios/|templates/architecture/|config/|examples/openclawinstance-intel-demo\.yaml|scripts/validate-demo-templates\.py)

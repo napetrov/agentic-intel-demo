@@ -177,11 +177,15 @@ test: ## Run unit tests (offload-worker + control-plane + web-demo unit)
 	# cd into the package so .coveragerc (with the fail_under=80 gate)
 	# is auto-discovered — same working-directory the CI job uses.
 	cd runtimes/control-plane && ../../.test-venv/bin/python -m pytest tests/ -q --cov --cov-report=term-missing
-	@if [ -d web-demo/node_modules ]; then \
-	  cd web-demo && npm run test:unit; \
-	else \
-	  echo "[test] web-demo/node_modules not found — run 'cd web-demo && npm install' first to enable Vitest"; \
+	# Self-bootstrap Vitest the same way the python side bootstraps its
+	# venv above. Previously this branch printed a heads-up and exited 0
+	# when node_modules was missing, which silently made `make test`
+	# pass without web-demo coverage — false green.
+	@if ! command -v npm >/dev/null 2>&1; then \
+	  echo "[test] npm not installed; install Node.js 20+ to run web-demo unit tests"; \
+	  exit 1; \
 	fi
+	cd web-demo && npm install --no-audit --no-fund && npm run test:unit
 
 .PHONY: validate-templates
 validate-templates: ## Validate scenarios + architecture templates against the specs
