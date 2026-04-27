@@ -53,6 +53,19 @@ when their values can be inferred or are inapplicable.
   artifacts to the shared artifact path.
 - Success criteria checklist — objective, observable conditions the operator
   can check before calling a run successful.
+- `difficulty: easy|medium|hard` — operator guidance for which scenario to
+  open a demo with. Advisory; not enforced by the validator.
+- `estimated_duration_seconds: <int>` — rough wall-clock target for one run.
+  Surfaced in operator menus so a demo host can pick a scenario that fits the
+  remaining slot.
+- `fixtures_dir: <relative-path>` — points at a directory under
+  `agents/scenarios/<id>/fixtures/` that ships pre-seeded inputs (CSVs,
+  JSON, fake API responses) so the scenario can run without external network
+  access. Recommended for `offload_system_b` scenarios that would otherwise
+  hit the public internet.
+- `preferred_model_alias: fast|default|reasoning|sambanova` — LiteLLM router
+  alias hint (see `config/model-routing/litellm-config.yaml`). Runtime is
+  free to override based on policy; the field is purely advisory.
 
 ## Requirements, by category
 
