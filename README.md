@@ -11,8 +11,10 @@ Demo-first repository area for a reproducible two-system prototype:
 | **Run the shipped demo end-to-end** | `docs/runbooks/tier2-bring-up.md` |
 | Understand what the demo does before reading any setup | `docs/demo-overview.md` |
 | Develop / debug the control-plane or offload-worker locally | "Local dev/smoke (Tier 1)" below |
+| Find a file in the repo | `docs/repo-layout.md` |
 | Add a new scenario | `docs/scenario-spec.md` + `templates/scenarios/` |
 | Deploy on a different topology (single-node, multi-system) | `docs/architecture-spec.md` + `templates/architecture/` |
+| Run the pre-demo checklist or recover from an incident | `docs/runbooks/demo-checklist.md`, `docs/runbooks/incident-recovery.md` |
 | Contribute | `CONTRIBUTING.md` |
 
 ## Goals
@@ -30,6 +32,12 @@ Demo-first repository area for a reproducible two-system prototype:
 - **`docs/runbooks/tier2-bring-up.md` — canonical "from empty cluster to demo task" runbook. The only path that runs the shipped demo end-to-end.**
 - `docs/demo-overview.md` — one-page operating model (Telegram-first entry, two-system execution).
 - `docs/demo-setup.md` — tiered bring-up reference. Tier 2 is the demo path; Tier 0 / Tier 1 are local dev/smoke.
+- `docs/repo-layout.md` — annotated tree of where things live (kept in sync with the repo).
+
+### Runbooks
+- `docs/runbooks/tier2-bring-up.md` — empty cluster → demo task (canonical).
+- `docs/runbooks/demo-checklist.md` — pre-demo readiness checklist for the operator.
+- `docs/runbooks/incident-recovery.md` — recovery playbook when a live demo breaks.
 
 ### Architecture and contracts
 - `docs/architecture.md` — architecture breakdown and execution model for the shipped two-system reference.
@@ -42,12 +50,14 @@ Demo-first repository area for a reproducible two-system prototype:
 ### Operator and reproducibility
 - `docs/operator-install.md` — how to install the upstream `openclaw-operator`.
 - `docs/operator-runbook.md` — operator install/recovery notes and known CRD blocker.
+- `docs/telegram-operator-checklist.md` — Telegram bot/menu wiring checklist before any human DM.
 - `docs/reproducibility.md` — values to fill in, secrets to provision, recovery playbook.
 - `docs/versions-tested.md` — combinations validated end-to-end (single source of truth for "what works").
+- `docs/single-node-validation.md` — single-cluster bring-up notes and smoke results.
 - `docs/port-map.md` — fixed NodePort assignments and k3s install flags.
 
 ### References
-- `docs/api-reference.md` — control-plane HTTP contract.
+- `docs/api-reference.md` — control-plane HTTP contract (`/offload`, `/sessions`, `/agents`, `/probe/*`).
 - `docs/agent-tool-reference.md` — tool registry exposed to the agent.
 - `docs/health-probes.md` — what `/health`, `/ready`, `/probe/*` mean per component.
 - `docs/scenario-spec.md` — requirements and acceptance checklist for authoring new demo scenarios.
@@ -60,6 +70,32 @@ Demo-first repository area for a reproducible two-system prototype:
 - `docs/internal/operator-config-checklist.md` — readiness checklist (🔴/🟡/✅), maintainer-facing.
 - `docs/internal/improvement-plan.md` — audit-style analysis snapshot (2026-04 trial run).
 - `docs/archive/mvp-plan.md` — historical pre-operator path.
+
+## Repository layout
+
+`docs/repo-layout.md` is the canonical, annotated tree. The top-level
+components, in the order most readers care about:
+
+- `docs/` — runbooks, contracts, references, and internal/archive notes.
+- `runtimes/` — in-repo container code (`control-plane/`, `offload-worker/`,
+  `agent-stub/`). Everything else is deployed from upstream images.
+- `web-demo/` — static front-end (`index.html`, `service-views.html`,
+  `scalability.html`) plus its nginx `/api/*` reverse proxy.
+- `agents/` — orchestrator + scenario / task instructions consumed by the
+  agent at runtime. `agents/README.md` explains the layering.
+- `catalog/` — `scenarios.yaml` + `tasks.yaml` declarative inputs.
+- `config/` — live config: `agents.yaml` (long-lived agent registry),
+  `demo-systems.yaml`, `model-routing/`, `pod-profiles/`,
+  `task-types/`, `flowise/`, `versions.yaml`.
+- `templates/` — copy-and-fill templates for new scenarios and
+  architectures, with worked examples per variant.
+- `schemas/` — JSON Schemas for the declarative inputs. Enforced by the
+  `json-schema` lint job and `scripts/validate-demo-templates.py`.
+- `k8s/` — Tier 2 manifests, split by `system-a/` / `system-b/` / `shared/`.
+- `examples/` — the shipped `OpenClawInstance` spec the operator applies.
+- `scripts/` — Tier 1 and Tier 2 helpers; see "Scripts" below.
+- `Makefile` — top-level verbs (`make help` lists them all). `make all`
+  runs `lint` + `test`; `make clean` drops local caches and venvs.
 
 ## Authoring new demo scenarios
 External authors adding a new guided scenario should start here:
@@ -100,7 +136,8 @@ Use `docs/operator-runbook.md` and `docs/internal/operator-gap-analysis.md` as t
 
 Top-level shortcuts live in the `Makefile` — `make help` prints the
 canonical verbs (`make tier0` / `make tier1-up` / `make tier2-smoke`,
-plus `make lint` and `make test`). The raw commands below still work
+plus `make lint`, `make test`, `make all`, `make clean`, and
+`make validate-templates`). The raw commands below still work
 identically.
 
 For a single-host dev loop without Kubernetes, the repo ships a
@@ -110,9 +147,11 @@ reverse proxy:
 
 ```bash
 docker compose up --build
-# open http://localhost:8080 — "Run walkthrough" submits a real shell task
-# via the control plane and renders the worker stdout in the demo UI. The
-# "Agent command" panel only works once this stack is up.
+# open http://localhost:8080 — "Run demo" submits a real task via the
+# control plane and renders the worker output live. The "Agent command"
+# panel only works once this stack is up. "Behind the scenes" and
+# "Scalability story" buttons link to web-demo/service-views.html and
+# web-demo/scalability.html.
 ```
 
 Ports bound on `127.0.0.1`: `8080` (web UI + `/api` proxy), `8090`
@@ -354,6 +393,9 @@ not the "demo path" an audience would see. Use it to develop the
 control-plane / offload-worker locally, not to demo to users.
 
 ## Repo curation notes
-- `config/` is the canonical location for current live demo/runtime config
-- `runtimes/control-plane/` is the canonical control-plane implementation (offload relay, artifact relay)
-- The deprecated raw control-plane/session-pod path previously kept in `legacy/` and `scripts/legacy/` has been removed; the operator-first path is the only supported lifecycle
+- `docs/repo-layout.md` is the source of truth for repository structure.
+- `config/` is the canonical location for live demo/runtime config (`agents.yaml`, `demo-systems.yaml`, `model-routing/`, `pod-profiles/`, `task-types/`, `flowise/`, `versions.yaml`).
+- `catalog/scenarios.yaml` + `catalog/tasks.yaml` are the declarative inputs the orchestrator consumes; `schemas/` carries the JSON Schemas they're validated against.
+- `runtimes/control-plane/` is the canonical control-plane implementation (offload relay, artifact relay, sessions API, agent registry). `runtimes/offload-worker/` and `runtimes/agent-stub/` are the only other in-repo container images.
+- `agents/` holds the orchestrator + scenario / task instructions; `templates/` holds copy-and-fill templates for new scenarios and architectures.
+- The deprecated raw control-plane/session-pod path previously kept in `legacy/` and `scripts/legacy/` has been removed; the operator-first path is the only supported lifecycle.
