@@ -38,7 +38,9 @@ echo "source_kind: $SOURCE_KIND"
 echo "source_ref:  $SOURCE_REF"
 
 narrate_blank
-narrate "[step 2/6] fetch tasks and report count"
+narrate "[step 2/6] inspect bounded task brief and fetch tasks"
+echo "+ sed -n '1,12p' task-brief.md"
+sed -n '1,12p' "$TASK_BRIEF"
 echo "+ python3 count tasks"
 python3 - "$TMP_SOURCE" <<'PY'
 import json, sys

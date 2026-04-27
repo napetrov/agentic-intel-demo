@@ -38,4 +38,3 @@ scenarios:
       - show_status
       - reset_session
     fallback_scenario: terminal_agent
-    fixtures_dir: agents/scenarios/taskflow-pull/fixtures
