@@ -1,47 +1,65 @@
 #!/usr/bin/env bash
 # Demo scenario: large-build-test
-# Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
-#
-# Set DEMO_QUIET=1 (or pass payload.quiet=true to /api/offload) to suppress the
-# [scenario]/[step] narration so the transcript shows only the routing /
-# shard / result lines.
 set -euo pipefail
 
 SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../_lib.sh
 . "$SCENARIO_DIR/../_lib.sh"
 TASK_BRIEF="$SCENARIO_DIR/build-task.md"
+LOG="/tmp/large-build-test.log"
 
 narrate "[scenario] large-build-test"
-narrate "[step 1/5] inspect heavy-profile brief"
-if [ -f "$TASK_BRIEF" ]; then
-  echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
-  sed -n '1,6p' "$TASK_BRIEF"
-else
-  echo "task-brief: not found at $TASK_BRIEF"
-fi
+narrate "Starting large build/test demo"
+narrate "Flow: 1. inspect target repo/task 2. select large execution profile 3. run environment checks 4. execute build/test sequence 5. collect logs and summarize outcome"
+narrate "Scenario contract: route=local_large; System A large-profile framing; no System B offload unless policy changes"
 
 narrate_blank
-narrate "[step 2/5] reserve queue slot"
-echo "primary lane: system-a"
-echo "fallback lane: system-b"
-echo "inference routes: SambaNova,SLM-on-GNR"
+narrate "[step 1/5] inspect target repo/task"
+echo "+ sed -n '1,44p' build-task.md"
+sed -n '1,44p' "$TASK_BRIEF"
+echo "+ find scenario files"
+find "$SCENARIO_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
 
 narrate_blank
-narrate "[step 3/5] split build/test plan"
-echo "+ compile lane: System A"
-echo "+ test-shard offload: System B"
+narrate "[step 2/5] select large execution profile"
+echo "profile: large"
+echo "requested resources: 16 vCPU / 32Gi request, 32 vCPU / 64Gi limit"
+echo "placement: System A large-profile session pod"
 
 narrate_blank
-narrate "[step 4/5] run shards (simulated)"
-echo "shard 1/3 ok"
-echo "shard 2/3 ok"
-echo "shard 3/3 ok"
+narrate "[step 3/5] run environment checks"
+{
+  echo "+ uname -srm"
+  uname -srm
+  echo "+ bash --version | head -1"
+  bash --version | head -1
+  echo "+ python3 --version"
+  python3 --version
+} | tee "$LOG"
 
 narrate_blank
-narrate "[step 5/5] result fragment"
+narrate "[step 4/5] execute build/test sequence"
+{
+  echo "+ bash -n run.sh"
+  bash -n "$SCENARIO_DIR/run.sh"
+  echo "+ python3 compile-check for task metadata"
+  python3 - <<'PY'
+from pathlib import Path
+brief = Path('build-task.md').read_text()
+required = ['large execution profile', 'run preflight checks', 'run build and/or test commands', 'summarize outcome']
+missing = [item for item in required if item not in brief]
+if missing:
+    raise SystemExit(f'missing required phrases: {missing}')
+print('metadata checks passed: required build/test sections present')
+PY
+} | tee -a "$LOG"
+
+narrate_blank
+narrate "[step 5/5] collect logs and summarize outcome"
+echo "+ grep -q 'metadata checks passed' $LOG"
+grep -q 'metadata checks passed' "$LOG"
+echo "build/test status: PASS"
+echo "log: $LOG"
 cat <<JSON
-{"scenario":"large-build-test","route":"system-a+system-b","status":"ok","passed":128,"failed":0}
+{"scenario":"large-build-test","route":"local_large","system_owner":"System A","profile":"large","status":"ok","log":"$LOG"}
 JSON
-narrate_blank
-narrate "Build/test complete. Primary on System A; offload path System B exercised."
