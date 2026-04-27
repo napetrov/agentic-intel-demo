@@ -87,7 +87,13 @@ def _request(method: str, path: str, body: dict | None = None) -> tuple[int, dic
             return resp.status, parsed
     except urllib.error.HTTPError as e:
         # Surface the response body — Flowise puts validation errors in there.
+        # Redact for credential-touching paths: the request carried
+        # plainDataObj.openAIApiKey, and Flowise's error responses have on
+        # occasion echoed parts of the input back to the client. Cheaper to
+        # blanket-redact than to inspect every Flowise version's behavior.
         body_text = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        if "/credentials" in path:
+            body_text = "<redacted: credential endpoint response>"
         print(f"[seed] HTTP {e.code} on {method} {path}: {body_text}", file=sys.stderr)
         return e.code, None
 

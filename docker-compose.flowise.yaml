@@ -134,7 +134,12 @@ services:
       # seed image at a stock python:alpine with no `pip install` step.
       - ./scripts/flowise:/scripts:ro
     entrypoint: ["python", "/scripts/seed.py"]
-    restart: "no"
+    # Bounded retry on transient failures (network blip mid-create, Flowise
+    # warming up just past the healthcheck). The seed itself is idempotent
+    # so a re-run after a partial success is safe. Cap retries so a real
+    # structural error (e.g. schema drift on a future Flowise version)
+    # surfaces loudly instead of looping forever.
+    restart: on-failure:3
 
 volumes:
   flowise-data:
