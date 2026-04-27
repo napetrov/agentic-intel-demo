@@ -412,12 +412,18 @@ def _check_chat_config_object(
     scenarios: dict[str, dict],
     orchestrator_text: str,
     litellm_aliases: set[str],
+    require_system_prompt: bool = False,
 ) -> None:
     """Validate one parsed operator chat config object (JSON-shaped).
 
     Used for both config/operator-chat-config.template.json and the
     embedded openclaw.json string inside
     examples/openclawinstance-intel-demo.yaml — they share the same shape.
+
+    When `require_system_prompt` is true, the absence of any
+    `channels.telegram.groups.*.systemPrompt` is itself an error: the
+    demo menu / acknowledgement enforcement lives inside that prompt,
+    so deleting it would silently turn off the cross-config check.
     """
     if not isinstance(cfg, dict):
         report.add_error(f"{where}: chat config root must be a mapping")
@@ -434,9 +440,17 @@ def _check_chat_config_object(
                 if isinstance(sp, str):
                     system_prompts.append((str(gid), sp))
 
-    # Some operator configs (e.g. examples/openclawinstance-intel-demo.yaml)
-    # do not embed a systemPrompt — that's fine, but if any prompt exists,
-    # it must mention every scenario.
+    if require_system_prompt and not system_prompts:
+        report.add_error(
+            f"{where}: no channels.telegram.groups.*.systemPrompt found — "
+            f"the demo menu and acknowledgement contract live inside that "
+            f"prompt, removing it disables the scenario cross-config check"
+        )
+
+    # Embedded configs (e.g. examples/openclawinstance-intel-demo.yaml)
+    # don't carry a systemPrompt — that's fine, the operator chat-config
+    # template is the single canonical place for it. But if any prompt
+    # exists, it must mention every scenario.
     if scenarios and system_prompts:
         for sid, entry in scenarios.items():
             callback = f"scenario:{sid}"
@@ -561,8 +575,13 @@ def validate_chat_configs(report: Report) -> None:
         except json.JSONDecodeError as e:
             report.add_error(f"{where}: JSON parse error: {e}")
         else:
+            # The standalone template is the canonical source of the demo
+            # systemPrompt — require it explicitly so that deleting the
+            # prompt fails validation instead of silently turning the
+            # scenario check off.
             _check_chat_config_object(
-                report, where, cfg, scenarios, orchestrator_text, litellm_aliases
+                report, where, cfg, scenarios, orchestrator_text, litellm_aliases,
+                require_system_prompt=True,
             )
 
     # 2) Embedded openclaw.json inside the OpenClawInstance example.
@@ -574,16 +593,22 @@ def validate_chat_configs(report: Report) -> None:
         except yaml.YAMLError as e:
             report.add_error(f"{inst_path.relative_to(REPO_ROOT)}: YAML parse error: {e}")
             inst = {}
-        embedded = ((inst.get("spec") or {}).get("config") or {}).get("openclaw.json")
-        if isinstance(embedded, str) and embedded.strip():
-            try:
-                cfg = json.loads(embedded)
-            except json.JSONDecodeError as e:
-                report.add_error(f"{where}: embedded JSON parse error: {e}")
-            else:
-                _check_chat_config_object(
-                    report, where, cfg, scenarios, orchestrator_text, litellm_aliases
-                )
+        if not isinstance(inst, dict):
+            report.add_error(
+                f"{inst_path.relative_to(REPO_ROOT)}: root must be a mapping, "
+                f"got {type(inst).__name__}"
+            )
+        else:
+            embedded = ((inst.get("spec") or {}).get("config") or {}).get("openclaw.json")
+            if isinstance(embedded, str) and embedded.strip():
+                try:
+                    cfg = json.loads(embedded)
+                except json.JSONDecodeError as e:
+                    report.add_error(f"{where}: embedded JSON parse error: {e}")
+                else:
+                    _check_chat_config_object(
+                        report, where, cfg, scenarios, orchestrator_text, litellm_aliases
+                    )
 
 
 def main() -> int:
