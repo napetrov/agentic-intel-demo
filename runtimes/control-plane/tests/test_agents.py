@@ -93,6 +93,33 @@ def test_load_seed_missing_file_returns_empty_pool(tmp_path):
     assert seed == []
 
 
+def test_make_registry_honors_env_path_without_walking_file_tree(monkeypatch, tmp_path):
+    """Regression: AGENT_REGISTRY_PATH must NOT trip the lazy fallback.
+
+    `os.environ.get(name, default)` evaluates `default` eagerly, so an
+    earlier version computed `Path(__file__).resolve().parents[2]`
+    even when the env var was set. In the shipped container layout
+    (`/app/agent_registry.py`) that walk has only 2 parents and
+    raised IndexError at startup — crashing control-plane before any
+    request could be served. Pin agent_registry.__file__ to a path
+    with a short parents chain to lock the lazy resolution in.
+    """
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - {id: a, name: A, kind: openclaw, system: system_a, capabilities: []}
+        """,
+    )
+    monkeypatch.setattr(ar, "__file__", "/app/agent_registry.py")
+    monkeypatch.setenv("AGENT_REGISTRY_PATH", str(p))
+    monkeypatch.delenv("AGENT_DISCOVERY", raising=False)
+    reg = ar.make_registry()
+    assert {r.id for r in reg.list()} == {"a"}
+
+
 def test_load_seed_rejects_duplicate_id(tmp_path):
     p = _write_seed(
         tmp_path,

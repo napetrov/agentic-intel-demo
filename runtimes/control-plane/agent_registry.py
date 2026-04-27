@@ -319,11 +319,23 @@ def make_registry() -> AgentRegistry:
     AGENT_DISCOVERY=kube — turn on the live-cluster overlay. Anything
         else (or unset) keeps the registry seed-only.
     """
-    seed_path = os.environ.get(
-        "AGENT_REGISTRY_PATH",
-        # Resolve relative to the repo root regardless of CWD.
-        str(Path(__file__).resolve().parents[2] / "config" / "agents.yaml"),
-    )
+    # Resolve the fallback path lazily — `os.environ.get(name, default)`
+    # evaluates `default` eagerly, so a fallback that walks `__file__` can
+    # IndexError before the env-var-set branch ever runs. In the shipped
+    # container layout (/app/agent_registry.py) `Path(__file__).parents`
+    # only has 2 entries, so `parents[2]` crashes control-plane startup
+    # even when AGENT_REGISTRY_PATH is set explicitly. Compute the
+    # fallback only on the path that actually needs it, and tolerate a
+    # short parents chain by leaving the seed path unset (load_seed
+    # treats that as "no seed", same as a missing file).
+    seed_path = os.environ.get("AGENT_REGISTRY_PATH")
+    if not seed_path:
+        try:
+            seed_path = str(
+                Path(__file__).resolve().parents[2] / "config" / "agents.yaml"
+            )
+        except IndexError:
+            seed_path = None
     seed = load_seed(seed_path)
     discovery: Optional[AgentDiscovery] = None
     kind = os.environ.get("AGENT_DISCOVERY", "").strip().lower()
