@@ -1,0 +1,128 @@
+{
+  "schema_version": "1",
+  "_about": "Mock numbers for the 'Scalability story' page (web-demo/scalability.html). All values are synthetic and editable in one place: changing a number here rewrites every tile and re-shapes the chart on the page automatically. See web-demo/scalability.js for derived-value formulas.",
+  "comparators": [
+    {
+      "id": "frontier-api-small",
+      "label": "Frontier LLM API (per-call)",
+      "cost_per_1k_tasks_usd": 4.40,
+      "notes": "Synthetic: 1500 input + 800 output tokens at a typical $1 / $3 per 1M token rate (~Haiku-class pricing). Does not include orchestration, retries, or egress."
+    },
+    {
+      "id": "frontier-api-research",
+      "label": "Frontier LLM API (research-class)",
+      "cost_per_1k_tasks_usd": 24.00,
+      "notes": "Synthetic: ~12k input + 3k output tokens per research task at premium model pricing. Excludes vector store and retrieval costs."
+    }
+  ],
+  "instances": [
+    {
+      "id": "xeon-cwf-32",
+      "label": "Intel Xeon CWF",
+      "subtitle": "32 vCPU · 128 GB",
+      "vcpu": 32,
+      "memory_gb": 128,
+      "hourly_usd": 1.36,
+      "idle_cost_usd": 0.00,
+      "notes": "Synthetic on-demand reference, comparable to AWS c7i.8xlarge list price ($1.36/hr, us-east-1). Idle cost is zero because session pods run as on-demand k8s Jobs, not long-lived Deployments."
+    },
+    {
+      "id": "gnr-96",
+      "label": "Intel GNR",
+      "subtitle": "96 vCPU · 512 GB",
+      "vcpu": 96,
+      "memory_gb": 512,
+      "hourly_usd": 4.10,
+      "idle_cost_usd": 0.00,
+      "notes": "Synthetic reference for a Granite Rapids node sized for shared offload + SLM workloads. Idle cost is zero — workers scale to minReplicas=1 and Jobs spawn on demand."
+    }
+  ],
+  "workloads": [
+    {
+      "id": "small-terminal-agent",
+      "label": "Terminal agent (small)",
+      "subtitle": "engineering / shell tasks",
+      "vcpu_per_agent": 1,
+      "memory_gb_per_agent": 2,
+      "task_duration_s": 8,
+      "tokens_per_task": 2300,
+      "human_minutes_per_task": 5,
+      "notes": "One agent ≈ 1 vCPU + 2 GB resident; per-task wall-clock 8s end-to-end including a single LLM round-trip. Human equivalent: a junior engineer running the same shell task by hand."
+    },
+    {
+      "id": "medium-research",
+      "label": "Market research (medium)",
+      "subtitle": "multi-step research + offload",
+      "vcpu_per_agent": 4,
+      "memory_gb_per_agent": 8,
+      "task_duration_s": 45,
+      "tokens_per_task": 15000,
+      "human_minutes_per_task": 30,
+      "notes": "Research agent that does retrieval, multi-call summarization, and writes a short report. 4 vCPU and 45s wall-clock are typical when offload keeps the heavy step off the agent pod."
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "xeon-small-density",
+      "label": "Xeon CWF · small agents",
+      "story": "How dense and how cheap a single Xeon node gets when you pack it with light terminal agents.",
+      "instance_id": "xeon-cwf-32",
+      "workload_id": "small-terminal-agent",
+      "scaling": {
+        "model": "queueing",
+        "max_parallel_slots": 24,
+        "datapoints": [
+          { "concurrency":   5, "p50_s": 1.5, "p95_s":  2.0, "throughput_per_min":  37, "utilization_pct": 21 },
+          { "concurrency":  15, "p50_s": 1.6, "p95_s":  2.2, "throughput_per_min": 110, "utilization_pct": 62 },
+          { "concurrency":  25, "p50_s": 1.9, "p95_s":  3.0, "throughput_per_min": 178, "utilization_pct": 96 },
+          { "concurrency":  50, "p50_s": 3.4, "p95_s":  5.2, "throughput_per_min": 220, "utilization_pct": 99 },
+          { "concurrency": 100, "p50_s": 8.1, "p95_s": 13.0, "throughput_per_min": 230, "utilization_pct": 99 }
+        ]
+      },
+      "economics": {
+        "comparator_id": "frontier-api-small"
+      },
+      "tiles": [
+        "density",
+        "throughput",
+        "cost_per_task",
+        "vs_comparator",
+        "sweet_spot",
+        "idle_cost",
+        "daily_volume",
+        "human_equivalent"
+      ]
+    },
+    {
+      "id": "gnr-research-volume",
+      "label": "GNR · research workload",
+      "story": "Scaled-up node running heavier research agents, with multi-call inference and offload — same density story, different price-point.",
+      "instance_id": "gnr-96",
+      "workload_id": "medium-research",
+      "scaling": {
+        "model": "queueing",
+        "max_parallel_slots": 22,
+        "datapoints": [
+          { "concurrency":   5, "p50_s": 45.0, "p95_s":  52.0, "throughput_per_min":  6.6, "utilization_pct": 23 },
+          { "concurrency":  12, "p50_s": 46.0, "p95_s":  55.0, "throughput_per_min": 15.7, "utilization_pct": 55 },
+          { "concurrency":  22, "p50_s": 48.0, "p95_s":  62.0, "throughput_per_min": 27.3, "utilization_pct": 96 },
+          { "concurrency":  40, "p50_s": 75.0, "p95_s": 110.0, "throughput_per_min": 29.0, "utilization_pct": 99 },
+          { "concurrency":  60, "p50_s":118.0, "p95_s": 175.0, "throughput_per_min": 30.0, "utilization_pct": 99 }
+        ]
+      },
+      "economics": {
+        "comparator_id": "frontier-api-research"
+      },
+      "tiles": [
+        "density",
+        "throughput",
+        "cost_per_task",
+        "vs_comparator",
+        "sweet_spot",
+        "idle_cost",
+        "daily_volume",
+        "human_equivalent"
+      ]
+    }
+  ]
+}

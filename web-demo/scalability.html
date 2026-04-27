@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scalability Story — Agentic Intel Demo (Mock)</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      /* Page-local layout for the scalability story page. Kept inline so
+         styles.css (covered by Playwright) stays untouched, mirroring the
+         convention from service-views.html. */
+      .sc-main { padding: 28px; max-width: 1200px; margin: 0 auto; }
+      .sc-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        color: var(--cyan);
+        text-decoration: none;
+      }
+      .sc-back:hover { text-decoration: underline; }
+      .sc-hero { padding: 24px; margin-bottom: 22px; }
+      .sc-hero h2 { margin-bottom: 8px; }
+      .sc-hero p { color: var(--muted); }
+      .sc-mock-badge {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(255, 193, 92, 0.12);
+        color: var(--yellow);
+        border: 1px solid rgba(255, 193, 92, 0.28);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+
+      .sc-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .sc-tab {
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 14px;
+        text-align: left;
+        min-width: 220px;
+      }
+      .sc-tab:hover { background: rgba(69, 226, 213, 0.06); }
+      .sc-tab[aria-selected="true"] {
+        background: linear-gradient(135deg, rgba(85, 168, 255, 0.18), rgba(69, 226, 213, 0.18));
+        border-color: rgba(69, 226, 213, 0.55);
+      }
+      .sc-tab-label {
+        display: block;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .sc-tab-sub {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+
+      .sc-instance {
+        padding: 20px 22px;
+        margin-bottom: 18px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .sc-instance h3 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      .sc-instance .sc-spec {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .sc-instance .sc-block-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--cyan);
+        margin: 0 0 6px;
+      }
+      .sc-story {
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--muted);
+        margin: 12px 0 0;
+        grid-column: 1 / -1;
+      }
+
+      .sc-tiles {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 22px;
+      }
+      .sc-tile {
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(14, 31, 55, 0.92);
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-height: 130px;
+      }
+      .sc-tile-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--cyan);
+      }
+      .sc-tile-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.15;
+      }
+      .sc-tile-sub {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+        margin-top: auto;
+      }
+      .sc-tile.sc-accent .sc-tile-value { color: var(--cyan); }
+      .sc-tile.sc-accent-warm .sc-tile-value { color: var(--yellow); }
+      .sc-tile.sc-accent-good .sc-tile-value { color: var(--green); }
+
+      .sc-chart-panel {
+        padding: 22px;
+        margin-bottom: 22px;
+      }
+      .sc-chart-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .sc-chart-legend {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .sc-legend-swatch {
+        display: inline-block;
+        width: 22px;
+        height: 2px;
+        vertical-align: middle;
+        margin-right: 6px;
+        background: var(--cyan);
+      }
+      .sc-legend-swatch.sc-p95 {
+        background: repeating-linear-gradient(
+          90deg,
+          var(--orange),
+          var(--orange) 4px,
+          transparent 4px,
+          transparent 8px
+        );
+      }
+      .sc-legend-swatch.sc-marker { background: var(--green); height: 8px; width: 8px; border-radius: 999px; }
+      .sc-legend-swatch.sc-marker-knee { background: var(--yellow); }
+      .sc-chart {
+        width: 100%;
+        height: 320px;
+        display: block;
+      }
+      .sc-chart-note {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .sc-notes-panel {
+        padding: 22px;
+        margin-bottom: 22px;
+      }
+      .sc-notes-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 12px;
+      }
+      .sc-notes-list li {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .sc-note-label {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--cyan);
+        margin-bottom: 4px;
+      }
+      .sc-note-text {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .sc-error {
+        padding: 22px;
+        border: 1px solid rgba(194, 82, 85, 0.4);
+        background: rgba(194, 82, 85, 0.08);
+        color: #ffd9da;
+        border-radius: 16px;
+      }
+
+      @media (max-width: 900px) {
+        .sc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .sc-instance { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 540px) {
+        .sc-tiles { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sc-main">
+      <a class="sc-back" href="./index.html">← Back to demo</a>
+
+      <section class="hero sc-hero">
+        <div>
+          <div class="eyebrow">Scalability story</div>
+          <h2>One instance, many agents — the economics</h2>
+          <p>How a single Intel node holds dozens of concurrent agents, where the latency knee sits, and what that means in dollars per task. Pick a scenario below.</p>
+          <span class="sc-mock-badge">Mock data — edit web-demo/scalability-data.json</span>
+        </div>
+      </section>
+
+      <section aria-label="Scenario picker">
+        <div class="section-title">Scenario</div>
+        <div class="sc-tabs" id="sc-tabs" role="tablist"></div>
+      </section>
+
+      <section class="panel sc-instance" id="sc-instance" aria-live="polite">
+        <!-- populated by scalability.js -->
+      </section>
+
+      <section aria-label="Story tiles">
+        <div class="section-title">What this looks like in numbers</div>
+        <div class="sc-tiles" id="sc-tiles" aria-live="polite"></div>
+      </section>
+
+      <section class="panel sc-chart-panel" aria-labelledby="sc-chart-title">
+        <div class="sc-chart-head">
+          <div>
+            <div class="section-title" id="sc-chart-title">Latency vs concurrency</div>
+            <div class="section-subtitle">Where the curve bends is where the queue starts forming.</div>
+          </div>
+          <div class="sc-chart-legend" aria-hidden="true">
+            <span><span class="sc-legend-swatch"></span>p50</span>
+            <span><span class="sc-legend-swatch sc-p95"></span>p95</span>
+            <span><span class="sc-legend-swatch sc-marker"></span>sweet spot</span>
+            <span><span class="sc-legend-swatch sc-marker sc-marker-knee"></span>knee</span>
+          </div>
+        </div>
+        <svg class="sc-chart" id="sc-chart" viewBox="0 0 800 320" preserveAspectRatio="none" role="img" aria-label="Latency vs concurrency chart"></svg>
+        <div class="sc-chart-note" id="sc-chart-note"></div>
+      </section>
+
+      <section class="panel sc-notes-panel" aria-labelledby="sc-notes-title">
+        <div class="section-title" id="sc-notes-title">About these numbers</div>
+        <p class="section-subtitle" style="margin-bottom: 14px;">All values are synthetic. Sources / assumptions for each input:</p>
+        <ul class="sc-notes-list" id="sc-notes"></ul>
+      </section>
+
+      <div id="sc-error" class="sc-error" hidden></div>
+    </main>
+
+    <script src="./scalability.js"></script>
+  </body>
+</html>

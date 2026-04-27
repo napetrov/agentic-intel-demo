@@ -1,7 +1,7 @@
 FROM nginxinc/nginx-unprivileged:stable-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY index.html service-views.html styles.css app.js /usr/share/nginx/html/
+COPY index.html service-views.html scalability.html styles.css app.js scalability.js scalability-data.json /usr/share/nginx/html/
 
 EXPOSE 8080
 
