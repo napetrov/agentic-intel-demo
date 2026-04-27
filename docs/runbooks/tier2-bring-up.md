@@ -103,8 +103,17 @@ APPLY=1 \
   ./scripts/setup-system-b-vllm-local.sh
 #   (b) static manifest (no helm). The shipped image tag is `latest`
 #       which is NOT validated for CPU. Pin the image first; see
-#       comments in k8s/system-b/vllm.yaml. Tracked as gap #7.
+#       comments in k8s/system-b/vllm.yaml. Tracked as gap #7. The
+#       manifest intentionally requests cpu=4 and memory=24Gi, matching
+#       the validated System B capacity; raising this can make redeploys
+#       unschedulable on the demo node.
 # kubectl --context system-b apply -f k8s/system-b/vllm.yaml
+
+# If the stand uses nri-resource-policy-balloons, keep the reserved pool
+# aligned with the validated System B shape before applying workloads:
+# reservedResources.cpu=cpuset:0,1,2,3 and minCPUs=4. Older values such
+# as cpuset:0,1,2,3,16,17,18,19 or minCPUs=24 can fail validation or
+# starve scheduling on the demo node.
 
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
 MINIO_ROOT_USER="$MINIO_ACCESS_KEY" MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \

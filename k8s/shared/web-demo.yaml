@@ -33,6 +33,12 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          env:
+            # In Kubernetes demo mode, do not point the public web UI at a
+            # developer-local worker. Route /api/* to the System A offload
+            # control-plane, which then owns the System B worker hop.
+            - name: WEB_DEMO_CONTROL_PLANE_URL
+              value: "http://control-plane-offload.platform.svc.cluster.local:8080"
           ports:
             - containerPort: 8080
               name: http

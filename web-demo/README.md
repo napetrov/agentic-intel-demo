@@ -44,6 +44,10 @@ docker run --rm -p 8080:8080 web-demo:local
 The container is `nginx:alpine` serving the static files on port 8080 with
 basic security headers set. In compose, the same image is the front-end
 and `nginx.conf` reverse-proxies `/api/*` to the control-plane service.
+Override `WEB_DEMO_CONTROL_PLANE_URL` when the UI must talk to an
+already-running control-plane, for example
+`WEB_DEMO_CONTROL_PLANE_URL=http://127.0.0.1:31001` for the System A
+`control-plane-offload` NodePort.
 
 ## Deploy to Kubernetes
 
@@ -53,7 +57,14 @@ WEB_DEMO_IMAGE=ghcr.io/your-org/web-demo:latest \
 ```
 
 This creates a `web-demo` namespace with a 2-replica Deployment and ClusterIP
-Service on port 80. Expose it with the ingress of your choice.
+Service on port 80. By default `/api/*` is proxied to
+`http://control-plane-offload.platform.svc.cluster.local:8080`, so a public
+production/demo deployment exercises `web-demo -> System A control-plane-offload
+-> System B offload-worker` rather than a developer-local worker. Override the
+`WEB_DEMO_CONTROL_PLANE_URL` env var in the Deployment if your System A
+control-plane is exposed through a different FQDN or through the NodePort
+(`http://<system-a-host>:31001`). Expose the web-demo Service with the ingress
+of your choice.
 
 ## Smoke tests
 

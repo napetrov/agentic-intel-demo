@@ -3,6 +3,302 @@ kind: Namespace
 metadata:
   name: system-b
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: offload-scenarios
+  namespace: system-b
+data:
+  terminal-agent.run.sh: |
+    #!/usr/bin/env bash
+    # Demo scenario: terminal-agent
+    #
+    # Invoked by the offload-worker via task_type=shell. Output is captured and
+    # returned to the caller as stdout; stderr is captured separately. Keep total
+    # stdout under ~3.5 KB so the result fits inline (the worker pushes anything
+    # over 4 KB to MinIO, which complicates the demo path).
+    set -euo pipefail
+    
+    SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TASK_BRIEF="$SCENARIO_DIR/terminal-bench-reference.md"
+    
+    echo "[scenario] terminal-agent"
+    echo "[step 1/5] inspect task brief"
+    if [ -f "$TASK_BRIEF" ]; then
+      echo "--- $(basename "$TASK_BRIEF") (first 8 lines) ---"
+      sed -n '1,8p' "$TASK_BRIEF"
+    else
+      echo "task-brief: not found at $TASK_BRIEF"
+    fi
+    
+    echo
+    echo "[step 2/5] resolve scenario directory"
+    echo "scenario-dir: $SCENARIO_DIR"
+    ls -1 "$SCENARIO_DIR"
+    
+    echo
+    echo "[step 3/5] simulate engineering command batch"
+    echo "+ uname -srm"
+    uname -srm
+    echo "+ date -u +%FT%TZ"
+    date -u +%FT%TZ
+    echo "+ pwd"
+    pwd
+    
+    echo
+    echo "[step 4/5] emit structured result fragment"
+    cat <<JSON
+    {"scenario":"terminal-agent","route":"system-a","status":"ok"}
+    JSON
+    
+    echo
+    echo "[step 5/5] summary"
+    echo "Terminal Agent execution complete on System A (CWF) primary path."
+    echo "Inference route: LiteLLM -> SambaNova. Tools used: read, exec, summarize."
+
+  terminal-agent.terminal-bench-reference.md: |
+    # Terminal Agent Demo — Reference Task Spec
+    
+    ## Purpose
+    
+    This scenario should not be a vague "terminal demo". It should execute a bounded task in the style of a Terminal Bench task: clear objective, explicit files/commands, and a verifiable success condition.
+    
+    ## Reference task shape
+    
+    Use a task shaped like this:
+    
+    - the agent is placed in a repository or working directory
+    - it is given a specific engineering objective
+    - it must inspect the workspace using terminal commands
+    - it must produce or modify a concrete artifact
+    - it must validate the result with an explicit check
+    
+    ## Demo reference task
+    
+    ### Name
+    `repo-structure-audit-and-fixup`
+    
+    ### Objective
+    Inspect the current repository and produce a structured scenario/task inventory for the demo, validating that guided scenario files, task-family files, and config references are internally consistent.
+    
+    ### Problem to solve
+    The demo repo has evolved quickly, so the terminal task should prove that the agent can use shell tools to inspect the repo, locate scenario/task definitions, detect mismatches, and produce a concrete audit artifact rather than just narrating.
+    
+    ### Inputs
+    - current repository checkout
+    - `agents/`
+    - `catalog/`
+    - `config/`
+    - relevant docs such as `docs/repo-layout.md`
+    
+    ### Expected actions
+    1. inspect the repo structure with shell commands
+    2. enumerate scenario files under `agents/scenarios/`
+    3. enumerate reusable task-family files under `agents/tasks/`
+    4. compare those to scenario definitions in `catalog/scenarios.yaml`
+    5. compare key config/document references to the current layout
+    6. write a concrete audit artifact under a temp or artifact path
+    7. validate the artifact contains the expected sections
+    
+    ### Suggested command pattern
+    Use real terminal commands such as:
+    - `pwd`
+    - `find agents -maxdepth 3 -type f | sort`
+    - `find config -maxdepth 3 -type f | sort`
+    - `sed -n '1,220p' catalog/scenarios.yaml`
+    - `grep -RIn "agents/scenarios\|agents/tasks\|config/" docs catalog agents`
+    - `python3 ...` to generate a structured inventory file
+    - `grep` or `python3` assertions to validate output
+    
+    ## Concrete success artifact
+    
+    Create a file such as:
+    - `artifacts/demo-terminal/scenario-audit.md`
+    or
+    - `/tmp/<session>/scenario-audit.md`
+    
+    The artifact should contain at minimum:
+    - guided scenarios found
+    - reusable task families found
+    - config files found
+    - mismatches or missing references
+    - final pass/fail summary
+    
+    ## Success condition
+    
+    The task is successful only if:
+    - real shell commands were run
+    - the audit artifact was written
+    - the artifact includes all required sections
+    - a validation command confirms the artifact exists and contains expected headings
+    
+    ## Validation examples
+    
+    At least one validation step should run, for example:
+    - `test -f artifacts/demo-terminal/scenario-audit.md`
+    - `grep -q "Guided scenarios found" artifacts/demo-terminal/scenario-audit.md`
+    - `grep -q "Final summary" artifacts/demo-terminal/scenario-audit.md`
+    
+    ## Acceptable fallback task
+    
+    If the repo does not support the audit task cleanly, use a controlled fallback task:
+    
+    ### Fallback name
+    `structured-file-transform-check`
+    
+    ### Fallback objective
+    Generate a structured report from a set of repo files using shell/Python, then validate the report with explicit checks.
+    
+    ### Fallback success condition
+    A report file is created and validated with at least two terminal checks.
+
+  market-research.run.sh: |
+    #!/usr/bin/env bash
+    # Demo scenario: market-research
+    # Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
+    set -euo pipefail
+    
+    SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TASK_BRIEF="$SCENARIO_DIR/report-task.md"
+    
+    echo "[scenario] market-research"
+    echo "[step 1/4] read research brief"
+    if [ -f "$TASK_BRIEF" ]; then
+      echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
+      sed -n '1,6p' "$TASK_BRIEF"
+    else
+      echo "task-brief: not found at $TASK_BRIEF"
+    fi
+    
+    echo
+    echo "[step 2/4] gather synthetic source notes"
+    cat <<NOTES
+    [1] pricing pressure increasing
+    [2] competitor launch window shifted
+    [3] enterprise demand remains stable
+    [4] infra cost risk elevated
+    [5] integration story improving
+    NOTES
+    
+    echo
+    echo "[step 3/4] cluster + synthesize (offload to System B)"
+    echo "+ route: System B (GNR) for retrieval/synthesis"
+    echo "+ inference: LiteLLM -> SambaNova"
+    echo "clusters identified: 2"
+    echo "summary length: short"
+    
+    echo
+    echo "[step 4/4] result fragment"
+    cat <<JSON
+    {"scenario":"market-research","route":"system-b","status":"ok","clusters":2}
+    JSON
+    echo
+    echo "Brief ready: top signals, risks, follow-up questions."
+
+  market-research.report-task.md: |
+    # Market Research Demo Task
+    
+    ## Objective
+    
+    Produce a believable market-research style result with enough internal structure that the demo feels operational rather than generic.
+    
+    ## Required step sequence
+    
+    1. restate the research question
+    2. define 3 to 5 evaluation dimensions
+    3. prepare the offload payload or analysis plan
+    4. describe System B offload as a concrete analytics step
+    5. collect structured result sections
+    6. synthesize a concise final report
+    
+    ## Required content sections
+    
+    - scope
+    - evaluation dimensions
+    - findings by dimension
+    - synthesized conclusion
+    - next recommended action
+    
+    ## Not acceptable
+    
+    - a vague essay with no explicit analysis structure
+    - mentioning System B without showing what analysis it performed
+    - generic filler without concrete dimensions or comparison points
+
+  large-build-test.run.sh: |
+    #!/usr/bin/env bash
+    # Demo scenario: large-build-test
+    # Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
+    set -euo pipefail
+    
+    SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TASK_BRIEF="$SCENARIO_DIR/build-task.md"
+    
+    echo "[scenario] large-build-test"
+    echo "[step 1/5] inspect heavy-profile brief"
+    if [ -f "$TASK_BRIEF" ]; then
+      echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
+      sed -n '1,6p' "$TASK_BRIEF"
+    else
+      echo "task-brief: not found at $TASK_BRIEF"
+    fi
+    
+    echo
+    echo "[step 2/5] reserve queue slot"
+    echo "primary lane: system-a"
+    echo "fallback lane: system-b"
+    echo "inference routes: SambaNova,SLM-on-GNR"
+    
+    echo
+    echo "[step 3/5] split build/test plan"
+    echo "+ compile lane: System A"
+    echo "+ test-shard offload: System B"
+    
+    echo
+    echo "[step 4/5] run shards (simulated)"
+    echo "shard 1/3 ok"
+    echo "shard 2/3 ok"
+    echo "shard 3/3 ok"
+    
+    echo
+    echo "[step 5/5] result fragment"
+    cat <<JSON
+    {"scenario":"large-build-test","route":"system-a+system-b","status":"ok","passed":128,"failed":0}
+    JSON
+    echo
+    echo "Build/test complete. Primary on System A; offload path System B exercised."
+
+  large-build-test.build-task.md: |
+    # Large Build/Test Demo Task
+    
+    ## Objective
+    
+    Run a more substantial engineering workflow than the terminal-agent scenario on a `large`-profile session pod (statically sized, no runtime scale-up step).
+    
+    ## Required step sequence
+    
+    1. identify repo entrypoint for build/test work
+    2. state that the task is using the large execution profile
+    3. run preflight checks
+    4. run build and/or test commands
+    5. collect logs or failing output
+    6. summarize outcome and follow-up
+    
+    ## Preferred evidence
+    
+    Use real commands such as:
+    - repo inspection commands
+    - dependency/toolchain checks
+    - `make`, `cmake`, `pytest`, `npm test`, or equivalent project-specific commands
+    - targeted log extraction
+    
+    ## Not acceptable
+    
+    - only saying that the large profile was selected
+    - returning a generic build summary with no command evidence
+    - skipping failure detail when the task fails
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,6 +314,24 @@ spec:
       labels:
         app: offload-worker
     spec:
+      volumes:
+        - name: offload-scenarios
+          configMap:
+            name: offload-scenarios
+            defaultMode: 0555
+            items:
+              - key: terminal-agent.run.sh
+                path: terminal-agent/run.sh
+              - key: terminal-agent.terminal-bench-reference.md
+                path: terminal-agent/terminal-bench-reference.md
+              - key: market-research.run.sh
+                path: market-research/run.sh
+              - key: market-research.report-task.md
+                path: market-research/report-task.md
+              - key: large-build-test.run.sh
+                path: large-build-test/run.sh
+              - key: large-build-test.build-task.md
+                path: large-build-test/build-task.md
       containers:
         - name: offload-worker
           # Default to the GHCR image published by
@@ -45,6 +359,8 @@ spec:
               value: "http://minio.system-b.svc.cluster.local:9000"
             - name: MINIO_BUCKET
               value: "demo-artifacts"
+            - name: SCENARIO_SCRIPTS_DIR
+              value: "/scenarios"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
@@ -62,6 +378,10 @@ spec:
             limits:
               cpu: "4"
               memory: "4Gi"
+          volumeMounts:
+            - name: offload-scenarios
+              mountPath: /scenarios
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /health
