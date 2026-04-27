@@ -5,6 +5,17 @@ of a demo deployment. Pairs with `docs/architecture-spec.md` (requirements)
 and `docs/architecture-variants.md` (how `execution_mode` reshapes a
 two-system topology).
 
+> **Spec-only files.** `architecture.template.yaml` and the four worked
+> examples under `examples/` are validated for shape by
+> `scripts/validate-demo-templates.py`, but **no deploy script consumes
+> them**. The shipped deploy path pins to the two-system topology directly
+> in `examples/openclawinstance-intel-demo.yaml`, `k8s/system-{a,b}/`,
+> `config/model-routing/litellm-config.yaml`, and
+> `config/env/system-{a,b}.yaml.template`. To stand the demo up on a
+> different topology you must hand-translate the slots in your filled-in
+> architecture file into those deploy artifacts. Treat this directory as
+> the contract / target shape, not as a deployable manifest.
+
 ## Files
 
 - `architecture.template.yaml` — pluggable template. Copy, fill slots, and

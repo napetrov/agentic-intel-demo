@@ -1,5 +1,10 @@
 # Worked example — multi-system architecture.
 #
+# Spec-only: validated for shape, not consumed by any deploy script. To
+# actually deploy this topology you must hand-translate the slots below
+# into examples/openclawinstance-intel-demo.yaml + k8s/ + config/. See
+# templates/architecture/README.md.
+#
 # One orchestration cluster plus two execution clusters specialized by
 # workload. Useful when analytics and build/test need different hardware
 # profiles or live in different physical locations.

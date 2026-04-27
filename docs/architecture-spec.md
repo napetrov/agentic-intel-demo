@@ -14,6 +14,15 @@ specific instance in prose; `docs/architecture-variants.md` describes how
 `execution_mode` reshapes it. Other topologies live in
 `templates/architecture/examples/`.
 
+> Architecture YAMLs are spec-only: `scripts/validate-demo-templates.py`
+> checks them for shape, but no deploy script reads them at apply time.
+> The actual two-system bring-up is pinned in
+> `examples/openclawinstance-intel-demo.yaml`, `k8s/system-{a,b}/`,
+> `config/model-routing/litellm-config.yaml`, and
+> `config/env/system-{a,b}.yaml.template`. Standing the demo up on a
+> different topology means hand-translating an architecture file into
+> those deploy artifacts; rendering this automatically is a known gap.
+
 ## Core idea
 
 A demo architecture is a set of **roles** filled by pluggable components,

@@ -1,5 +1,10 @@
 # Worked example — single-node architecture.
 #
+# Spec-only: validated for shape, not consumed by any deploy script. To
+# actually deploy this topology you must hand-translate the slots below
+# into examples/openclawinstance-intel-demo.yaml + k8s/ + config/. See
+# templates/architecture/README.md.
+#
 # All roles co-located on one Kubernetes cluster. Smallest viable
 # deployment; suited to laptops, CI, and demos that do not exercise the
 # offload path. Does not support offload_system_b because there is no

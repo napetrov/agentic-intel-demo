@@ -1,5 +1,11 @@
 # Worked example — two-system architecture (shipped reference).
 #
+# Spec-only file. The deploy artifacts under k8s/system-{a,b}/,
+# examples/openclawinstance-intel-demo.yaml, and config/ are the actual
+# source of truth for the two-system bring-up — this YAML documents the
+# target shape but is not read at deploy time. See
+# templates/architecture/README.md.
+#
 # Matches docs/architecture.md and docs/architecture-variants.md. System A
 # owns orchestration, routing, and user-facing state. System B is an
 # execution backend and model backend. Corresponds to what the repo's
