@@ -36,6 +36,11 @@ const scenarios = {
       Tools: 'exec, read',
       Artifacts: '2'
     },
+    // What "Run demo" sends through the OpenClaw gateway when the live
+    // backend is reachable. The worker forwards this to /tools/invoke; the
+    // gateway classifies the input and runs a real tool, so the command log
+    // shows actual tool output instead of a scripted narration.
+    agentInvoke: { tool: 'command', args: { text: 'uname -srm' } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run terminal-agent --isolated' },
       { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
@@ -113,6 +118,12 @@ const scenarios = {
       Route: 'A → B (subagent)',
       Tools: 'read, summarize',
       Artifacts: '1'
+    },
+    agentInvoke: {
+      tool: 'command',
+      args: {
+        text: 'summarize OpenClaw orchestrates agentic execution on Intel CPUs across CWF and offload paths to keep latency predictable for SMB customers.'
+      }
     },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run market-research --isolated' },
@@ -192,6 +203,7 @@ const scenarios = {
       Tools: 'exec, read, summarize',
       Artifacts: '3'
     },
+    agentInvoke: { tool: 'command', args: { text: 'list .' } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run large-build-test --burst' },
       { icon: '📖', tool: 'read_file', value: 'agents/scenarios/large-build-test/build-task.md' },
@@ -799,60 +811,74 @@ async function runLiveWalkthrough(scenarioKey) {
   const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const route = scenario.metrics.Route || (scenario.console && scenario.console.placement) || '—';
   const model = scenario.metrics.Model || '—';
+  const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'whoami' } };
 
   applyRunning(scenarioKey, { includeSubagentNow: false });
 
-  commandLogEl.textContent = `$ POST /api/offload {task_type:"shell", scenario:"${scenarioKey}"}\n`;
-  result.textContent = `Awaiting worker stdout for ${scenarioKey}…`;
+  // Live walkthrough goes through OpenClaw's gateway via task_type=agent_invoke
+  // (the worker forwards to OPENCLAW_GATEWAY_URL/tools/invoke). The gateway
+  // classifies the input and runs a real allow-listed tool, so the command
+  // log shows actual stdout/result rather than a scripted narration.
+  const submitBody = {
+    task_type: 'agent_invoke',
+    payload: { tool: invoke.tool, args: invoke.args },
+    session_id: sessionId
+  };
+  commandLogEl.textContent =
+    `$ POST /api/offload ${JSON.stringify({ task_type: 'agent_invoke', tool: invoke.tool, args: invoke.args })}\n`;
+  result.textContent = `Awaiting OpenClaw response for ${scenarioKey}…`;
   result.className = 'result empty-state';
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'active' }
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'active' }
   ]);
   renderMetrics({
     Model: model,
     Route: `${route} · submitting`,
-    Tools: 'offload submit',
+    Tools: 'agent_invoke',
     Artifacts: '0'
   });
 
   const stillCurrent = () => myRunId === liveRunId;
   const finish = () => { if (stillCurrent()) restoreRunButton(); };
+  const appendLog = (line) => {
+    if (!stillCurrent()) return;
+    commandLogEl.textContent += (commandLogEl.textContent.endsWith('\n') ? '' : '\n') + line;
+    commandLogEl.scrollTop = commandLogEl.scrollHeight;
+  };
 
   let submit;
   try {
     submit = await fetchJson(`${API_BASE}/offload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        task_type: 'shell',
-        payload: { scenario: scenarioKey },
-        session_id: sessionId
-      })
+      body: JSON.stringify(submitBody)
     });
   } catch (err) {
     if (!stillCurrent()) return;
-    commandLogEl.textContent += `\n[error] submit failed: ${err.message}`;
+    appendLog(`[error] submit failed: ${err.message}`);
     result.textContent = `Live run failed: ${err.message}`;
     finish();
     return;
   }
   if (!stillCurrent()) return;
 
-  commandLogEl.textContent += `job_id=${submit.job_id} status=${submit.status}\n`;
+  appendLog(`job_id=${submit.job_id} status=${submit.status}`);
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'done' },
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
     { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'active' }
   ]);
-  renderMetrics({
-    Model: model,
-    Route: `${route} · ${submit.status}`,
-    Tools: 'offload poll',
-    Artifacts: '0'
-  });
 
   // Poll until terminal. The control-plane forwards synchronously so the
   // first GET typically already returns "completed" — the poll is here so we
   // stay correct if the relay ever switches to async.
+  const renderPollError = (detail) => {
+    renderToolActivity([
+      { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
+      { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'error' }
+    ]);
+    result.textContent = detail;
+    result.className = 'result';
+  };
   const deadline = Date.now() + 90_000;
   let status = null;
   while (Date.now() < deadline) {
@@ -860,7 +886,8 @@ async function runLiveWalkthrough(scenarioKey) {
       status = await fetchJson(`${API_BASE}/offload/${submit.job_id}`);
     } catch (err) {
       if (!stillCurrent()) return;
-      commandLogEl.textContent += `\n[error] poll failed: ${err.message}`;
+      appendLog(`[error] poll failed: ${err.message}`);
+      renderPollError(`Live run failed while polling job ${submit.job_id}: ${err.message}`);
       finish();
       return;
     }
@@ -870,73 +897,96 @@ async function runLiveWalkthrough(scenarioKey) {
   }
 
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
-    commandLogEl.textContent += `\n[error] job did not complete within 90s`;
+    appendLog(`[error] job did not complete within 90s`);
+    renderPollError(`Live run timed out waiting for job ${submit.job_id} (90s).`);
     finish();
     return;
   }
-
   if (status.status === 'error') {
-    commandLogEl.textContent += `\n[worker error] ${status.error || 'unknown error'}`;
+    appendLog(`[worker error] ${status.error || 'unknown error'}`);
     result.textContent = `Live run errored: ${status.error || 'see log'}`;
     finish();
     return;
   }
 
-  // When the worker punts the result to MinIO we get result_ref instead of
-  // an inline result. Fetch the artifact JSON so the verdict reflects the
-  // real exit_code — otherwise exitCode stays null and a non-zero exit
-  // hidden inside the artifact would silently render as PASS.
-  let inline = status.result;
-  if ((!inline || typeof inline !== 'object' || !('exit_code' in inline)) && status.result_ref) {
-    try {
-      const presigned = await fetchJson(`${API_BASE}/artifacts/${status.result_ref}`);
-      if (!stillCurrent()) return;
-      const artifactResp = await fetch(presigned.url);
-      if (!stillCurrent()) return;
-      if (artifactResp.ok) {
-        inline = await artifactResp.json();
-      } else {
-        commandLogEl.textContent += `\n[warn] artifact fetch HTTP ${artifactResp.status}`;
-      }
-    } catch (err) {
-      if (!stillCurrent()) return;
-      commandLogEl.textContent += `\n[warn] artifact fetch failed: ${err.message}`;
+  // offload-worker's agent_invoke wraps the gateway response under
+  // result.response (parsed JSON) or result.response_text (raw body when the
+  // gateway returned a non-JSON 200). When over the inline threshold it
+  // lands as result_ref and we have to fetch the artifact to get the wrapper
+  // back. We only render the JSON shape; a response_text means the gateway
+  // didn't speak our protocol, which is a failure even at HTTP 200.
+  let agentPayload = null;
+  if (status.result) {
+    const wrapper = status.result;
+    if (wrapper && typeof wrapper === 'object' && 'response' in wrapper) {
+      agentPayload = wrapper.response;
+    } else if (wrapper && typeof wrapper === 'object' && 'response_text' in wrapper) {
+      const text = String(wrapper.response_text ?? '');
+      appendLog(`[warn] gateway returned non-JSON body (${text.length} chars):`);
+      appendLog(text.slice(0, 500) + (text.length > 500 ? ' …[truncated]' : ''));
+      result.textContent = `Live run finished, but the gateway returned a non-JSON body (job ${submit.job_id}).`;
+      finish();
+      return;
+    } else {
+      agentPayload = wrapper;
     }
+  } else if (status.result_ref) {
+    agentPayload = await fetchArtifactPayload(status.result_ref, appendLog);
+    if (!stillCurrent()) return;
+    if (!agentPayload) {
+      result.textContent = `Live run finished, but response artifact fetch failed (job ${submit.job_id}).`;
+      finish();
+      return;
+    }
+  } else {
+    appendLog(`[agent] empty response (no inline result, no artifact ref)`);
+    result.textContent = `Live run returned no payload (job ${submit.job_id}).`;
+    finish();
+    return;
   }
 
-  const stdout = (inline && typeof inline === 'object' && 'stdout' in inline)
-    ? inline.stdout
-    : (status.result_ref
-      ? `[result stored as artifact ${status.result_ref}]`
-      : JSON.stringify(inline, null, 2));
-  const exitCode = (inline && typeof inline === 'object' && 'exit_code' in inline)
-    ? inline.exit_code
-    : null;
-
-  // Only mark success when exit_code is explicitly 0, or when there's no
-  // artifact metadata at all (truly nothing to inspect). With a result_ref
-  // present, an unknown exit_code means the artifact fetch failed — don't
-  // optimistically render PASS.
-  const shellSucceeded = exitCode === 0 || (exitCode === null && !status.result_ref);
-
-  commandLogEl.textContent += `\n--- worker stdout ---\n${stdout}`;
-  if (exitCode !== null) {
-    commandLogEl.textContent += `\n--- exit_code=${exitCode} ---`;
+  // fetchArtifactPayload's unwrap can also yield a string when only
+  // response_text is set on the artifact. Reject anything that isn't a
+  // proper JSON object so the verdict logic below can't silently coerce
+  // an unstructured body into PASS.
+  if (!agentPayload || typeof agentPayload !== 'object' || Array.isArray(agentPayload)) {
+    appendLog(`[agent] gateway response was not a JSON object (got ${typeof agentPayload})`);
+    result.textContent = `Live run finished, but the gateway response wasn't a JSON object (job ${submit.job_id}).`;
+    finish();
+    return;
   }
-  commandLogEl.scrollTop = commandLogEl.scrollHeight;
+
+  emitAgentResult(agentPayload, appendLog);
 
   const elapsedMs = (status.completed_at && status.submitted_at)
     ? Math.max(0, (status.completed_at - status.submitted_at) * 1000)
     : null;
+  const inner = (agentPayload.result && agentPayload.result.chosen_tool)
+    ? agentPayload.result.result
+    : (agentPayload.result || null);
+  const chosenTool = (agentPayload.result && agentPayload.result.chosen_tool)
+    || agentPayload.tool
+    || invoke.tool;
+  // Require an explicit status==='ok' from the gateway. Anything else
+  // (missing field, "error", unrecognized value) must not coerce to PASS.
+  const agentOk = agentPayload.status === 'ok';
+  // Treat shell exit_code !== 0 as failure too, since the gateway can return
+  // status=ok with an inner non-zero exit (e.g. command-not-found through
+  // the shell tool). Other tools don't carry exit_code, so default to ok.
+  const exitCode = inner && typeof inner === 'object' && 'exit_code' in inner
+    ? inner.exit_code
+    : null;
+  const succeeded = agentOk && (exitCode === null || exitCode === 0);
+
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (scenario: ${scenarioKey})`, status: 'done' },
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
     { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'done' },
-    { icon: '💻', tool: 'shell_exec', value: `worker stdout (exit=${exitCode === null ? 'n/a' : exitCode})`, status: shellSucceeded ? 'done' : 'error' }
+    { icon: '🤖', tool: 'openclaw', value: `tool=${chosenTool}${exitCode !== null ? ` exit=${exitCode}` : ''}`, status: succeeded ? 'done' : 'error' }
   ]);
   renderMetrics({
     Model: model,
     Route: `${route} · live`,
-    Tools: 'shell',
+    Tools: chosenTool,
     Artifacts: status.result_ref ? '1' : '0',
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
@@ -944,34 +994,36 @@ async function runLiveWalkthrough(scenarioKey) {
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
-    stdout,
+    chosenTool,
     exitCode,
     elapsedMs,
     route,
-    succeeded: shellSucceeded,
-    resultRef: status.result_ref || null
+    succeeded,
+    resultRef: status.result_ref || null,
+    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null
   });
   result.className = 'result';
   finish();
 }
 
-function renderLiveArtifact({ scenarioKey, jobId, stdout, exitCode, elapsedMs, route, succeeded, resultRef }) {
+function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedMs, route, succeeded, resultRef, agentElapsedMs }) {
   const elapsed = elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—';
-  const exit = exitCode === null ? 'n/a' : String(exitCode);
   const verdict = succeeded ? 'PASS' : 'FAIL';
-  const trimmed = (stdout || '').trimEnd() || '(no stdout)';
   const lines = [
     `artifacts/live/${scenarioKey}/${jobId}.txt`,
     '─────────────────────────────────────────',
-    `Live worker artifact — ${scenarioKey}`,
+    `Live agent run — ${scenarioKey}`,
     '',
     `job_id    ${jobId}`,
     `route     ${route}`,
-    `exit      ${exit}`,
-    `elapsed   ${elapsed}`,
+    `tool      ${chosenTool}`,
   ];
+  if (exitCode !== null) lines.push(`exit      ${exitCode}`);
+  lines.push(`elapsed   ${elapsed}${agentElapsedMs !== null ? ` (gateway ${agentElapsedMs} ms)` : ''}`);
   if (resultRef) lines.push(`stored    ${resultRef}`);
-  lines.push('', '--- worker stdout ---', trimmed, '', `Final: ${verdict}`);
+  // Intentionally omit the full stdout — the live command log above already
+  // shows it. The Result panel is the compact summary, not a duplicate.
+  lines.push('', `Final: ${verdict}`);
   return lines.join('\n');
 }
 
@@ -1024,22 +1076,31 @@ function appendAgentLog(text) {
   agentLogEl.scrollTop = agentLogEl.scrollHeight;
 }
 
-function renderAgentResult(payload) {
-  // payload is the agent-stub /tools/invoke response embedded under
-  // status.result.response (set by offload-worker._dispatch_agent_invoke).
+// Format an OpenClaw gateway response (the body wrapped under
+// status.result.response by offload-worker._dispatch_agent_invoke) into
+// log lines, emitted via `log(line)`. Shared by the live walkthrough's
+// command log and the agent command panel so both surfaces stay in sync.
+function emitAgentResult(payload, log) {
   if (!payload || typeof payload !== 'object') {
-    appendAgentLog(`[agent] empty payload`);
+    log(`[agent] empty payload`);
     return;
   }
   if (payload.status === 'error') {
-    appendAgentLog(`[agent error] ${payload.error || 'unknown error'}`);
+    log(`[agent error] ${payload.error || 'unknown error'}`);
+    return;
+  }
+  if (payload.status !== 'ok') {
+    // Anything else (missing field, unrecognized value) shouldn't render as
+    // healthy. Mirrors runLiveWalkthrough's verdict guard so the log and
+    // the Result panel agree.
+    log(`[agent error] unexpected status=${payload.status === undefined ? 'missing' : String(payload.status)}`);
     return;
   }
   const elapsed = typeof payload.elapsed_ms === 'number' ? `${payload.elapsed_ms} ms` : '?';
-  appendAgentLog(`[agent ok] tool=${payload.tool} elapsed=${elapsed}`);
+  log(`[agent ok] tool=${payload.tool} elapsed=${elapsed}`);
   if (Array.isArray(payload.trace) && payload.trace.length) {
     payload.trace.forEach((step) => {
-      appendAgentLog(`  [trace ${step.step}] ${step.tool}: ${step.summary}`);
+      log(`  [trace ${step.step}] ${step.tool}: ${step.summary}`);
     });
   }
   const result = payload.result;
@@ -1049,31 +1110,35 @@ function renderAgentResult(payload) {
   const inner = result.result && result.chosen_tool ? result.result : result;
   const innerTool = result.chosen_tool || payload.tool;
   if (result.chosen_tool) {
-    appendAgentLog(`  [agent picked] ${result.chosen_tool} (${result.rationale})`);
+    log(`  [agent picked] ${result.chosen_tool} (${result.rationale})`);
   }
   if (innerTool === 'shell') {
-    appendAgentLog(`  $ ${(inner.argv || []).join(' ')}  (cwd=${inner.cwd}, exit=${inner.exit_code})`);
-    if (inner.stdout) appendAgentLog(`--- stdout ---\n${inner.stdout.trimEnd()}`);
-    if (inner.stderr) appendAgentLog(`--- stderr ---\n${inner.stderr.trimEnd()}`);
+    log(`  $ ${(inner.argv || []).join(' ')}  (cwd=${inner.cwd}, exit=${inner.exit_code})`);
+    if (inner.stdout) log(`--- stdout ---\n${inner.stdout.trimEnd()}`);
+    if (inner.stderr) log(`--- stderr ---\n${inner.stderr.trimEnd()}`);
   } else if (innerTool === 'read_file') {
-    appendAgentLog(`  read ${inner.path} (${inner.bytes} bytes${inner.truncated ? ', truncated' : ''})`);
-    appendAgentLog(`--- content ---\n${(inner.content || '').trimEnd()}`);
+    log(`  read ${inner.path} (${inner.bytes} bytes${inner.truncated ? ', truncated' : ''})`);
+    log(`--- content ---\n${(inner.content || '').trimEnd()}`);
   } else if (innerTool === 'list_files') {
-    appendAgentLog(`  list ${inner.root} (${(inner.entries || []).length} entries)`);
+    log(`  list ${inner.root} (${(inner.entries || []).length} entries)`);
     (inner.entries || []).forEach((e) => {
       const sz = e.size === null || e.size === undefined ? '' : ` ${e.size}B`;
-      appendAgentLog(`   - ${e.kind === 'dir' ? 'd' : 'f'} ${e.name}${sz}`);
+      log(`   - ${e.kind === 'dir' ? 'd' : 'f'} ${e.name}${sz}`);
     });
   } else if (innerTool === 'summarize') {
-    appendAgentLog(`  summary of ${inner.input_chars} chars`);
-    appendAgentLog(`  first sentence: ${inner.first_sentence}`);
+    log(`  summary of ${inner.input_chars} chars`);
+    log(`  first sentence: ${inner.first_sentence}`);
     const top = (inner.top_words || []).map((w) => `${w.word}(${w.count})`).join(', ');
-    if (top) appendAgentLog(`  top words: ${top}`);
+    if (top) log(`  top words: ${top}`);
   } else if (innerTool === 'echo') {
-    appendAgentLog(`  echo: ${JSON.stringify(inner.echo || inner, null, 2)}`);
+    log(`  echo: ${JSON.stringify(inner.echo || inner, null, 2)}`);
   } else {
-    appendAgentLog(JSON.stringify(inner, null, 2));
+    log(JSON.stringify(inner, null, 2));
   }
+}
+
+function renderAgentResult(payload) {
+  emitAgentResult(payload, appendAgentLog);
 }
 
 async function runAgentCommand(text) {
@@ -1193,12 +1258,14 @@ async function runAgentCommand(text) {
   }
 }
 
-async function fetchArtifactPayload(ref) {
+async function fetchArtifactPayload(ref, log = appendAgentLog) {
   // Two hops: control-plane presigns a MinIO URL, then we fetch the JSON
   // from MinIO directly. The MinIO fetch crosses origins (web on :8080,
   // MinIO on :9000); if CORS isn't configured the browser will block it,
   // which is why we degrade to a clear status message instead of crashing.
-  appendAgentLog(`[agent result stored as artifact ${ref}; fetching…]`);
+  // `log` defaults to the agent-panel log; the live walkthrough passes its
+  // own logger so error lines land next to the matching command.
+  log(`[agent result stored as artifact ${ref}; fetching…]`);
   // Don't encodeURIComponent: the worker constructs refs as
   // `offload/<session>/<task>.json` from server-controlled alphanumerics
   // and the nginx /api/artifacts/<ref> location accepts raw `/`. Encoding
@@ -1208,21 +1275,30 @@ async function fetchArtifactPayload(ref) {
   try {
     presigned = await fetchJson(`${API_BASE}/artifacts/${ref}`);
   } catch (err) {
-    appendAgentLog(`[error] artifact presign failed: ${err.message}`);
+    log(`[error] artifact presign failed: ${err.message}`);
     return null;
   }
+  // 10s timeout on the cross-origin MinIO fetch so a stalled/blocked request
+  // can't strand the live walkthrough or the agent-command flow indefinitely.
+  // The presigned URL carries short-lived MinIO credentials in the query
+  // string; do NOT log it to the visible UI panel — operators can inspect
+  // the failed request in DevTools if a manual retrieve is needed.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const r = await fetch(presigned.url);
+    const r = await fetch(presigned.url, { signal: ctrl.signal, cache: 'no-store' });
     if (!r.ok) {
-      appendAgentLog(`[error] artifact fetch HTTP ${r.status}`);
+      log(`[error] artifact fetch HTTP ${r.status}`);
       return null;
     }
     const wrapper = await r.json();
     return wrapper.response || wrapper.response_text || wrapper;
   } catch (err) {
-    appendAgentLog(`[error] artifact fetch failed: ${err.message} (CORS on MinIO?)`);
-    appendAgentLog(`  retrieve manually: curl "${presigned.url}"`);
+    log(`[error] artifact fetch failed: ${err.message} (CORS on MinIO?)`);
+    log(`  presigned URL omitted from UI log; inspect the failed request in DevTools if needed`);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1323,8 +1399,10 @@ function dotStateForProbe(probe) {
 
 async function probeBackend() {
   // /health says the relay is up; /ready says the worker is also reachable.
-  // ready=true means "live mode available". We distinguish a
-  // control-plane-up-but-worker-down state in the dots.
+  // We additionally probe OpenClaw because Run demo now submits
+  // task_type=agent_invoke, which the worker forwards to the gateway —
+  // a healthy worker with an unset/unreachable OPENCLAW_GATEWAY_URL would
+  // fail every live run, so live mode must require gateway reachability too.
   let cpHealthy = false;
   let workerReady = false;
   try {
@@ -1341,7 +1419,6 @@ async function probeBackend() {
       workerReady = false;
     }
   }
-  liveBackendAvailable = cpHealthy && workerReady;
   setHealthDot(healthDots.systemA, cpHealthy ? 'ok' : 'down');
   // System B / OpenClaw / LiteLLM / SambaNova all sit behind the control
   // plane — we can only probe them through it. When the relay is down we
@@ -1357,12 +1434,14 @@ async function probeBackend() {
   // OpenClaw / LiteLLM / SambaNova are probed honestly via the control
   // plane. When a probe URL isn't configured the dot stays neutral
   // ("not configured") instead of mirroring the relay's health.
+  let openclawOk = false;
   if (cpHealthy) {
     const [openclaw, litellm, sambanova] = await Promise.all([
       probeDependency('openclaw'),
       probeDependency('litellm'),
       probeDependency('sambanova')
     ]);
+    openclawOk = openclaw && openclaw.state === 'ok';
     setHealthDot(
       healthDots.openclaw,
       dotStateForProbe(openclaw),
@@ -1383,9 +1462,12 @@ async function probeBackend() {
     setHealthDot(healthDots.litellm, 'unknown', cpDownTip);
     setHealthDot(healthDots.sambanova, 'unknown', cpDownTip);
   }
+  liveBackendAvailable = cpHealthy && workerReady && openclawOk;
   runDemoBtn.title = liveBackendAvailable
-    ? 'Live backend detected — runs a real shell scenario via /api/offload.'
-    : 'Backend not detected — runs scripted walkthrough only.';
+    ? 'Live backend detected — submits agent_invoke through /api/offload to the OpenClaw gateway.'
+    : (cpHealthy && workerReady && !openclawOk
+        ? 'OpenClaw gateway unreachable — runs scripted walkthrough only.'
+        : 'Backend not detected — runs scripted walkthrough only.');
 }
 
 applyIdle();
