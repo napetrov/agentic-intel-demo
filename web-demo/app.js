@@ -305,6 +305,11 @@ let currentIncludeSubagent = false;
 // renderSystemA() / renderSystemB() so each agent pool reflects spawned
 // sessions, not just the scenario primary agent.
 let lastSessionRecords = [];
+// Latest snapshot of long-lived agents from /api/agents. Long-lived agents
+// render directly in the System A / System B architecture pools alongside
+// the scenario primary and short-lived task rows; refreshAgents() refills
+// this on a 30s timer and the pools redraw immediately.
+let lastAgentRecords = [];
 let runTimers = [];
 let liveRunId = 0;
 let liveArchitecturePinned = false;
@@ -436,9 +441,53 @@ function isSystemBSession(rec) {
   return rec && rec.target_system === 'system_b';
 }
 
+// Long-lived agents render with a "long-lived" label in the cpu column and
+// their registry status drives the row state: Ready behaves like a running
+// row (green/active), Provisioning/Degraded look planned (dashed), Stopped
+// dims out. Long-lived agents do NOT contribute to the vCPU capacity bar —
+// the bar reflects task work in flight, not idle agents waiting for work.
+const LONG_LIVED_STATE_BY_STATUS = {
+  Ready: 'running',
+  Provisioning: 'planned',
+  Degraded: 'planned',
+  Stopped: 'planned',
+  Unknown: 'planned'
+};
+
+function longLivedAgentRowHtml(agent) {
+  const state = LONG_LIVED_STATE_BY_STATUS[agent.status] || 'planned';
+  const status = (agent.status || 'unknown').toLowerCase();
+  const kind = agent.kind ? ` · ${escapeHtml(agent.kind)}` : '';
+  return `
+    <div class="agent-row ${state} persistent" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status || 'Unknown')}">
+      <span class="agent-name">${escapeHtml(agent.name || agent.id)}<span class="agent-row-badge">long-lived${kind}</span></span>
+      <span class="agent-cpu">persistent</span>
+      <span class="agent-status">${escapeHtml(status)}</span>
+    </div>
+  `;
+}
+
+function longLivedAgentsForSystem(systemKey) {
+  return lastAgentRecords.filter((a) => a && a.system === systemKey);
+}
+
+// HTML fragment for the long-lived rows on a given system, or '' if none.
+// Live-flow renderers prepend this so persistent agents stay visible while
+// the architecture is pinned and the transient rows are rewritten.
+function longLivedAgentsHtmlFor(systemKey) {
+  return longLivedAgentsForSystem(systemKey).map(longLivedAgentRowHtml).join('');
+}
+
 function renderSystemA(scenario, phase) {
   const rows = [];
   let usedVcpu = 0;
+
+  // Long-lived agents come first — they're persistent and frame the pool
+  // before any transient scenario / task rows. They don't add to vCPU
+  // utilization; the capacity bar tracks active task work only.
+  for (const agent of longLivedAgentsForSystem('system_a')) {
+    rows.push(longLivedAgentRowHtml(agent));
+  }
 
   if (scenario && phase !== 'idle') {
     const { primary } = scenario;
@@ -475,15 +524,20 @@ function redrawSystemA() {
 }
 
 function renderSystemB(scenario, phase, includeSubagent) {
-  // System B's pool is populated from two sources:
-  //   1. The scenario's offload subagent (only if the scenario routes
+  // System B's pool is populated from three sources:
+  //   1. Long-lived agents registered against system_b (persistent).
+  //   2. The scenario's offload subagent (only if the scenario routes
   //      to System B and the run has actually spawned it).
-  //   2. Multi-session fan-out where the operator picked target_system
+  //   3. Multi-session fan-out where the operator picked target_system
   //      = 'system_b' explicitly.
-  // Either source alone is enough to show rows; both contribute to the
-  // capacity bar.
+  // Long-lived agents don't add to the vCPU bar; the scenario subagent
+  // and target_system=system_b tasks do.
   const rows = [];
   let usedVcpu = 0;
+
+  for (const agent of longLivedAgentsForSystem('system_b')) {
+    rows.push(longLivedAgentRowHtml(agent));
+  }
 
   const hasSubagent = scenario && scenario.subagent && phase !== 'idle';
   if (hasSubagent && includeSubagent) {
@@ -544,9 +598,9 @@ function renderLiveAgentArchitecture(key, state = 'running') {
   const isRunning = state === 'running';
   const rowState = isRunning ? 'running' : 'planned';
   const terminalLabel = state === 'error' ? 'failed' : 'completed';
-  sysAAgentsEl.innerHTML = agentRowHtml('control-plane-offload', 1, rowState);
+  sysAAgentsEl.innerHTML = longLivedAgentsHtmlFor('system_a') + agentRowHtml('control-plane-offload', 1, rowState);
   renderCapacity(isRunning ? 1 : 0);
-  sysBOffloadEl.innerHTML = `
+  sysBOffloadEl.innerHTML = longLivedAgentsHtmlFor('system_b') + `
     <div class="agent-row ${rowState}">
       <span class="agent-name">agent-stub gateway</span>
       <span class="agent-cpu">System B</span>
@@ -1198,7 +1252,9 @@ function agentResultSummary(payload) {
 function renderAgentCommandOnArchitecture(tool, status = 'running') {
   setCrossArrow(true);
   const terminal = status === 'done' || status === 'error';
-  sysAAgentsEl.innerHTML = terminal
+  const sysAPersistent = longLivedAgentsHtmlFor('system_a');
+  const sysBPersistent = longLivedAgentsHtmlFor('system_b');
+  sysAAgentsEl.innerHTML = sysAPersistent + (terminal
     ? `
       <div class="agent-row planned">
         <span class="agent-name">control-plane-offload</span>
@@ -1206,10 +1262,10 @@ function renderAgentCommandOnArchitecture(tool, status = 'running') {
         <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
       </div>
     `
-    : agentRowHtml('control-plane-offload', 1, 'running');
+    : agentRowHtml('control-plane-offload', 1, 'running'));
   renderCapacity(terminal ? 0 : 1);
   if (terminal) {
-    sysBOffloadEl.innerHTML = `
+    sysBOffloadEl.innerHTML = sysBPersistent + `
       <div class="agent-row planned">
         <span class="agent-name">agent-stub gateway</span>
         <span class="agent-cpu">System B</span>
@@ -1217,7 +1273,7 @@ function renderAgentCommandOnArchitecture(tool, status = 'running') {
       </div>
     `;
   } else {
-    sysBOffloadEl.innerHTML = agentRowHtml('agent-stub gateway', 1, 'running');
+    sysBOffloadEl.innerHTML = sysBPersistent + agentRowHtml('agent-stub gateway', 1, 'running');
   }
   renderCapacityB(terminal ? 0 : 1);
   renderToolActivity([
@@ -1905,55 +1961,16 @@ if (multiSessionPanel) {
 
 // ---------- Agents panel (long-lived) ----------
 //
-// Read-only view over /api/agents. Renders a per-system pool with status
-// dots and powers the "Agent" picker on the Tasks form. Polled on a slow
-// timer (30s) — agents are long-lived, so high-frequency polling is
-// wasted bandwidth. Picker is rebuilt on every poll so freshly added
-// agents (operator runs an OpenClawInstance smoke test, the registry
-// picks it up) become selectable without a page reload.
+// Read-only view over /api/agents. Long-lived agents render directly in
+// the System A / System B architecture pools (alongside scenario primary
+// rows and short-lived task rows); this also powers the "Agent" picker on
+// the Tasks form. Polled on a slow timer (30s) — agents are long-lived,
+// so high-frequency polling is wasted bandwidth. Picker is rebuilt on
+// every poll so freshly added agents (operator runs an OpenClawInstance
+// smoke test, the registry picks it up) become selectable without a page
+// reload.
 
-const agentsPanel = document.getElementById('agents-panel');
-const agentsPoolA = document.getElementById('agents-pool-system_a');
-const agentsPoolB = document.getElementById('agents-pool-system_b');
 const agentsSummary = document.getElementById('agents-summary');
-const agentsRefresh = document.getElementById('agents-refresh');
-
-const AGENT_STATUS_CLASS = {
-  Ready: 'ok',
-  Provisioning: 'warn',
-  Degraded: 'warn',
-  Stopped: 'error',
-  Unknown: ''
-};
-
-function renderAgentRow(agent) {
-  const dotClass = AGENT_STATUS_CLASS[agent.status] || '';
-  const cap = (agent.capabilities || []).join(', ') || '—';
-  const msg = agent.message ? ` · ${escapeHtml(agent.message)}` : '';
-  return `
-    <div class="agent-card" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status)}">
-      <div class="agent-card-head">
-        <span class="agent-status-dot ${dotClass}" title="${escapeHtml(agent.status)} (${escapeHtml(agent.source)})"></span>
-        <span class="agent-card-name">${escapeHtml(agent.name)}</span>
-        <span class="agent-card-kind">${escapeHtml(agent.kind)}</span>
-      </div>
-      <div class="agent-card-meta">
-        <code>${escapeHtml(agent.id)}</code>
-        <span class="agent-card-caps">${escapeHtml(cap)}</span>
-      </div>
-      <div class="agent-card-status">${escapeHtml(agent.status)}${msg}</div>
-    </div>
-  `;
-}
-
-function renderAgentPool(el, agents) {
-  if (!el) return;
-  if (!agents.length) {
-    el.innerHTML = '<div class="agents-pool-empty">no agents registered</div>';
-    return;
-  }
-  el.innerHTML = agents.map(renderAgentRow).join('');
-}
 
 // Refill the Tasks-form Agent picker. Preserve the current selection if
 // the picked agent is still registered; otherwise fall back to "ephemeral".
@@ -1975,11 +1992,11 @@ function refreshAgentPicker(agents) {
 }
 
 let agentsPollTimer = null;
-// Monotonic sequence guard. The Refresh button + the 30s timer can
-// race when the backend is slow: an earlier in-flight request may
-// resolve AFTER a newer one and overwrite a fresh successful render
-// with stale rows or stale "fetch failed" copy. Each call captures its
-// own seq before the await; only the latest gets to mutate UI state.
+// Monotonic sequence guard. A manual refresh + the 30s timer can race
+// when the backend is slow: an earlier in-flight request may resolve
+// AFTER a newer one and overwrite a fresh successful render with stale
+// data. Each call captures its own seq before the await; only the
+// latest gets to mutate UI state.
 let agentsRefreshSeq = 0;
 
 async function refreshAgents() {
@@ -1988,10 +2005,9 @@ async function refreshAgents() {
     const body = await fetchJson(`${API_BASE}/agents`, { timeoutMs: 5000 });
     if (seq !== agentsRefreshSeq) return;
     const agents = Array.isArray(body && body.agents) ? body.agents : [];
-    const a = agents.filter((x) => x.system === 'system_a');
-    const b = agents.filter((x) => x.system === 'system_b');
-    renderAgentPool(agentsPoolA, a);
-    renderAgentPool(agentsPoolB, b);
+    lastAgentRecords = agents;
+    redrawSystemA();
+    redrawSystemB();
     refreshAgentPicker(agents);
     if (agentsSummary) {
       const ready = agents.filter((x) => x.status === 'Ready').length;
@@ -2001,14 +2017,15 @@ async function refreshAgents() {
     }
   } catch (err) {
     if (seq !== agentsRefreshSeq) return;
+    lastAgentRecords = [];
+    redrawSystemA();
+    redrawSystemB();
     if (agentsSummary) {
       const noBackend = err && err.status === 404;
       agentsSummary.textContent = noBackend
         ? 'agents: backend not detected'
         : `agents: fetch failed (${err.message})`;
     }
-    renderAgentPool(agentsPoolA, []);
-    renderAgentPool(agentsPoolB, []);
     // Drop any options the picker carried over from the last
     // successful poll so the operator can't submit a task pinned to
     // an agent the backend may already have removed. The empty-list
@@ -2025,13 +2042,7 @@ async function refreshAgents() {
   }
 }
 
-if (agentsRefresh) {
-  agentsRefresh.addEventListener('click', () => refreshAgents());
-}
-
-if (agentsPanel) {
-  refreshAgents();
-}
+refreshAgents();
 
 // ---------- Optional service launchers ----------
 //
