@@ -352,9 +352,9 @@ function restoreRunButton() {
 function cancelRun() {
   clearRunTimers();
   // Invalidate any in-flight live walkthrough so late /api/offload poll
-  // responses can't overwrite the new mode (Stack overview / Reset / new
-  // scenario). runLiveWalkthrough checks `myRunId === liveRunId` after each
-  // await and bails out early when this counter advances.
+  // responses can't overwrite the new mode (Reset / new scenario).
+  // runLiveWalkthrough checks `myRunId === liveRunId` after each await and
+  // bails out early when this counter advances.
   liveRunId += 1;
   restoreRunButton();
 }
@@ -566,7 +566,7 @@ function renderToolActivity(rows) {
         </div>
       `;
     }
-    // legacy { name, status } shape used by Stack overview / live runs
+    // legacy { name, status } shape used by live runs
     return `
       <div class="tool-row" data-status="${escapeHtml(row.status || '')}">
         <span class="tool-name">${escapeHtml(row.name || '')}</span>
@@ -586,6 +586,7 @@ function applyIdle() {
   cancelRun();
   currentScenario = null;
   currentPhase = 'idle';
+  setSelectedScenarioCard(null);
   setDataMode('');
   setOrchestrationActive([]);
   setServiceState({});
@@ -600,12 +601,25 @@ function applyIdle() {
   renderConsole(idleConsole);
 }
 
+function setSelectedScenarioCard(key) {
+  document.querySelectorAll('[data-scenario]').forEach((el) => {
+    const isMatch = key && el.dataset.scenario === key;
+    el.classList.toggle('selected', Boolean(isMatch));
+    if (isMatch) {
+      el.setAttribute('aria-pressed', 'true');
+    } else {
+      el.setAttribute('aria-pressed', 'false');
+    }
+  });
+}
+
 function applyPlanned(key) {
   cancelRun();
   const scenario = scenarios[key];
   if (!scenario) return;
   currentScenario = key;
   currentPhase = 'planned';
+  setSelectedScenarioCard(key);
   setDataMode(`Scenario: ${key}`);
   setOrchestrationActive(scenario.orchestrationActive);
   setServiceState({});
@@ -639,47 +653,6 @@ function applyRunning(key, options) {
 document.querySelectorAll('[data-scenario]').forEach((el) => {
   el.addEventListener('click', () => {
     applyPlanned(el.dataset.scenario);
-  });
-});
-
-document.querySelector('[data-action="status"]').addEventListener('click', () => {
-  cancelRun();
-  currentScenario = null;
-  currentPhase = 'idle';
-  setDataMode('Stack overview');
-  setOrchestrationActive(['openclaw', 'litellm', 'sambanova', 'ent-inference-route']);
-  setServiceState({ erag: true, 'ent-inference': true });
-  renderSystemA(null, 'idle');
-  renderOffload(null, 'idle', false);
-  setCrossArrow(false);
-  renderToolActivity([
-    { icon: '🩺', tool: 'health_probe', value: 'GET /api/health', status: 'active' },
-    { icon: '🩺', tool: 'ready_probe', value: 'GET /api/ready', status: 'active' },
-    { icon: '🌐', tool: 'router_check', value: 'LiteLLM /v1/models', status: 'active' },
-    { icon: '🌐', tool: 'router_check', value: 'Enterprise Inference SLM', status: 'active' }
-  ]);
-  commandLogEl.textContent = 'Stack overview mode: every node and route in the diagram is lit up so you can see the full architecture. No scenario is being executed.';
-  renderMetrics({
-    Model: 'LiteLLM → SambaNova / Ent. Inference',
-    Route: 'stack overview',
-    Tools: 'status probes',
-    Artifacts: '0'
-  });
-  result.textContent = 'Stack overview: every component reachable, no scenario running.';
-  result.className = 'result';
-  renderConsole({
-    mode: 'stack overview',
-    'openclaw version': '2026.4.15',
-    orchestrator: 'OpenClaw',
-    'orchestration alt': 'Flowise (optional)',
-    'litellm gateway': 'litellm/sambanova primary',
-    'litellm endpoint': 'port 4000 /v1',
-    'sambanova model': 'DeepSeek-V3.1',
-    'enterprise inference': 'reachable',
-    'model route': 'LiteLLM → SambaNova / Ent. Inference',
-    'session scope': 'isolated per user',
-    'placement': 'no scenario active',
-    'artifact view': 'status only'
   });
 });
 

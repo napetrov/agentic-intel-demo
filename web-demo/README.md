@@ -107,10 +107,7 @@ couldn't tell". Both are honest; neither is a false-OK. See
 `docs/health-probes.md` for the full state model.
 
 ### 2. Hero / scenario picker
-Three primary buttons:
-- **Stack overview** — lights every node and route in the architecture
-  diagram below so you can see the full topology at a glance, no demo
-  needed.
+Two primary buttons:
 - **Run demo** — runs the scripted walkthrough. Falls back to a static
   scripted run if the control plane isn't reachable; uses live backend
   data when it is.
