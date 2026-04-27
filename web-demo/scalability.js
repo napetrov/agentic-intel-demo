@@ -83,10 +83,18 @@
    * Single source of truth: floor(min(vcpu/per-agent, mem/per-agent)).
    * The JSON used to carry this number directly; deriving it here keeps
    * it in sync with the instance and workload definitions.
+   *
+   * Returns null if any per-agent resource is non-positive — division
+   * would otherwise yield Infinity / NaN and the density tile would
+   * render "∞ agents" on a typo. Renderers must treat null as "n/a".
    */
   function maxParallelSlots(instance, workload) {
-    const byVcpu = Math.floor(instance.vcpu / workload.vcpu_per_agent);
-    const byMem = Math.floor(instance.memory_gb / workload.memory_gb_per_agent);
+    const vcpuPer = workload.vcpu_per_agent;
+    const memPer = workload.memory_gb_per_agent;
+    if (!(vcpuPer > 0) || !(memPer > 0)) return null;
+    if (!(instance.vcpu >= 0) || !(instance.memory_gb >= 0)) return null;
+    const byVcpu = Math.floor(instance.vcpu / vcpuPer);
+    const byMem = Math.floor(instance.memory_gb / memPer);
     return Math.max(0, Math.min(byVcpu, byMem));
   }
 
@@ -132,6 +140,14 @@
     density: (ctx) => {
       const { instance, workload, derived } = ctx;
       const slots = derived.maxParallelSlots;
+      if (slots == null) {
+        return {
+          label: "Density",
+          value: "n/a",
+          sub: "Per-agent vCPU or memory must be positive — check the workload definition.",
+          accent: "default",
+        };
+      }
       const perCore = instance.vcpu > 0 ? slots / instance.vcpu : 0;
       const memUsedGb = slots * workload.memory_gb_per_agent;
       return {

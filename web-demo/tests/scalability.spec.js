@@ -170,6 +170,34 @@ test('api_cost_avoided tile says n/a when no comparator is configured', async ({
   expect(tilesText).toMatch(/\$0/);
 });
 
+test('density tile fails safe when per-agent resources are zero', async ({ page }) => {
+  // Regression: a JSON typo of 0 used to yield Infinity / NaN slots,
+  // rendering nonsense like "∞ agents" instead of failing closed.
+  await injectMockScenario(page, {
+    schema_version: '2',
+    comparators: [],
+    instances: [BASE_INSTANCE],
+    // vcpu_per_agent=0 → division would explode without the guard.
+    workloads: [{ ...BASE_WORKLOAD, vcpu_per_agent: 0 }],
+    scenarios: [{
+      id: 's', label: 'Bad workload', story: '',
+      instance_id: 'i', workload_id: 'w',
+      scaling: {
+        model: 'queueing',
+        datapoints: [
+          { concurrency: 1, p50_s: 10, p95_s: 12, throughput_per_min: 6, utilization_pct: 12 },
+        ],
+      },
+      tiles: ['density'],
+    }],
+  });
+
+  await page.goto(BASE + '/scalability.html');
+  const tilesText = await page.locator('#sc-tiles').textContent();
+  expect(tilesText).toMatch(/n\/a/i);
+  expect(tilesText).not.toMatch(/Infinity|NaN|∞/);
+});
+
 test('density tile derives slot count from instance + workload', async ({ page }) => {
   await injectMockScenario(page, {
     schema_version: '2',
