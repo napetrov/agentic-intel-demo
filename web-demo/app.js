@@ -1253,6 +1253,16 @@ function agentResultSummary(payload) {
 function renderAgentCommandOnArchitecture(tool, status = 'running') {
   setCrossArrow(true);
   const terminal = status === 'done' || status === 'error';
+  sysAAgentsEl.innerHTML = terminal
+    ? `
+      <div class="agent-row planned">
+        <span class="agent-name">control-plane-offload</span>
+        <span class="agent-cpu">System A</span>
+        <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
+      </div>
+    `
+    : agentRowHtml('control-plane-offload', 1, 'running');
+  renderCapacity(terminal ? 0 : 1);
   if (terminal) {
     sysBOffloadEl.innerHTML = `
       <div class="agent-row planned">
@@ -1384,8 +1394,16 @@ async function runAgentCommand(text) {
   // Surface gateway-level errors honestly: when the agent itself reported
   // status="error" (e.g. read on a missing file), the badge must reflect
   // that. The log already shows the error; don't end with "agent returned ok".
-  const isAgentError = (agentPayload && agentPayload.status === 'error') || !summary.ok;
   const chosen = agentPayload && agentPayload.result && agentPayload.result.chosen_tool;
+  const innerResult = agentPayload && agentPayload.result && agentPayload.result.result
+    ? agentPayload.result.result
+    : (agentPayload && agentPayload.result);
+  const exitCode = innerResult && typeof innerResult === 'object' && 'exit_code' in innerResult
+    ? innerResult.exit_code
+    : null;
+  const isAgentError = (agentPayload && agentPayload.status === 'error')
+    || !summary.ok
+    || (exitCode !== null && exitCode !== 0);
   if (isAgentError) {
     setAgentStatus(
       `agent error: ${agentPayload.error || 'see log'} (job ${submit.job_id})`,
