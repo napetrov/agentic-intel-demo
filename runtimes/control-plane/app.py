@@ -71,6 +71,7 @@ OFFLOAD_WORKER_URL = os.environ.get(
     "OFFLOAD_WORKER_URL", "http://offload-worker.system-b.svc.cluster.local:8080"
 ).rstrip("/")
 OFFLOAD_TIMEOUT_SECONDS = _parse_env_number("OFFLOAD_TIMEOUT_SECONDS", "60", float)
+OFFLOAD_ASYNC_SUBMIT = os.environ.get("OFFLOAD_ASYNC_SUBMIT", "0").strip().lower() in {"1", "true", "yes", "on"}
 MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "")
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "")
 MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
@@ -268,35 +269,14 @@ def ready() -> dict[str, str]:
     return {"status": "ready"}
 
 
-@app.post("/offload", response_model=OffloadSubmitted)
-def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
-    job_id = f"job-{uuid.uuid4().hex[:12]}"
-    now = time.time()
-    _jobs[job_id] = {
-        "job_id": job_id,
-        "status": "running",
-        "session_id": req.session_id,
-        "task_id": None,
-        "result": None,
-        "result_ref": None,
-        "error": None,
-        "submitted_at": now,
-        "completed_at": None,
-    }
+def _run_offload_worker(job_id: str, req: OffloadRequest, timeout: float) -> None:
+    """Execute the worker call and update the job registry.
 
-    # `is not None`: 0 is an invalid request (validator rejects it), not
-    # "use the default". Truthiness would silently coerce 0 to default.
-    timeout = (
-        req.timeout_seconds
-        if req.timeout_seconds is not None
-        else OFFLOAD_TIMEOUT_SECONDS
-    )
-    # httpx.HTTPError covers network/timeout/5xx via raise_for_status();
-    # ValueError (parent of json.JSONDecodeError) covers a 200 response
-    # body that is not valid JSON — e.g. an HTML error page returned by a
-    # misbehaving proxy. isinstance check rejects a JSON body that decodes
-    # to a list/scalar instead of an object. Either way, mark the job
-    # failed instead of leaving it stuck in `running`.
+    The public demo uses this in a background thread so POST /offload can
+    return `running` immediately and the browser can observe a real
+    running → completed transition via polling. Unit/local paths can keep
+    synchronous submission by leaving OFFLOAD_ASYNC_SUBMIT unset.
+    """
     try:
         resp = httpx.post(
             f"{OFFLOAD_WORKER_URL}/run",
@@ -320,13 +300,11 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
             error=f"offload-worker call failed: {exc}",
             completed_at=time.time(),
         )
-        raise HTTPException(
-            status_code=502, detail=f"offload-worker unreachable: {exc}"
-        ) from exc
+        return
 
     worker_status = body.get("status")
     if worker_status == "ok":
-        merged = _jobs.update_fields(
+        _jobs.update_fields(
             job_id,
             task_id=body.get("task_id"),
             completed_at=time.time(),
@@ -335,18 +313,62 @@ def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
             result_ref=body.get("result_key"),
         )
     else:
-        merged = _jobs.update_fields(
+        _jobs.update_fields(
             job_id,
             task_id=body.get("task_id"),
             completed_at=time.time(),
             status="error",
             error=body.get("error") or "offload-worker returned error",
         )
-    final_status = merged["status"]
+
+
+@app.post("/offload", response_model=OffloadSubmitted)
+def submit_offload(req: OffloadRequest) -> OffloadSubmitted:
+    job_id = f"job-{uuid.uuid4().hex[:12]}"
+    now = time.time()
+    _jobs[job_id] = {
+        "job_id": job_id,
+        "status": "running",
+        "session_id": req.session_id,
+        "task_id": None,
+        "result": None,
+        "result_ref": None,
+        "error": None,
+        "submitted_at": now,
+        "completed_at": None,
+    }
+
+    # `is not None`: 0 is an invalid request (validator rejects it), not
+    # "use the default". Truthiness would silently coerce 0 to default.
+    timeout = (
+        req.timeout_seconds
+        if req.timeout_seconds is not None
+        else OFFLOAD_TIMEOUT_SECONDS
+    )
+
+    if OFFLOAD_ASYNC_SUBMIT:
+        threading.Thread(
+            target=_run_offload_worker,
+            args=(job_id, req, timeout),
+            name=f"offload-{job_id}",
+            daemon=True,
+        ).start()
+        return OffloadSubmitted(
+            job_id=job_id,
+            status="running",
+            session_id=req.session_id,
+        )
+
+    _run_offload_worker(job_id, req, timeout)
+    entry = _jobs[job_id]
+    if entry["status"] == "error" and str(entry.get("error") or "").startswith(
+        "offload-worker call failed:"
+    ):
+        raise HTTPException(status_code=502, detail=entry["error"])
 
     return OffloadSubmitted(
         job_id=job_id,
-        status=final_status,
+        status=entry["status"],
         session_id=req.session_id,
     )
 

@@ -12,12 +12,14 @@ narrate "[scenario] market-research"
 narrate "Starting market research demo"
 narrate "Flow: 1. frame the question 2. prepare structured analysis inputs 3. offload analysis to System B 4. collect findings 5. return a concise report"
 narrate "Scenario contract: route=offload_system_b; System A owns interaction/routing/result delivery; System B owns analytics execution"
+sleep 0.7
 
 narrate_blank
 narrate "[step 1/5] frame the question"
 echo "+ sed -n '1,44p' report-task.md"
 sed -n '1,44p' "$TASK_BRIEF"
 echo "question: Which SMB segment should be targeted first for an AI meeting-notes product?"
+sleep 0.7
 
 narrate_blank
 narrate "[step 2/5] prepare structured analysis inputs"
@@ -31,6 +33,7 @@ professional services	data sensitivity	6
 DATA
 echo "+ cat /tmp/market-notes.tsv"
 cat /tmp/market-notes.tsv
+sleep 0.7
 
 narrate_blank
 narrate "[step 3/5] offload analysis to System B"
@@ -45,6 +48,7 @@ for r in rows:
 for seg, scores in sorted(by.items(), key=lambda kv: statistics.mean(kv[1]), reverse=True):
     print(f'{seg}: mean_score={statistics.mean(scores):.1f} evidence_points={len(scores)}')
 PY
+sleep 0.7
 
 narrate_blank
 narrate "[step 4/5] collect findings"
@@ -65,6 +69,7 @@ Evidence: structured notes scored 5 signals across 3 segments; top mean score wa
 Recommended next step: run a 2-week pilot with sales-led SMB teams, while preparing a compliance-oriented follow-up for professional services.
 REPORT
 sed -n '1,80p' "$REPORT"
+sleep 0.7
 
 narrate_blank
 narrate "[step 5/5] return structured result"
