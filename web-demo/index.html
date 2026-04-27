@@ -293,10 +293,10 @@
           <div class="panel-head">
             <div>
               <div class="section-title">Agent command</div>
-              <div class="section-subtitle">Send a free-form command to the agent gateway and watch it pick a tool</div>
+              <div class="section-subtitle">Runs on System B through the agent-stub gateway</div>
             </div>
           </div>
-          <div class="panel-note">Submits <code>task_type=agent_invoke</code> through <code>/api/offload</code>; the agent gateway classifies the input (shell / read_file / list_files / summarize / echo) and runs it. <code>read</code> and <code>list</code> are scoped to the read-only <code>demo-workspace/</code> mount (files: <code>AGENTS.md</code>, <code>BOOTSTRAP.md</code>, <code>IDENTITY.md</code>, <code>MEMORY.md</code>, <code>SOUL.md</code>, <code>USER.md</code>). Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, <code>read AGENTS.md</code>, or <code>summarize OpenClaw orchestrates agentic execution on Intel CPUs.</code></div>
+          <div class="panel-note">Path: web demo → System A control plane → System B offload-worker → System B agent-stub. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, or <code>read AGENTS.md</code>.</div>
           <form id="agent-command-form" class="agent-command-form" autocomplete="off">
             <input
               id="agent-command-input"
@@ -308,7 +308,7 @@
             <button type="submit" id="agent-command-submit" class="primary">Run agent command</button>
           </form>
           <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
-          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the agent's tool choice, stdout, and trace appear here.</pre>
+          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the selected tool and result appear here.</pre>
         </section>
 
         <section class="workspace">

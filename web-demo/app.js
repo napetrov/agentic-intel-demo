@@ -312,6 +312,7 @@ let currentIncludeSubagent = false;
 let lastSessionRecords = [];
 let runTimers = [];
 let liveRunId = 0;
+let liveArchitecturePinned = false;
 const originalRunLabel = runDemoBtn.textContent;
 
 // Pure helpers (profileToVcpu/escapeHtml/truncateValue/formatAge/
@@ -356,6 +357,7 @@ function cancelRun() {
   // scenario). runLiveWalkthrough checks `myRunId === liveRunId` after each
   // await and bails out early when this counter advances.
   liveRunId += 1;
+  liveArchitecturePinned = false;
   restoreRunButton();
 }
 
@@ -472,6 +474,7 @@ function renderSystemA(scenario, phase) {
 // Re-render System A using the current scenario + multi-session state.
 // Called when /api/sessions polling produces a fresh snapshot.
 function redrawSystemA() {
+  if (liveArchitecturePinned) return;
   const scenario = currentScenario ? scenarios[currentScenario] : null;
   renderSystemA(scenario, currentPhase);
 }
@@ -531,8 +534,41 @@ function renderOffload(scenario, phase, includeSubagent) {
 // Called from the /api/sessions poll loop alongside redrawSystemA so
 // system_b-targeted fan-out sessions appear in the right pool.
 function redrawSystemB() {
+  if (liveArchitecturePinned) return;
   const scenario = currentScenario ? scenarios[currentScenario] : null;
   renderSystemB(scenario, currentPhase, currentIncludeSubagent);
+}
+
+function renderLiveAgentArchitecture(key, state = 'running') {
+  liveArchitecturePinned = true;
+  currentScenario = key;
+  currentPhase = state === 'running' ? 'running' : 'planned';
+  setDataMode(`Live agent command: ${key}`);
+  setOrchestrationActive(['openclaw']);
+  setServiceState({});
+  const isRunning = state === 'running';
+  const rowState = isRunning ? 'running' : 'planned';
+  const terminalLabel = state === 'error' ? 'failed' : 'completed';
+  sysAAgentsEl.innerHTML = agentRowHtml('control-plane-offload', 1, rowState);
+  renderCapacity(isRunning ? 1 : 0);
+  sysBOffloadEl.innerHTML = `
+    <div class="agent-row ${rowState}">
+      <span class="agent-name">agent-stub gateway</span>
+      <span class="agent-cpu">System B</span>
+      <span class="agent-status">${isRunning ? 'running' : terminalLabel}</span>
+    </div>
+  `;
+  renderCapacityB(isRunning ? 1 : 0);
+  setCrossArrow(true);
+  renderConsole({
+    mode: 'live agent_invoke',
+    route: 'web demo → System A → System B',
+    'system a': 'control-plane-offload',
+    'system b': 'offload-worker → agent-stub',
+    'agent runtime': 'System B agent-stub',
+    'model route': 'not used for this command',
+    'artifact view': 'live job result'
+  });
 }
 
 function setCrossArrow(visible) {
@@ -613,9 +649,9 @@ function applyPlanned(key) {
   renderOffload(scenario, 'planned', false);
   setCrossArrow(false);
   renderToolActivity(buildScenarioToolActivity(scenario, 'planned'));
-  commandLogEl.textContent = 'Press "Run demo" to execute this scenario and stream the live command log.';
-  renderMetrics(scenario.metrics);
-  result.textContent = `Press "Run demo" to render the ${key} artifact here.`;
+  commandLogEl.textContent = 'Press "Run demo" to execute a live agent call. Scenario walkthrough metrics are hidden until a run starts.';
+  renderMetrics({ Status: 'not started', Mode: 'live backend when available', Route: '—', Tool: '—' });
+  result.textContent = `Press "Run demo" to run ${key}. No artifact has been produced yet.`;
   result.className = 'result empty-state';
   renderConsole(scenario.console);
 }
@@ -809,13 +845,13 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!scenario) return;
   const myRunId = ++liveRunId;
   const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const route = scenario.metrics.Route || (scenario.console && scenario.console.placement) || '—';
-  const model = scenario.metrics.Model || '—';
+  const liveRoute = 'web demo → System A control plane → System B offload-worker → System B agent-stub';
+  const liveAgent = 'System B agent-stub';
   const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'whoami' } };
 
-  applyRunning(scenarioKey, { includeSubagentNow: false });
+  renderLiveAgentArchitecture(scenarioKey, 'running');
 
-  // Live walkthrough goes through OpenClaw's gateway via task_type=agent_invoke
+  // Live walkthrough goes through the System B agent-stub gateway via task_type=agent_invoke
   // (the worker forwards to OPENCLAW_GATEWAY_URL/tools/invoke). The gateway
   // classifies the input and runs a real allow-listed tool, so the command
   // log shows actual stdout/result rather than a scripted narration.
@@ -824,22 +860,32 @@ async function runLiveWalkthrough(scenarioKey) {
     payload: { tool: invoke.tool, args: invoke.args },
     session_id: sessionId
   };
-  commandLogEl.textContent =
-    `$ POST /api/offload ${JSON.stringify({ task_type: 'agent_invoke', tool: invoke.tool, args: invoke.args })}\n`;
-  result.textContent = `Awaiting OpenClaw response for ${scenarioKey}…`;
+  commandLogEl.textContent = [
+    `Live run: ${scenarioKey}`,
+    `Route: ${liveRoute}`,
+    `Agent: ${liveAgent}`,
+    `Input: ${invoke.args && invoke.args.text ? invoke.args.text : invoke.tool}`,
+    ''
+  ].join('\n');
+  result.textContent = `Live run submitted for ${scenarioKey}; waiting for job result…`;
   result.className = 'result empty-state';
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'active' }
   ]);
   renderMetrics({
-    Model: model,
-    Route: `${route} · submitting`,
-    Tools: 'agent_invoke',
-    Artifacts: '0'
+    Status: 'submitting',
+    Route: 'System A → System B',
+    Agent: liveAgent,
+    Tool: invoke.tool
   });
 
   const stillCurrent = () => myRunId === liveRunId;
   const finish = () => { if (stillCurrent()) restoreRunButton(); };
+  const finalizeLive = (state) => {
+    if (!stillCurrent()) return;
+    renderLiveAgentArchitecture(scenarioKey, state);
+    finish();
+  };
   const appendLog = (line) => {
     if (!stillCurrent()) return;
     commandLogEl.textContent += (commandLogEl.textContent.endsWith('\n') ? '' : '\n') + line;
@@ -857,7 +903,7 @@ async function runLiveWalkthrough(scenarioKey) {
     if (!stillCurrent()) return;
     appendLog(`[error] submit failed: ${err.message}`);
     result.textContent = `Live run failed: ${err.message}`;
-    finish();
+    finalizeLive('error');
     return;
   }
   if (!stillCurrent()) return;
@@ -888,7 +934,7 @@ async function runLiveWalkthrough(scenarioKey) {
       if (!stillCurrent()) return;
       appendLog(`[error] poll failed: ${err.message}`);
       renderPollError(`Live run failed while polling job ${submit.job_id}: ${err.message}`);
-      finish();
+      finalizeLive('error');
       return;
     }
     if (!stillCurrent()) return;
@@ -899,13 +945,13 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
     appendLog(`[error] job did not complete within 90s`);
     renderPollError(`Live run timed out waiting for job ${submit.job_id} (90s).`);
-    finish();
+    finalizeLive('error');
     return;
   }
   if (status.status === 'error') {
     appendLog(`[worker error] ${status.error || 'unknown error'}`);
     result.textContent = `Live run errored: ${status.error || 'see log'}`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -925,7 +971,7 @@ async function runLiveWalkthrough(scenarioKey) {
       appendLog(`[warn] gateway returned non-JSON body (${text.length} chars):`);
       appendLog(text.slice(0, 500) + (text.length > 500 ? ' …[truncated]' : ''));
       result.textContent = `Live run finished, but the gateway returned a non-JSON body (job ${submit.job_id}).`;
-      finish();
+      finalizeLive('error');
       return;
     } else {
       agentPayload = wrapper;
@@ -935,13 +981,13 @@ async function runLiveWalkthrough(scenarioKey) {
     if (!stillCurrent()) return;
     if (!agentPayload) {
       result.textContent = `Live run finished, but response artifact fetch failed (job ${submit.job_id}).`;
-      finish();
+      finalizeLive('error');
       return;
     }
   } else {
     appendLog(`[agent] empty response (no inline result, no artifact ref)`);
     result.textContent = `Live run returned no payload (job ${submit.job_id}).`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -952,7 +998,7 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!agentPayload || typeof agentPayload !== 'object' || Array.isArray(agentPayload)) {
     appendLog(`[agent] gateway response was not a JSON object (got ${typeof agentPayload})`);
     result.textContent = `Live run finished, but the gateway response wasn't a JSON object (job ${submit.job_id}).`;
-    finish();
+    finalizeLive('error');
     return;
   }
 
@@ -984,29 +1030,49 @@ async function runLiveWalkthrough(scenarioKey) {
     { icon: '🤖', tool: 'openclaw', value: `tool=${chosenTool}${exitCode !== null ? ` exit=${exitCode}` : ''}`, status: succeeded ? 'done' : 'error' }
   ]);
   renderMetrics({
-    Model: model,
-    Route: `${route} · live`,
-    Tools: chosenTool,
-    Artifacts: status.result_ref ? '1' : '0',
+    Status: succeeded ? 'completed' : 'failed',
+    Route: 'System A → System B',
+    Agent: liveAgent,
+    Tool: chosenTool,
+    Exit: exitCode === null ? '—' : String(exitCode),
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
   });
+  renderLiveAgentArchitecture(scenarioKey, succeeded ? 'done' : 'error');
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
     chosenTool,
     exitCode,
     elapsedMs,
-    route,
+    route: liveRoute,
+    agent: liveAgent,
     succeeded,
     resultRef: status.result_ref || null,
-    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null
+    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null,
+    output: liveOutputSummary(chosenTool, inner)
   });
   result.className = 'result';
   finish();
 }
 
-function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedMs, route, succeeded, resultRef, agentElapsedMs }) {
+function liveOutputSummary(chosenTool, inner) {
+  if (!inner || typeof inner !== 'object') return '';
+  if (chosenTool === 'shell') {
+    const stdout = (inner.stdout || '').trimEnd();
+    const stderr = (inner.stderr || '').trimEnd();
+    return stdout || stderr || '(no output)';
+  }
+  if (chosenTool === 'read_file') return (inner.content || '').trimEnd();
+  if (chosenTool === 'list_files') {
+    return (inner.entries || []).map((e) => `${e.kind === 'dir' ? 'dir ' : 'file'} ${e.name}`).join('\n');
+  }
+  if (chosenTool === 'summarize') return inner.first_sentence || '';
+  if (chosenTool === 'echo') return (inner.echo && inner.echo.text) || inner.text || '';
+  return JSON.stringify(inner, null, 2);
+}
+
+function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedMs, route, agent, succeeded, resultRef, agentElapsedMs, output }) {
   const elapsed = elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—';
   const verdict = succeeded ? 'PASS' : 'FAIL';
   const lines = [
@@ -1016,13 +1082,16 @@ function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedM
     '',
     `job_id    ${jobId}`,
     `route     ${route}`,
+    `agent     ${agent}`,
     `tool      ${chosenTool}`,
   ];
   if (exitCode !== null) lines.push(`exit      ${exitCode}`);
   lines.push(`elapsed   ${elapsed}${agentElapsedMs !== null ? ` (gateway ${agentElapsedMs} ms)` : ''}`);
   if (resultRef) lines.push(`stored    ${resultRef}`);
-  // Intentionally omit the full stdout — the live command log above already
-  // shows it. The Result panel is the compact summary, not a duplicate.
+  if (output) {
+    const compact = output.length > 1200 ? `${output.slice(0, 1200)}\n…[truncated]` : output;
+    lines.push('', 'Output', compact);
+  }
   lines.push('', `Final: ${verdict}`);
   return lines.join('\n');
 }
@@ -1035,6 +1104,7 @@ runDemoBtn.addEventListener('click', () => {
 
   clearRunTimers();
   liveRunId += 1;
+  liveArchitecturePinned = false;
   runDemoBtn.textContent = liveBackendAvailable ? 'Running (live)…' : 'Running...';
   runDemoBtn.disabled = true;
 
@@ -1141,17 +1211,90 @@ function renderAgentResult(payload) {
   emitAgentResult(payload, appendAgentLog);
 }
 
+function agentResultSummary(payload) {
+  if (!payload || typeof payload !== 'object') return { ok: false, tool: 'unknown', lines: ['No agent response.'] };
+  if (payload.status === 'error') return { ok: false, tool: payload.tool || 'agent', lines: [`Agent error: ${payload.error || 'unknown error'}`] };
+  if (payload.status !== 'ok') return { ok: false, tool: payload.tool || 'agent', lines: [`Unexpected agent status: ${payload.status || 'missing'}`] };
+
+  const result = payload.result || {};
+  const chosen = result.chosen_tool || payload.tool || 'agent';
+  const rationale = result.rationale || '';
+  const inner = result.result && result.chosen_tool ? result.result : result;
+  const lines = [
+    'Route: web demo → System A control plane → System B offload-worker → System B agent-stub',
+    `Agent: System B agent-stub`,
+    `Tool selected: ${chosen}${rationale ? ` — ${rationale}` : ''}`,
+  ];
+
+  if (chosen === 'shell') {
+    lines.push(`Command: ${(inner.argv || []).join(' ') || 'shell'}`);
+    lines.push(`Exit code: ${inner.exit_code}`);
+    if (inner.stdout) lines.push(`Output:\n${inner.stdout.trimEnd()}`);
+    if (inner.stderr) lines.push(`Stderr:\n${inner.stderr.trimEnd()}`);
+  } else if (chosen === 'read_file') {
+    lines.push(`Read: ${inner.path || '(unknown file)'}`);
+    lines.push((inner.content || '').trimEnd() || '(empty file)');
+  } else if (chosen === 'list_files') {
+    lines.push(`List: ${inner.root || '.'}`);
+    const entries = (inner.entries || []).map((e) => `${e.kind === 'dir' ? 'dir ' : 'file'} ${e.name}`);
+    lines.push(entries.length ? entries.join('\n') : '(no entries)');
+  } else if (chosen === 'summarize') {
+    lines.push(inner.first_sentence ? `Summary: ${inner.first_sentence}` : 'Summary complete.');
+  } else if (chosen === 'echo') {
+    const echoed = inner.echo && inner.echo.text ? inner.echo.text : (inner.text || '');
+    lines.push(`No execution rule matched, so the gateway echoed the input instead of running a command.`);
+    if (echoed) lines.push(`Echo: ${echoed}`);
+  } else {
+    lines.push(JSON.stringify(inner, null, 2));
+  }
+  return { ok: true, tool: chosen, lines };
+}
+
+function renderAgentCommandOnArchitecture(tool, status = 'running') {
+  setCrossArrow(true);
+  const terminal = status === 'done' || status === 'error';
+  sysAAgentsEl.innerHTML = terminal
+    ? `
+      <div class="agent-row planned">
+        <span class="agent-name">control-plane-offload</span>
+        <span class="agent-cpu">System A</span>
+        <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
+      </div>
+    `
+    : agentRowHtml('control-plane-offload', 1, 'running');
+  renderCapacity(terminal ? 0 : 1);
+  if (terminal) {
+    sysBOffloadEl.innerHTML = `
+      <div class="agent-row planned">
+        <span class="agent-name">agent-stub gateway</span>
+        <span class="agent-cpu">System B</span>
+        <span class="agent-status">${status === 'error' ? 'failed' : 'completed'}</span>
+      </div>
+    `;
+  } else {
+    sysBOffloadEl.innerHTML = agentRowHtml('agent-stub gateway', 1, 'running');
+  }
+  renderCapacityB(terminal ? 0 : 1);
+  renderToolActivity([
+    { icon: '🌐', tool: 'submit', value: 'POST /api/offload', status: 'done' },
+    { icon: '🧭', tool: 'route', value: 'System A → System B', status: 'done' },
+    { icon: '🤖', tool: 'agent-stub', value: tool || 'classifying', status: status === 'error' ? 'error' : status }
+  ]);
+}
+
 async function runAgentCommand(text) {
   if (!liveBackendAvailable) {
     setAgentStatus(BACKEND_REQUIRED_MSG, 'warn');
     return;
   }
   const sessionId = `web-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  setAgentStatus(`submitting "${text}"…`, 'pending');
+  setAgentStatus(`running on System B agent-stub…`, 'pending');
   // Each invocation is its own transcript — clearing avoids piling history on
   // top of an old run that may have errored or been about a different tool.
   resetAgentLog();
-  appendAgentLog(`$ POST /api/offload {task_type:"agent_invoke", tool:"command", text:${JSON.stringify(text)}}`);
+  appendAgentLog(`Input: ${text}`);
+  appendAgentLog(`Route: web demo → System A control plane → System B offload-worker → System B agent-stub`);
+  renderAgentCommandOnArchitecture('classifying', 'active');
 
   // Deadline guards the entire submit+poll flow. Each fetchJson call gets
   // an explicit timeout derived from the remaining budget; without this,
@@ -1175,10 +1318,11 @@ async function runAgentCommand(text) {
   } catch (err) {
     setAgentStatus(`submit failed: ${err.message}`, 'error');
     appendAgentLog(`[error] submit failed: ${err.message}`);
+    renderAgentCommandOnArchitecture('submit failed', 'error');
     return;
   }
 
-  appendAgentLog(`job_id=${submit.job_id} status=${submit.status}`);
+  appendAgentLog(`Job: ${submit.job_id} (${submit.status})`);
 
   // The control-plane forwards synchronously, so the first GET typically
   // already returns terminal. Poll briefly to stay correct if that ever
@@ -1195,6 +1339,7 @@ async function runAgentCommand(text) {
     } catch (err) {
       setAgentStatus(`poll failed: ${err.message}`, 'error');
       appendAgentLog(`[error] poll failed: ${err.message}`);
+      renderAgentCommandOnArchitecture('poll failed', 'error');
       return;
     }
     if (status.status === 'completed' || status.status === 'error') break;
@@ -1204,11 +1349,13 @@ async function runAgentCommand(text) {
   if (!status || (status.status !== 'completed' && status.status !== 'error')) {
     setAgentStatus('agent did not respond within 30s', 'error');
     appendAgentLog(`[error] agent did not respond within 30s`);
+    renderAgentCommandOnArchitecture('timeout', 'error');
     return;
   }
   if (status.status === 'error') {
     setAgentStatus(`worker error: ${status.error || 'unknown'}`, 'error');
     appendAgentLog(`[worker error] ${status.error || 'unknown'}`);
+    renderAgentCommandOnArchitecture('worker error', 'error');
     return;
   }
 
@@ -1230,21 +1377,33 @@ async function runAgentCommand(text) {
         `agent finished, but response is stored as artifact ${status.result_ref} (fetch failed)`,
         'warn'
       );
+      renderAgentCommandOnArchitecture('artifact fetch failed', 'error');
       return;
     }
   } else {
     appendAgentLog(`[agent] empty response (no inline result, no artifact ref)`);
     setAgentStatus(`agent returned no payload (job ${submit.job_id})`, 'warn');
+    renderAgentCommandOnArchitecture('empty response', 'error');
     return;
   }
 
-  renderAgentResult(agentPayload);
+  const summary = agentResultSummary(agentPayload);
+  resetAgentLog();
+  summary.lines.forEach(appendAgentLog);
 
   // Surface gateway-level errors honestly: when the agent itself reported
   // status="error" (e.g. read on a missing file), the badge must reflect
   // that. The log already shows the error; don't end with "agent returned ok".
-  const isAgentError = agentPayload && agentPayload.status === 'error';
   const chosen = agentPayload && agentPayload.result && agentPayload.result.chosen_tool;
+  const innerResult = agentPayload && agentPayload.result && agentPayload.result.result
+    ? agentPayload.result.result
+    : (agentPayload && agentPayload.result);
+  const exitCode = innerResult && typeof innerResult === 'object' && 'exit_code' in innerResult
+    ? innerResult.exit_code
+    : null;
+  const isAgentError = (agentPayload && agentPayload.status === 'error')
+    || !summary.ok
+    || (exitCode !== null && exitCode !== 0);
   if (isAgentError) {
     setAgentStatus(
       `agent error: ${agentPayload.error || 'see log'} (job ${submit.job_id})`,
@@ -1252,10 +1411,11 @@ async function runAgentCommand(text) {
     );
   } else {
     setAgentStatus(
-      chosen ? `agent ran ${chosen} (job ${submit.job_id})` : `agent returned ok (job ${submit.job_id})`,
+      chosen ? `System B agent-stub ran ${chosen} (job ${submit.job_id})` : `System B agent-stub returned ok (job ${submit.job_id})`,
       'ok'
     );
   }
+  renderAgentCommandOnArchitecture(chosen || summary.tool, isAgentError ? 'error' : 'done');
 }
 
 async function fetchArtifactPayload(ref, log = appendAgentLog) {
