@@ -54,21 +54,44 @@ Bring up the base stack with the Flowise overlay:
 FLOWISE_USERNAME=admin
 FLOWISE_PASSWORD=<choose-one>
 FLOWISE_SECRETKEY_OVERWRITE=$(openssl rand -hex 32)
-LITELLM_BASE_URL=http://litellm:4000          # only if LiteLLM also runs in compose
 LITELLM_API_KEY=sk-demo-not-a-real-key
+# Optional: activate any of the real providers declared in
+# config/model-routing/litellm-compose.yaml.
+# AWS_BEARER_TOKEN_BEDROCK=...
+# SAMBANOVA_API_KEY=...
+# OPENAI_API_KEY=...
 
+eval "$(scripts/lib/load-versions.sh)"   # pin LITELLM_IMAGE from versions.yaml
 docker compose -f docker-compose.yaml -f docker-compose.flowise.yaml up --build
 # Flowise UI: http://localhost:3000  (login with the values above)
 ```
 
+What the overlay brings up alongside Flowise:
+
+1. **`litellm`** — the OpenAI-compatible model gateway, mounted from
+   `config/model-routing/litellm-compose.yaml`. The `default`, `reasoning`,
+   and `fast` aliases use LiteLLM's built-in `mock_response`, so the demo
+   boots with **zero cloud credentials**: any caller that POSTs to
+   `/v1/chat/completions` gets a deterministic canned reply, which is
+   enough to prove the wire end-to-end. The `bedrock`, `sambanova`, and
+   `openai` aliases activate when the matching env var is set.
+2. **`flowise-seed`** — a one-shot container that polls Flowise's
+   `/api/v1/ping`, then idempotently creates the `litellm-openai`
+   credential and the `LITELLM_BASE_URL` / `CONTROL_PLANE_BASE_URL`
+   Variables. Re-running `compose up` is a no-op once the records exist;
+   rotating `LITELLM_API_KEY` in `.env` overwrites the credential on the
+   next boot.
+
+Building the actual flow is still a one-time UI step — see
+`config/flowise/flows/terminal-agent.md` for the four nodes to drop in.
+The credentials and variables the spec references are already there.
+
 Notes:
-- The base `docker-compose.yaml` does NOT ship LiteLLM (it's deployed as a
-  k8s Deployment in `k8s/system-a/litellm.yaml`). On a laptop you can either
-  add a LiteLLM service to the overlay or point `LITELLM_BASE_URL` at a
-  remote LiteLLM. Until that's wired, model nodes inside Flowise can talk
-  directly to a cloud provider with their own credential.
-- Flowise persists to a named docker volume `flowise-data`. Reset with
-  `docker compose ... down -v`.
+- Flowise persists to a named docker volume `flowise-data`. The flow you
+  build survives `docker compose down`; reset with `docker compose ... down -v`.
+- The seeder uses Python stdlib only (image: `python:3.12-alpine`,
+  bind-mounted from `scripts/flowise/seed.py`) so the overlay adds no
+  package downloads beyond LiteLLM and Flowise themselves.
 
 ### Kubernetes (System A)
 
@@ -168,16 +191,25 @@ contract.
   manifest does not pin a NetworkPolicy; if you tighten egress on the
   `agents` namespace, allow-list `litellm.inference.svc.cluster.local` and
   `control-plane.platform.svc.cluster.local` so flows still work.
-- The base `docker-compose.yaml` does not include LiteLLM, so flows built
-  against the compose stack need a remote LiteLLM URL or a side-car
-  LiteLLM service. Adding LiteLLM to the base compose is tracked
-  separately.
+- The base `docker-compose.yaml` still does not include LiteLLM; the
+  Flowise overlay adds it as a sibling so Flowise has a gateway to call
+  out of the box. If you also bring up `docker-compose.openwebui.yaml`,
+  OpenWebUI's default `OPENAI_API_BASE_URL` already points at this same
+  `litellm` service by name — no extra wiring needed.
+- The chatflow JSON itself is not auto-imported. Hand-authoring the
+  Flowise 2.2.7 chatflow JSON without a live Flowise to export from is
+  fragile (per-node `inputAnchors` / `outputAnchors` arrays must match
+  the runtime component registry exactly), so the seeder stops at
+  credentials + variables — the values the flow specs reference. Building
+  the flow itself stays a one-time UI step.
 - Telemetry is disabled by default (`DISABLE_FLOWISE_TELEMETRY=true`). Do
   not flip this on without reviewing what Flowise sends upstream.
 
 ## Related files
 
-- `docker-compose.flowise.yaml` — overlay for the laptop bring-up
+- `docker-compose.flowise.yaml` — overlay for the laptop bring-up (Flowise + LiteLLM + seeder)
+- `config/model-routing/litellm-compose.yaml` — compose-mode LiteLLM config (mock-default, opt-in providers)
+- `scripts/flowise/seed.py` — idempotent credential + variable seeder
 - `k8s/system-a/flowise.yaml` — manifest for the System A cluster
 - `config/flowise/README.md` — directory overview
 - `config/flowise/flows/*.md` — per-scenario flow specs

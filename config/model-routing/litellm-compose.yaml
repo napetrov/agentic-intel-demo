@@ -1,0 +1,74 @@
+# LiteLLM routing configuration — compose-mode (laptop bring-up).
+#
+# Sibling of litellm-config.yaml (k8s template). The k8s deploy assumes
+# System B's vLLM and cloud creds are reachable; on a laptop neither is
+# guaranteed, so this file shifts the defaults so that the demo boots with
+# zero external dependencies:
+#
+#   - `default` and `reasoning` use LiteLLM's `mock_response` so any caller
+#     (Flowise, OpenWebUI, the control-plane health probe) gets a
+#     deterministic canned reply on the OpenAI-compatible /v1/chat/completions
+#     contract. This is the "wires connect" check, not a model quality check.
+#   - `bedrock`, `sambanova`, `openai` are declared but only resolve when the
+#     matching env var is non-empty. With keys absent, requests routed to
+#     these aliases fail at LiteLLM with a clear "missing credential" error
+#     rather than the proxy refusing to start.
+#
+# Once you wire a real provider in .env, point flows at the matching alias
+# (e.g. `model: openai`) instead of the `default` mock.
+#
+# Aliases consumed by other parts of the stack (kept name-compatible with
+# the k8s ConfigMap so flow specs stay portable):
+#   default     — primary planner / chat (mock here, vLLM/Bedrock in k8s)
+#   reasoning   — long-form reasoning (mock here, Bedrock in k8s)
+#   fast        — low-latency completions (mock here, vLLM in k8s)
+
+model_list:
+  # ---- Mock defaults (always-available, no creds) -------------------------
+  - model_name: default
+    litellm_params:
+      model: openai/mock-gpt
+      mock_response: |
+        I'm the demo's mock model. Tool calls and routing wires are intact;
+        plug a real provider key into .env to get substantive replies.
+
+  - model_name: reasoning
+    litellm_params:
+      model: openai/mock-gpt-reasoning
+      mock_response: |
+        Mock reasoning reply — set AWS_BEARER_TOKEN_BEDROCK in .env to swap
+        in Claude Sonnet via Bedrock.
+
+  - model_name: fast
+    litellm_params:
+      model: openai/mock-gpt-fast
+      mock_response: "Mock fast reply."
+
+  # ---- Optional real-provider aliases (gated on env vars) -----------------
+  # Each entry below resolves only when its api_key env var is non-empty.
+  # LiteLLM still loads the entry when the env is empty, but a request
+  # targeted at that alias will surface a credential error to the caller —
+  # which is the desired behavior (loud failure, no silent fallback to
+  # mock once the user has explicitly opted into a real provider).
+  - model_name: bedrock
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      api_key: os.environ/AWS_BEARER_TOKEN_BEDROCK
+      aws_region_name: os.environ/AWS_REGION
+      timeout: 60
+
+  - model_name: sambanova
+    litellm_params:
+      model: sambanova/DeepSeek-V3.1
+      api_key: os.environ/SAMBANOVA_API_KEY
+      timeout: 60
+
+  - model_name: openai
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 30
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false

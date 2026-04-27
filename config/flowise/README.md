@@ -37,14 +37,20 @@ node's "Base URL" field at flow-build time.
 
 ### Credentials
 
-Set these once in the Flowise UI (Settings → Credentials):
+In compose mode, the `flowise-seed` one-shot service in
+`docker-compose.flowise.yaml` creates the `litellm-openai` credential
+automatically (see `scripts/flowise/seed.py`). The list below is what
+gets created — useful when you're working off the k8s deploy or want to
+add the second slot manually:
 
 1. **`litellm-openai`** — type "OpenAI". Base URL: the value of
    `LITELLM_BASE_URL`. API key: any non-empty string when LiteLLM has no
-   master key set, otherwise the LiteLLM master key.
+   master key set, otherwise the LiteLLM master key. *(seeded in compose;
+   set manually in k8s.)*
 2. **`control-plane-bearer`** — type "Generic / API Key". Used by the HTTP
    nodes that call `POST /offload`. The current control plane does not
-   require auth; reserve this slot for when it does.
+   require auth; reserve this slot for when it does. *(not seeded; only
+   needed once the control plane gates `/offload`.)*
 
 ### Model aliases
 
