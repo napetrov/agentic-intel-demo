@@ -2,7 +2,7 @@
 const { test, expect } = require('@playwright/test');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
-const SCENARIOS = ['terminal-agent', 'market-research', 'large-build-test'];
+const SCENARIOS = ['terminal-agent', 'market-research', 'large-build-test', 'taskflow-pull'];
 
 async function expectToolRowsAtLeast(page, min, message) {
   const rows = page.locator('#tool-activity .tool-row:not(.empty)');

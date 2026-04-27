@@ -30,7 +30,7 @@ MINIO_BUCKET    = os.environ.get("MINIO_BUCKET", "demo-artifacts")
 # directory. Callers cannot pick the script — only the scenario name — so this
 # task type is not a generic remote shell.
 SCENARIO_SCRIPTS_DIR = Path(os.environ.get("SCENARIO_SCRIPTS_DIR", "/scenarios"))
-ALLOWED_SCENARIOS = frozenset({"terminal-agent", "market-research", "large-build-test"})
+ALLOWED_SCENARIOS = frozenset({"terminal-agent", "market-research", "large-build-test", "taskflow-pull"})
 SHELL_DEFAULT_TIMEOUT = float(os.environ.get("SHELL_TASK_TIMEOUT_SECONDS", "60"))
 SHELL_MAX_TIMEOUT = float(os.environ.get("SHELL_TASK_MAX_TIMEOUT_SECONDS", "300"))
 

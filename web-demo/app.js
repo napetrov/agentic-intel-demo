@@ -246,6 +246,88 @@ const scenarios = {
       'Final: PASS — exit 0, 142/142 passing.',
       'Artifacts: build.log, test.xml, summary.md → artifacts/demo-build/'
     ].join('\n')
+  },
+
+  'taskflow-pull': {
+    orchestrationActive: ['openclaw', 'litellm', 'sambanova'],
+    primary: { name: 'TaskFlow pull agent', vcpu: 4 },
+    subagent: null,
+    services: { erag: false, 'ent-inference': false },
+    crossSystemArrow: false,
+    console: {
+      mode: 'taskflow-pull demo',
+      'openclaw version': '2026.4.15',
+      orchestrator: 'OpenClaw',
+      'orchestration alt': 'Flowise (optional)',
+      'litellm gateway': 'litellm/sambanova primary',
+      'litellm endpoint': 'port 4000 /v1',
+      'sambanova model': 'DeepSeek-V3.1',
+      'enterprise inference': 'available as alternate route',
+      'model route': 'LiteLLM → SambaNova',
+      'session scope': 'isolated per user',
+      'placement': 'System A — 4/512 vCPU',
+      'artifact view': 'TaskFlow artifact'
+    },
+    metrics: {
+      Elapsed: '3.5s',
+      Tokens: '1,240',
+      Model: 'SambaNova via LiteLLM',
+      Route: 'OpenClaw → System A',
+      Tools: 'curl, python, grep',
+      Artifacts: '1'
+    },
+    liveScenario: { task_type: 'shell', payload: { scenario: 'taskflow-pull', timeout_seconds: 120 } },
+    toolActivity: [
+      { icon: '💻', tool: 'terminal', value: 'openclaw demo run taskflow-pull --source taskflow' },
+      { icon: '🌐', tool: 'api_call', value: 'GET ${TASKFLOW_API_URL}/tasks or fixture fallback' },
+      { icon: '📖', tool: 'read_file', value: 'agents/scenarios/taskflow-pull/task-brief.md' },
+      { icon: '🐍', tool: 'execute_code', value: 'select overdue/high task by business rules' },
+      { icon: '💻', tool: 'terminal', value: 'test -s /tmp/taskflow-<id>.md && grep task id' },
+      { icon: '📝', tool: 'summarize', value: 'TaskFlow artifact → result panel' }
+    ],
+    commandLog: `$ openclaw demo run taskflow-pull --source taskflow
+request accepted
+session_id=demo-taskflow-0427 profile=engineering
+
+$ sed -n '1,40p' agents/scenarios/taskflow-pull/task-brief.md
+# TaskFlow Pull — Bounded Task Brief
+Objective: fetch a TaskFlow task -> select -> render -> execute -> validate -> summarize.
+
+$ python3 select_task.py --rules overdue,priority,due-date
+source_kind: fixture
+task_count: 5
+picked: 101 | high | overdue | 2026-04-10 | Audit overdue invoices for Q1
+
+$ render_taskflow_action --task 101 --action escalate
+wrote /tmp/taskflow-101.md
+
+$ test -s /tmp/taskflow-101.md && grep -q "task 101" /tmp/taskflow-101.md
+validation ok
+flow complete`,
+    timeline: [
+      ['Input accepted', 'OpenClaw accepts the TaskFlow pull scenario on System A.'],
+      ['Source resolved', 'The runner reads TASKFLOW_API_URL or falls back to the shipped TaskFlow fixture.'],
+      ['Task selected', 'Business rules select one overdue/high-priority task; done/cancelled tasks are skipped.'],
+      ['Action executed', 'The bounded action writes a concrete artifact under /tmp/taskflow-<id>.md.'],
+      ['Result ready', 'Validation passes and the structured TaskFlow result is delivered.']
+    ],
+    result: [
+      'artifacts/taskflow/taskflow-101.md',
+      '─────────────────────────────────────────',
+      'TaskFlow demo artifact — task 101',
+      '',
+      'source_kind: fixture',
+      'action: escalate',
+      'title: Audit overdue invoices for Q1',
+      'priority: high',
+      'status: overdue',
+      '',
+      'Validation',
+      '  test -s /tmp/taskflow-101.md → ok',
+      '  grep -q "task 101" /tmp/taskflow-101.md → ok',
+      '',
+      'Final: PASS — selected one TaskFlow task and executed the bounded action.'
+    ].join('\n')
   }
 };
 

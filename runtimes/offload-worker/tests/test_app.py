@@ -109,7 +109,7 @@ def test_validation_error_for_bad_request():
 # ---- shell task type ----------------------------------------------------
 
 @pytest.mark.parametrize(
-    "scenario", ["terminal-agent", "market-research", "large-build-test"]
+    "scenario", ["terminal-agent", "market-research", "large-build-test", "taskflow-pull"]
 )
 def test_shell_runs_known_scenario(scenario):
     r = client.post(
@@ -127,7 +127,7 @@ def test_shell_runs_known_scenario(scenario):
 
 
 @pytest.mark.parametrize(
-    "scenario", ["terminal-agent", "market-research", "large-build-test"]
+    "scenario", ["terminal-agent", "market-research", "large-build-test", "taskflow-pull"]
 )
 def test_shell_quiet_flag_suppresses_narration(scenario):
     """payload.quiet=true must drop the [scenario]/[step] narration lines.

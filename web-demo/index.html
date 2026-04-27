@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenClaw Agentic Intel Demo</title>
-    <link rel="stylesheet" href="./styles.css?v=20260427f" />
+    <link rel="stylesheet" href="./styles.css?v=20260427g" />
   </head>
   <body>
     <div class="shell">
@@ -58,6 +58,11 @@
               <span class="tag">Demo scenario</span>
               <span class="scenario-title">Large Build/Test</span>
               <span class="scenario-desc">Heavy execution flow with routing, queueing, and handoff visibility across the stack.</span>
+            </button>
+            <button class="scenario-card" data-scenario="taskflow-pull">
+              <span class="tag">Demo scenario</span>
+              <span class="scenario-title">TaskFlow Pull</span>
+              <span class="scenario-desc">Pull a TaskFlow task, select by business rules, execute, and validate the artifact.</span>
             </button>
           </div>
           <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
@@ -192,6 +197,7 @@
               <option value="terminal-agent">terminal-agent</option>
               <option value="market-research">market-research</option>
               <option value="large-build-test">large-build-test</option>
+              <option value="taskflow-pull">taskflow-pull</option>
             </select>
             <label for="multi-session-profile" class="multi-session-label">Profile</label>
             <select id="multi-session-profile" class="multi-session-select">
@@ -357,7 +363,7 @@
         </section>
       </main>
     </div>
-    <script src="./lib/pure.js?v=20260427f"></script>
-    <script src="./app.js?v=20260427f"></script>
+    <script src="./lib/pure.js?v=20260427g"></script>
+    <script src="./app.js?v=20260427g"></script>
   </body>
 </html>
