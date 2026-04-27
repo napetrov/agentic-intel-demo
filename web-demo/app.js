@@ -844,12 +844,26 @@ async function runLiveWalkthrough(scenarioKey) {
   }
 
   // offload-worker's agent_invoke wraps the gateway response under
-  // result.response (or result_text); when over the inline threshold it lands
-  // as result_ref and we have to fetch the artifact to get the wrapper back.
+  // result.response (parsed JSON) or result.response_text (raw body when the
+  // gateway returned a non-JSON 200). When over the inline threshold it
+  // lands as result_ref and we have to fetch the artifact to get the wrapper
+  // back. We only render the JSON shape; a response_text means the gateway
+  // didn't speak our protocol, which is a failure even at HTTP 200.
   let agentPayload = null;
   if (status.result) {
     const wrapper = status.result;
-    agentPayload = wrapper.response || wrapper.response_text || wrapper;
+    if (wrapper && typeof wrapper === 'object' && 'response' in wrapper) {
+      agentPayload = wrapper.response;
+    } else if (wrapper && typeof wrapper === 'object' && 'response_text' in wrapper) {
+      const text = String(wrapper.response_text ?? '');
+      appendLog(`[warn] gateway returned non-JSON body (${text.length} chars):`);
+      appendLog(text.slice(0, 500) + (text.length > 500 ? ' …[truncated]' : ''));
+      result.textContent = `Live run finished, but the gateway returned a non-JSON body (job ${submit.job_id}).`;
+      finish();
+      return;
+    } else {
+      agentPayload = wrapper;
+    }
   } else if (status.result_ref) {
     agentPayload = await fetchArtifactPayload(status.result_ref, appendLog);
     if (!stillCurrent()) return;
@@ -865,18 +879,31 @@ async function runLiveWalkthrough(scenarioKey) {
     return;
   }
 
+  // fetchArtifactPayload's unwrap can also yield a string when only
+  // response_text is set on the artifact. Reject anything that isn't a
+  // proper JSON object so the verdict logic below can't silently coerce
+  // an unstructured body into PASS.
+  if (!agentPayload || typeof agentPayload !== 'object' || Array.isArray(agentPayload)) {
+    appendLog(`[agent] gateway response was not a JSON object (got ${typeof agentPayload})`);
+    result.textContent = `Live run finished, but the gateway response wasn't a JSON object (job ${submit.job_id}).`;
+    finish();
+    return;
+  }
+
   emitAgentResult(agentPayload, appendLog);
 
   const elapsedMs = (status.completed_at && status.submitted_at)
     ? Math.max(0, (status.completed_at - status.submitted_at) * 1000)
     : null;
-  const inner = (agentPayload && agentPayload.result && agentPayload.result.chosen_tool)
+  const inner = (agentPayload.result && agentPayload.result.chosen_tool)
     ? agentPayload.result.result
-    : (agentPayload && agentPayload.result) || null;
-  const chosenTool = (agentPayload && agentPayload.result && agentPayload.result.chosen_tool)
-    || agentPayload?.tool
+    : (agentPayload.result || null);
+  const chosenTool = (agentPayload.result && agentPayload.result.chosen_tool)
+    || agentPayload.tool
     || invoke.tool;
-  const agentOk = agentPayload && agentPayload.status !== 'error';
+  // Require an explicit status==='ok' from the gateway. Anything else
+  // (missing field, "error", unrecognized value) must not coerce to PASS.
+  const agentOk = agentPayload.status === 'ok';
   // Treat shell exit_code !== 0 as failure too, since the gateway can return
   // status=ok with an inner non-zero exit (e.g. command-not-found through
   // the shell tool). Other tools don't carry exit_code, so default to ok.
@@ -1290,8 +1317,10 @@ function dotStateForProbe(probe) {
 
 async function probeBackend() {
   // /health says the relay is up; /ready says the worker is also reachable.
-  // ready=true means "live mode available". We distinguish a
-  // control-plane-up-but-worker-down state in the dots.
+  // We additionally probe OpenClaw because Run demo now submits
+  // task_type=agent_invoke, which the worker forwards to the gateway —
+  // a healthy worker with an unset/unreachable OPENCLAW_GATEWAY_URL would
+  // fail every live run, so live mode must require gateway reachability too.
   let cpHealthy = false;
   let workerReady = false;
   try {
@@ -1308,7 +1337,6 @@ async function probeBackend() {
       workerReady = false;
     }
   }
-  liveBackendAvailable = cpHealthy && workerReady;
   setHealthDot(healthDots.systemA, cpHealthy ? 'ok' : 'down');
   // System B / OpenClaw / LiteLLM / SambaNova all sit behind the control
   // plane — we can only probe them through it. When the relay is down we
@@ -1324,12 +1352,14 @@ async function probeBackend() {
   // OpenClaw / LiteLLM / SambaNova are probed honestly via the control
   // plane. When a probe URL isn't configured the dot stays neutral
   // ("not configured") instead of mirroring the relay's health.
+  let openclawOk = false;
   if (cpHealthy) {
     const [openclaw, litellm, sambanova] = await Promise.all([
       probeDependency('openclaw'),
       probeDependency('litellm'),
       probeDependency('sambanova')
     ]);
+    openclawOk = openclaw && openclaw.state === 'ok';
     setHealthDot(
       healthDots.openclaw,
       dotStateForProbe(openclaw),
@@ -1350,9 +1380,12 @@ async function probeBackend() {
     setHealthDot(healthDots.litellm, 'unknown', cpDownTip);
     setHealthDot(healthDots.sambanova, 'unknown', cpDownTip);
   }
+  liveBackendAvailable = cpHealthy && workerReady && openclawOk;
   runDemoBtn.title = liveBackendAvailable
     ? 'Live backend detected — submits agent_invoke through /api/offload to the OpenClaw gateway.'
-    : 'Backend not detected — runs scripted walkthrough only.';
+    : (cpHealthy && workerReady && !openclawOk
+        ? 'OpenClaw gateway unreachable — runs scripted walkthrough only.'
+        : 'Backend not detected — runs scripted walkthrough only.');
 }
 
 applyIdle();
