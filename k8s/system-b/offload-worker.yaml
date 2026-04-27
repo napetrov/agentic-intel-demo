@@ -404,6 +404,10 @@ spec:
               value: "demo-artifacts"
             - name: SCENARIO_SCRIPTS_DIR
               value: "/scenarios"
+            # agent_invoke is not a Kubernetes Job. The worker forwards each
+            # request to this persistent OpenClaw-compatible gateway service.
+            - name: OPENCLAW_GATEWAY_URL
+              value: "http://agent-stub.system-b.svc.cluster.local:8080"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
