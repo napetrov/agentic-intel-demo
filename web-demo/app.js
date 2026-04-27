@@ -535,6 +535,35 @@ function redrawSystemB() {
   renderSystemB(scenario, currentPhase, currentIncludeSubagent);
 }
 
+function renderLiveAgentArchitecture(key, state = 'running') {
+  currentScenario = key;
+  currentPhase = state === 'running' ? 'running' : 'planned';
+  setDataMode(`Live agent command: ${key}`);
+  setOrchestrationActive(['openclaw']);
+  setServiceState({});
+  const rowState = state === 'running' ? 'running' : 'planned';
+  sysAAgentsEl.innerHTML = agentRowHtml('control-plane-offload', 1, rowState);
+  renderCapacity(state === 'running' ? 1 : 0);
+  sysBOffloadEl.innerHTML = `
+    <div class="agent-row ${rowState}">
+      <span class="agent-name">agent-stub gateway</span>
+      <span class="agent-cpu">System B</span>
+      <span class="agent-status">${state === 'running' ? 'running' : 'completed'}</span>
+    </div>
+  `;
+  renderCapacityB(state === 'running' ? 1 : 0);
+  setCrossArrow(true);
+  renderConsole({
+    mode: 'live agent_invoke',
+    route: 'web demo → System A → System B',
+    'system a': 'control-plane-offload',
+    'system b': 'offload-worker → agent-stub',
+    'agent runtime': 'System B agent-stub',
+    'model route': 'not used for this command',
+    'artifact view': 'live job result'
+  });
+}
+
 function setCrossArrow(visible) {
   crossArrowEl.classList.toggle('visible', Boolean(visible));
 }
@@ -613,9 +642,9 @@ function applyPlanned(key) {
   renderOffload(scenario, 'planned', false);
   setCrossArrow(false);
   renderToolActivity(buildScenarioToolActivity(scenario, 'planned'));
-  commandLogEl.textContent = 'Press "Run demo" to execute this scenario and stream the live command log.';
-  renderMetrics(scenario.metrics);
-  result.textContent = `Press "Run demo" to render the ${key} artifact here.`;
+  commandLogEl.textContent = 'Press "Run demo" to execute a live agent call. Scenario walkthrough metrics are hidden until a run starts.';
+  renderMetrics({ Status: 'not started', Mode: 'live backend when available', Route: '—', Tool: '—' });
+  result.textContent = `Press "Run demo" to run ${key}. No artifact has been produced yet.`;
   result.className = 'result empty-state';
   renderConsole(scenario.console);
 }
@@ -809,13 +838,13 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!scenario) return;
   const myRunId = ++liveRunId;
   const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const route = scenario.metrics.Route || (scenario.console && scenario.console.placement) || '—';
-  const model = scenario.metrics.Model || '—';
+  const liveRoute = 'web demo → System A control plane → System B offload-worker → System B agent-stub';
+  const liveAgent = 'System B agent-stub';
   const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'whoami' } };
 
-  applyRunning(scenarioKey, { includeSubagentNow: false });
+  renderLiveAgentArchitecture(scenarioKey, 'running');
 
-  // Live walkthrough goes through OpenClaw's gateway via task_type=agent_invoke
+  // Live walkthrough goes through the System B agent-stub gateway via task_type=agent_invoke
   // (the worker forwards to OPENCLAW_GATEWAY_URL/tools/invoke). The gateway
   // classifies the input and runs a real allow-listed tool, so the command
   // log shows actual stdout/result rather than a scripted narration.
@@ -824,18 +853,23 @@ async function runLiveWalkthrough(scenarioKey) {
     payload: { tool: invoke.tool, args: invoke.args },
     session_id: sessionId
   };
-  commandLogEl.textContent =
-    `$ POST /api/offload ${JSON.stringify({ task_type: 'agent_invoke', tool: invoke.tool, args: invoke.args })}\n`;
-  result.textContent = `Awaiting OpenClaw response for ${scenarioKey}…`;
+  commandLogEl.textContent = [
+    `Live run: ${scenarioKey}`,
+    `Route: ${liveRoute}`,
+    `Agent: ${liveAgent}`,
+    `Input: ${invoke.args && invoke.args.text ? invoke.args.text : invoke.tool}`,
+    ''
+  ].join('\n');
+  result.textContent = `Live run submitted for ${scenarioKey}; waiting for job result…`;
   result.className = 'result empty-state';
   renderToolActivity([
     { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'active' }
   ]);
   renderMetrics({
-    Model: model,
-    Route: `${route} · submitting`,
-    Tools: 'agent_invoke',
-    Artifacts: '0'
+    Status: 'submitting',
+    Route: 'System A → System B',
+    Agent: liveAgent,
+    Tool: invoke.tool
   });
 
   const stillCurrent = () => myRunId === liveRunId;
@@ -984,29 +1018,49 @@ async function runLiveWalkthrough(scenarioKey) {
     { icon: '🤖', tool: 'openclaw', value: `tool=${chosenTool}${exitCode !== null ? ` exit=${exitCode}` : ''}`, status: succeeded ? 'done' : 'error' }
   ]);
   renderMetrics({
-    Model: model,
-    Route: `${route} · live`,
-    Tools: chosenTool,
-    Artifacts: status.result_ref ? '1' : '0',
+    Status: succeeded ? 'completed' : 'failed',
+    Route: 'System A → System B',
+    Agent: liveAgent,
+    Tool: chosenTool,
+    Exit: exitCode === null ? '—' : String(exitCode),
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
   });
+  renderLiveAgentArchitecture(scenarioKey, 'done');
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
     chosenTool,
     exitCode,
     elapsedMs,
-    route,
+    route: liveRoute,
+    agent: liveAgent,
     succeeded,
     resultRef: status.result_ref || null,
-    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null
+    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null,
+    output: liveOutputSummary(chosenTool, inner)
   });
   result.className = 'result';
   finish();
 }
 
-function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedMs, route, succeeded, resultRef, agentElapsedMs }) {
+function liveOutputSummary(chosenTool, inner) {
+  if (!inner || typeof inner !== 'object') return '';
+  if (chosenTool === 'shell') {
+    const stdout = (inner.stdout || '').trimEnd();
+    const stderr = (inner.stderr || '').trimEnd();
+    return stdout || stderr || '(no output)';
+  }
+  if (chosenTool === 'read_file') return (inner.content || '').trimEnd();
+  if (chosenTool === 'list_files') {
+    return (inner.entries || []).map((e) => `${e.kind === 'dir' ? 'dir ' : 'file'} ${e.name}`).join('\n');
+  }
+  if (chosenTool === 'summarize') return inner.first_sentence || '';
+  if (chosenTool === 'echo') return (inner.echo && inner.echo.text) || inner.text || '';
+  return JSON.stringify(inner, null, 2);
+}
+
+function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedMs, route, agent, succeeded, resultRef, agentElapsedMs, output }) {
   const elapsed = elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—';
   const verdict = succeeded ? 'PASS' : 'FAIL';
   const lines = [
@@ -1016,13 +1070,16 @@ function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedM
     '',
     `job_id    ${jobId}`,
     `route     ${route}`,
+    `agent     ${agent}`,
     `tool      ${chosenTool}`,
   ];
   if (exitCode !== null) lines.push(`exit      ${exitCode}`);
   lines.push(`elapsed   ${elapsed}${agentElapsedMs !== null ? ` (gateway ${agentElapsedMs} ms)` : ''}`);
   if (resultRef) lines.push(`stored    ${resultRef}`);
-  // Intentionally omit the full stdout — the live command log above already
-  // shows it. The Result panel is the compact summary, not a duplicate.
+  if (output) {
+    const compact = output.length > 1200 ? `${output.slice(0, 1200)}\n…[truncated]` : output;
+    lines.push('', 'Output', compact);
+  }
   lines.push('', `Final: ${verdict}`);
   return lines.join('\n');
 }
