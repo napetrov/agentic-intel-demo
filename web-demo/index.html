@@ -280,7 +280,7 @@
                 <div class="section-subtitle">Watch the agent work in real time</div>
               </div>
             </div>
-            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run demo" submits a real shell task via the control-plane and shows worker stdout. Otherwise the panel falls back to the scripted walkthrough.</div>
+            <div class="panel-note">When a backend is detected on /api/health and /api/ready, "Run demo" submits an <code>agent_invoke</code> task via the control-plane; the offload-worker forwards it to the OpenClaw gateway and the gateway's tool output streams here. Otherwise the panel falls back to the scripted walkthrough.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -317,7 +317,7 @@
               <div class="panel-head">
                 <div>
                   <div class="section-title">Result</div>
-                  <div class="section-subtitle">Compact output for the demo viewer</div>
+                  <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
               <div id="result" class="result empty-state" role="status" aria-live="polite">Waiting for scenario selection.</div>
