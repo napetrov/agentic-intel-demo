@@ -345,7 +345,11 @@ jobs:
               -e 's|cpu: "2"|cpu: "500m"|' \
               -e 's|memory: "2Gi"|memory: "512Mi"|' \
               k8s/system-b/minio.yaml | kubectl apply -f -
-          kubectl -n system-b wait --for=condition=available deploy/minio --timeout=180s
+          # Bumped 180s → 300s: GitHub runners are 2 vCPU and frequently
+          # overcommitted. Image pull + initial container start can blow
+          # past 180s under contention; the longer wait removes a flake
+          # source without changing what we're actually testing.
+          kubectl -n system-b wait --for=condition=available deploy/minio --timeout=300s
       - name: create demo-artifacts bucket via mc
         run: |
           # bucket is only needed for large-payload results; echo doesn't
@@ -385,7 +389,17 @@ jobs:
           grep -q 'imagePullPolicy: Never' "$patched" \
             || { echo "::error::sed pull-policy rewrite did not match; check manifest"; exit 1; }
           kubectl apply -f "$patched"
-          kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
+          # Surface scheduling state immediately so a flake leaves a
+          # diagnostic breadcrumb instead of just the wait failing
+          # silently 5 minutes later. ImagePullBackOff / OOMKilled /
+          # CrashLoopBackOff all show up here within seconds.
+          kubectl -n system-b get pods -l app=offload-worker -o wide || true
+          # Bumped 180s → 300s: the offload-worker container imports
+          # sklearn/pandas at startup, which on the trimmed CI request
+          # (cpu: 200m) can exceed 180s of wall time. Pre-PR runs hit
+          # the timeout intermittently — bumping the budget removes a
+          # known flake source without changing the test's contract.
+          kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=300s
       - name: curl /health via NodePort 30800
         run: |
           for i in 1 2 3 4 5 6 7 8 9 10; do
