@@ -347,6 +347,10 @@ metadata:
   namespace: system-b
 spec:
   replicas: 1
+  # System B demo nodes are capacity constrained; do not require a second
+  # offload-worker pod to fit during env/image rollouts.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: offload-worker
