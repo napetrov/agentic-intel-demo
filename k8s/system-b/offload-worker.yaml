@@ -347,6 +347,10 @@ metadata:
   namespace: system-b
 spec:
   replicas: 1
+  # System B demo nodes are capacity constrained; do not require a second
+  # offload-worker pod to fit during env/image rollouts.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: offload-worker
@@ -404,6 +408,10 @@ spec:
               value: "demo-artifacts"
             - name: SCENARIO_SCRIPTS_DIR
               value: "/scenarios"
+            # agent_invoke is not a Kubernetes Job. The worker forwards each
+            # request to this persistent OpenClaw-compatible gateway service.
+            - name: OPENCLAW_GATEWAY_URL
+              value: "http://agent-stub.system-b.svc.cluster.local:8080"
             - name: MINIO_ACCESS_KEY
               valueFrom:
                 secretKeyRef:

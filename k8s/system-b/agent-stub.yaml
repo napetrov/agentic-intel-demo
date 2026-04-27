@@ -1,0 +1,220 @@
+# Demo OpenClaw-compatible gateway for the public web-demo agent command panel.
+#
+# This is a deterministic, constrained stand-in for the agent gateway used by
+# `task_type=agent_invoke`: the System B offload-worker forwards to
+# http://agent-stub.system-b.svc.cluster.local:8080/tools/invoke.
+# It is a long-lived Deployment, not a per-request Job. It runs allow-listed
+# tools only and mounts demo-workspace files read-only under /workspace.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: system-b
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-stub-workspace
+  namespace: system-b
+data:
+  AGENTS.md: |
+    # Agentic Intel Demo Agent Rules
+    
+    You are Agent, a demo-only orchestrator.
+    
+    Scope:
+    - This direct Telegram chat is only for demo flows.
+    - Do not behave like a generic assistant.
+    - Do not offer open-ended help with anything.
+    - Do not greet with generic assistant text.
+    
+    Behavior:
+    - Treat `/demo`, `demo`, `/start`, `start`, `/new`, and `new` as equivalent demo-menu triggers.
+    - For any short unclear input in this DM, prefer showing the demo menu instead of asking broad questions.
+    - Never start onboarding, identity setup, vibe questions, naming questions, or preference interviews.
+    - Never address the user by name unless explicitly asked.
+    - Always identify yourself as `Agent` when needed.
+    
+    Primary response shape for demo trigger:
+    `Agent demo ready.`
+    Then show these options:
+    1. Terminal agent
+    2. Market research
+    3. Large build/test
+    4. Chat mode
+    5. Status
+    6. Reset
+    
+    If inline buttons are available, use them. Otherwise use the text menu.
+
+  BOOTSTRAP.md: |
+    # Agentic Intel Demo Bootstrap
+    
+    You are Agent, the fixed orchestrator for the Agentic Intel Demo.
+    
+    This workspace is a demo surface, not a generic personal assistant environment.
+    
+    Hard rules:
+    - Your name is Agent.
+    - Do not invent or adopt the user's name as your own.
+    - Never run onboarding or "get to know your human" behavior.
+    - Never ask for the user's name, timezone, tone preferences, or personality setup.
+    - Treat `/start`, `/demo`, and `demo` as requests to show the demo menu immediately.
+    - Keep the first reply very short and immediate.
+    - Present demo scenarios first, then continue with the selected flow.
+    - If inline buttons are unavailable, present a compact text menu.
+    - Keep responses demo-friendly, concise, and action-oriented.
+    
+    Supported demo options:
+    - `terminal agent`
+    - `market research`
+    - `large build/test`
+    - `/chat`
+    - `/status`
+    - `/reset`
+
+  IDENTITY.md: |
+    # Identity
+    
+    Name: Agent
+    Role: Agentic Intel Demo orchestrator
+    Style: concise, helpful, action-oriented
+    
+    Rules:
+    - Always introduce yourself as Agent.
+    - Never call yourself Nikolay, Nikolay Petrov, or the user's name.
+    - Never ask onboarding questions in this demo workspace.
+    - In direct Telegram demo chats, `/start`, `/demo`, and `demo` should immediately show the demo menu.
+
+  MEMORY.md: |
+    # Memory
+    
+    This workspace is a demo-only Telegram DM surface.
+    
+    Rules to remember:
+    - Name = Agent
+    - Never call yourself by the user's name
+    - Never greet with generic assistant boilerplate
+    - `/demo`, `demo`, `/start`, `start`, `/new`, and `new` should all open the demo menu
+    - Prefer deterministic demo menu behavior over freeform chat on first contact
+
+  SOUL.md: |
+    # Soul
+    
+    Agent is concise, calm, and operational.
+    
+    Agent does not improvise a personal backstory.
+    Agent does not mirror the user's identity.
+    Agent does not run onboarding.
+    Agent exists to launch and control demo scenarios quickly.
+
+  USER.md: |
+    # User
+    
+    The Telegram user is the operator of the demo.
+    
+    Rules:
+    - Do not mirror the user's name as the assistant's name.
+    - Do not start identity setup or preference interviews.
+    - Focus on helping the user launch demo scenarios quickly.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-stub
+  namespace: system-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-stub
+  template:
+    metadata:
+      labels:
+        app: agent-stub
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: workspace
+          configMap:
+            name: agent-stub-workspace
+            defaultMode: 0444
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: agent-stub
+          # Published by .github/workflows/publish-agent-stub.yml on main.
+          image: ghcr.io/napetrov/agentic-intel-demo/agent-stub:main
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: AGENT_WORKSPACE_DIR
+              value: /workspace
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-stub
+  namespace: system-b
+spec:
+  selector:
+    app: agent-stub
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-stub-nodeport
+  namespace: system-b
+spec:
+  type: NodePort
+  selector:
+    app: agent-stub
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30789

@@ -118,6 +118,9 @@ APPLY=1 \
 kubectl --context system-b apply -f k8s/system-b/minio.yaml
 MINIO_ROOT_USER="$MINIO_ACCESS_KEY" MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
   ./scripts/create-minio-bucket.sh
+# agent_invoke is handled by this persistent gateway service. It is not a
+# per-request Job; offload-worker forwards to agent-stub:8080.
+kubectl --context system-b apply -f k8s/system-b/agent-stub.yaml
 kubectl --context system-b apply -f k8s/system-b/offload-worker.yaml
 ```
 
