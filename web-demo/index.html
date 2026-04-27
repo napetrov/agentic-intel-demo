@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenClaw Agentic Intel Demo</title>
-    <link rel="stylesheet" href="./styles.css?v=20260427b" />
+    <link rel="stylesheet" href="./styles.css?v=20260427c" />
   </head>
   <body>
     <div class="shell">
@@ -315,10 +315,10 @@
             <div class="panel-head">
               <div>
                 <div class="section-title">Live command log</div>
-                <div class="section-subtitle">Watch the agent work in real time</div>
+                <div class="section-subtitle">Watch the live backend result from System B</div>
               </div>
             </div>
-            <div class="panel-note">When /api/health, /api/ready, and the OpenClaw probe (<code>/api/probe/openclaw</code>) are all healthy, "Run demo" submits an <code>agent_invoke</code> task via the control-plane; the offload-worker forwards it to the OpenClaw gateway and the gateway's tool output streams here. If any of the three is unhealthy the panel falls back to the scripted walkthrough.</div>
+            <div class="panel-note">When /api/health, /api/ready, and the OpenClaw probe (<code>/api/probe/openclaw</code>) are all healthy, "Run demo" submits a real <code>agent_invoke</code> task via System A; the offload-worker forwards it to the System B agent-stub and the returned tool trace/output renders here. If any of the three is unhealthy the panel falls back to the scripted walkthrough.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -327,10 +327,10 @@
               <div class="panel-head">
                 <div>
                   <div class="section-title">Run metrics</div>
-                  <div class="section-subtitle">Elapsed time, tokens, tools, route</div>
+                  <div class="section-subtitle">Live status, route, tool, exit, elapsed, job id</div>
                 </div>
               </div>
-              <div class="panel-note">Tokens and route metrics are synthetic unless wired to a backend run source.</div>
+              <div class="panel-note">Live mode shows backend-returned status/tool/exit/job data. Scripted fallback mode is used only when the backend health checks fail.</div>
               <div id="metrics" class="metrics-grid">
                 <div class="metric-card"><span class="metric-label">Model</span><span class="metric-value">—</span></div>
                 <div class="metric-card"><span class="metric-label">Route</span><span class="metric-value">—</span></div>
@@ -383,7 +383,7 @@
         </section>
       </main>
     </div>
-    <script src="./lib/pure.js?v=20260427b"></script>
-    <script src="./app.js?v=20260427b"></script>
+    <script src="./lib/pure.js?v=20260427c"></script>
+    <script src="./app.js?v=20260427c"></script>
   </body>
 </html>
