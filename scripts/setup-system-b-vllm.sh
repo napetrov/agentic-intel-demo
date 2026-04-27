@@ -14,6 +14,9 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-64}"
 KV_CACHE_SPACE="${KV_CACHE_SPACE:-8}"
 SERVICE_TYPE="${SERVICE_TYPE:-NodePort}"
 
+# Local expansion of ${RELEASE_NAME}/${MODEL_ID}/${CPU}/etc. is intentional —
+# they come from this caller's env, not the remote shell.
+# shellcheck disable=SC2087
 ssh -o BatchMode=yes "$SYSTEM_B_HOST" bash <<EOF
 set -euo pipefail
 

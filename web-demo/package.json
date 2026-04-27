@@ -2,11 +2,13 @@
   "name": "agentic-intel-web-demo",
   "private": true,
   "version": "0.0.0",
-  "description": "Static web demo for OpenClaw + SambaNova (Playwright smoke tests only)",
+  "description": "Static web demo for OpenClaw + SambaNova (Playwright smoke tests + Vitest unit tests)",
   "scripts": {
-    "test:smoke": "playwright test"
+    "test:smoke": "playwright test",
+    "test:unit": "vitest run"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0"
+    "@playwright/test": "^1.48.0",
+    "vitest": "^2.1.0"
   }
 }

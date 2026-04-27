@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agentic-intel-demo/schemas/tasks.schema.json",
+  "title": "Demo task families catalog",
+  "description": "Shape contract for catalog/tasks.yaml.",
+  "type": "object",
+  "required": ["task_families"],
+  "additionalProperties": false,
+  "properties": {
+    "task_families": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": { "$ref": "#/$defs/family" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "family": {
+      "type": "object",
+      "required": [
+        "default_execution",
+        "alternate_execution",
+        "supported_in_chat_mode",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "default_execution": { "$ref": "#/$defs/execution_mode" },
+        "alternate_execution": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/execution_mode" },
+          "uniqueItems": true
+        },
+        "supported_in_chat_mode": { "type": "boolean" },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["local_standard", "local_large", "offload_system_b"]
+    }
+  }
+}

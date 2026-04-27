@@ -6,6 +6,10 @@ RELEASE_NAME="${RELEASE_NAME:-vllm-qwen-3-4b-cpu}"
 NAMESPACE="${NAMESPACE:-default}"
 EXPECTED_MAX_MODEL_LEN="${EXPECTED_MAX_MODEL_LEN:-32768}"
 
+# Local expansion of ${NAMESPACE}/${RELEASE_NAME}/${EXPECTED_MAX_MODEL_LEN}
+# is intentional — they come from this caller's env, not the remote shell.
+# Server-side expansions are escaped with \$.
+# shellcheck disable=SC2087
 ssh -o BatchMode=yes "$SYSTEM_B_HOST" bash <<EOF
 set -euo pipefail
 

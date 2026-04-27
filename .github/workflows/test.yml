@@ -27,6 +27,22 @@ jobs:
           MINIO_SECRET_KEY: dummy
         run: pytest -v
 
+  web-demo-unit:
+    # Vitest on the pure helpers in web-demo/lib/. Fast (no browser),
+    # complements the Playwright smoke job which only exercises the
+    # rendered DOM through 3 scripted scenarios.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install + run vitest
+        working-directory: web-demo
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:unit
+
   web-demo-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -82,7 +98,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: install control-plane deps + pytest
+      - name: install control-plane deps + pytest + coverage
         working-directory: runtimes/control-plane
         run: |
           pip install \
@@ -90,10 +106,14 @@ jobs:
             'uvicorn[standard]==0.34.2' \
             httpx==0.28.1 \
             boto3==1.37.38 \
-            pytest==8.3.5
-      - name: pytest
+            pytest==8.3.5 \
+            pytest-cov==5.0.0
+      - name: pytest with coverage gate
+        # Gate threshold lives in .coveragerc (fail_under=80). Drop
+        # below it and the job fails — bump the threshold as coverage
+        # improves; never lower without a written reason.
         working-directory: runtimes/control-plane
-        run: pytest -v
+        run: pytest -v --cov --cov-report=term-missing
 
   agent-stub:
     runs-on: ubuntu-latest
@@ -325,7 +345,11 @@ jobs:
               -e 's|cpu: "2"|cpu: "500m"|' \
               -e 's|memory: "2Gi"|memory: "512Mi"|' \
               k8s/system-b/minio.yaml | kubectl apply -f -
-          kubectl -n system-b wait --for=condition=available deploy/minio --timeout=180s
+          # Bumped 180s → 300s: GitHub runners are 2 vCPU and frequently
+          # overcommitted. Image pull + initial container start can blow
+          # past 180s under contention; the longer wait removes a flake
+          # source without changing what we're actually testing.
+          kubectl -n system-b wait --for=condition=available deploy/minio --timeout=300s
       - name: create demo-artifacts bucket via mc
         run: |
           # bucket is only needed for large-payload results; echo doesn't
@@ -365,7 +389,17 @@ jobs:
           grep -q 'imagePullPolicy: Never' "$patched" \
             || { echo "::error::sed pull-policy rewrite did not match; check manifest"; exit 1; }
           kubectl apply -f "$patched"
-          kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=180s
+          # Surface scheduling state immediately so a flake leaves a
+          # diagnostic breadcrumb instead of just the wait failing
+          # silently 5 minutes later. ImagePullBackOff / OOMKilled /
+          # CrashLoopBackOff all show up here within seconds.
+          kubectl -n system-b get pods -l app=offload-worker -o wide || true
+          # Bumped 180s → 300s: the offload-worker container imports
+          # sklearn/pandas at startup, which on the trimmed CI request
+          # (cpu: 200m) can exceed 180s of wall time. Pre-PR runs hit
+          # the timeout intermittently — bumping the budget removes a
+          # known flake source without changing the test's contract.
+          kubectl -n system-b wait --for=condition=available deploy/offload-worker --timeout=300s
       - name: curl /health via NodePort 30800
         run: |
           for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -395,3 +429,31 @@ jobs:
       - name: teardown
         if: always()
         run: k3d cluster delete demo || true
+
+  docker-build:
+    # Build every Dockerfile in the repo without pushing. Catches
+    # COPY-path drift, missing requirements pins, and broken FROM
+    # references before they hit the publish-offload-worker job or a
+    # `make tier1-up` on a developer's laptop. Matrix runs in parallel.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { name: web-demo,        context: web-demo,                dockerfile: web-demo/Dockerfile }
+          - { name: offload-worker,  context: runtimes/offload-worker, dockerfile: runtimes/offload-worker/Dockerfile }
+          - { name: control-plane,   context: runtimes/control-plane,  dockerfile: runtimes/control-plane/Dockerfile }
+          - { name: agent-stub,      context: runtimes/agent-stub,     dockerfile: runtimes/agent-stub/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build ${{ matrix.target.name }} (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.target.context }}
+          file: ${{ matrix.target.dockerfile }}
+          push: false
+          load: false
+          tags: ${{ matrix.target.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.target.name }}
+          cache-to: type=gha,scope=${{ matrix.target.name }},mode=max

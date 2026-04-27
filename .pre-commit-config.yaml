@@ -1,0 +1,72 @@
+# Pre-commit hooks mirror the blocking lint jobs in
+# .github/workflows/lint.yml so the same checks that gate CI run on the
+# developer's machine before the push. Heavy jobs (kubeconform, docker
+# build, lychee) are intentionally CI-only.
+#
+# Install once:
+#   pip install pre-commit
+#   pre-commit install
+# Run on demand:
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        # Multi-document YAMLs (k8s manifests) and YAMLs with custom
+        # tags must be allowed; the CI yaml job uses safe_load_all.
+        args: [--allow-multiple-documents]
+        exclude: ^k8s/
+      - id: check-json
+        exclude: ^web-demo/package-lock\.json$
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        # Markdown allows trailing two-space line breaks.
+        args: [--markdown-linebreak-ext=md]
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        # Match the CI scope + ruleset exactly: F + E9 only,
+        # runtimes/ + scripts/. Use block list — YAML flow-sequence
+        # would split `--select=F,E9` on the comma into two args.
+        args:
+          - --select=F,E9
+          - runtimes/
+          - scripts/
+        # ruff already handles its own file selection; pass empty
+        # files list so the hook doesn't double-pass paths.
+        pass_filenames: false
+        files: ^(runtimes|scripts)/.*\.py$
+
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        args: [-S, warning]
+        files: ^(scripts|agents)/.*\.sh$
+
+  - repo: local
+    hooks:
+      - id: validate-demo-templates
+        # Cross-config check: catalog/scenarios.yaml ↔ flow.md ↔
+        # operator-chat-config ↔ litellm. Same script CI runs.
+        # `language: python` makes pre-commit build a managed venv with
+        # PyYAML so the hook doesn't depend on whatever the host Python
+        # has installed.
+        name: validate-demo-templates
+        entry: python scripts/validate-demo-templates.py
+        language: python
+        additional_dependencies:
+          - PyYAML==6.0.2
+        pass_filenames: false
+        # Trigger on the inputs the script reads AND on the script
+        # itself — otherwise validator-logic edits silently skip the
+        # hook, which is the exact opposite of what you want when you're
+        # changing the validator.
+        files: ^(catalog/|agents/scenarios/|templates/architecture/|config/|examples/openclawinstance-intel-demo\.yaml|scripts/validate-demo-templates\.py)

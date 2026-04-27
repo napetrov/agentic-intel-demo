@@ -30,9 +30,11 @@ response="$(curl -fsS \
   -d "$payload" \
   -X POST "$SAMBANOVA_URL")"
 
-echo "$response" | python3 - <<'PY'
-import json,sys
-obj=json.load(sys.stdin)
+# Pass via env, not pipe: heredoc on stdin would override the pipe and
+# json.load(sys.stdin) would read the heredoc body instead of $response.
+RESPONSE="$response" python3 <<'PY'
+import json, os
+obj = json.loads(os.environ["RESPONSE"])
 try:
     print(obj["choices"][0]["message"]["content"])
 except Exception:
