@@ -242,7 +242,10 @@ class AgentDiscovery:
     `source` so a CR rename can't silently retitle a registered agent.
     """
 
-    OPENCLAW_GROUP = "openclaw.intel.com"
+    # CRD shipped by openclaw-operator. Keep this in sync with the
+    # apiVersion used by examples/openclawinstance-intel-demo.yaml and the
+    # live cluster (`openclawinstances.openclaw.rocks`).
+    OPENCLAW_GROUP = "openclaw.rocks"
     OPENCLAW_VERSION = "v1alpha1"
     OPENCLAW_PLURAL = "openclawinstances"
 
@@ -289,6 +292,12 @@ class AgentDiscovery:
         name = rec.discovery.get("openclaw_instance")
         ns = rec.discovery.get("namespace") or "openclaw"
         if not name:
+            # System B can be represented by the lightweight agent-stub in
+            # the public demo. Treat a deployment discovery target as a
+            # read-only liveness source rather than forcing a fake CR.
+            if rec.discovery.get("deployment"):
+                self._overlay_deployment_ready(rec)
+                return
             rec.status = STATUS_UNKNOWN
             rec.source = "seed"
             rec.message = "no openclaw_instance set in discovery"
@@ -323,7 +332,7 @@ class AgentDiscovery:
             rec.status = STATUS_UNKNOWN
         rec.message = phase or None
 
-    def _overlay_flowise(self, rec: AgentRecord) -> None:
+    def _overlay_deployment_ready(self, rec: AgentRecord) -> None:
         name = rec.discovery.get("deployment")
         ns = rec.discovery.get("namespace") or "flowise"
         if not name:
@@ -348,21 +357,23 @@ class AgentDiscovery:
         ready_replicas = getattr(status, "ready_replicas", None) or 0
         replicas = getattr(status, "replicas", None) or 0
         if replicas > 0 and ready_replicas >= replicas:
-            # Deployment is up. If the seed never got a chatflow id we
-            # surface that as Provisioning so the operator knows to
-            # finish the manual import step from docs/flowise-integration.md.
-            if not rec.discovery.get("chatflow_id"):
-                rec.status = STATUS_PROVISIONING
-                rec.message = "deployment ready; chatflow_id not yet set"
-            else:
-                rec.status = STATUS_READY
-                rec.message = f"{ready_replicas}/{replicas} replicas ready"
+            rec.status = STATUS_READY
+            rec.message = f"{ready_replicas}/{replicas} replicas ready"
         elif replicas == 0:
             rec.status = STATUS_STOPPED
             rec.message = "deployment scaled to 0"
         else:
             rec.status = STATUS_PROVISIONING
             rec.message = f"{ready_replicas}/{replicas} replicas ready"
+
+    def _overlay_flowise(self, rec: AgentRecord) -> None:
+        self._overlay_deployment_ready(rec)
+        if rec.status == STATUS_READY and not rec.discovery.get("chatflow_id"):
+            # Deployment is up. If the seed never got a chatflow id we
+            # surface that as Provisioning so the operator knows to
+            # finish the manual import step from docs/flowise-integration.md.
+            rec.status = STATUS_PROVISIONING
+            rec.message = "deployment ready; chatflow_id not yet set"
 
 
 def make_registry() -> AgentRegistry:
