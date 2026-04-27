@@ -41,6 +41,38 @@ two-system topology).
 4. Ensure each scenario's `execution_mode` in `catalog/scenarios.yaml`
    appears in your architecture's `spec.supported_execution_modes`.
 
+## Translating an architecture to actual manifests
+
+The validator only checks shape; it does **not** generate deploy artifacts.
+After your architecture file is green, hand-translate every slot into the
+files below. Until rendering is automated, this checklist is the contract
+between an architecture spec and a working stand.
+
+| Slot in your architecture file | Lands in (edit by hand) |
+|---|---|
+| `spec.components.orchestrator.location`, `spec.components.orchestrator.type` | `examples/openclawinstance-intel-demo.yaml` (`spec.image`, namespace), `k8s/system-a/` (which manifests apply where) |
+| `spec.components.model_router.location` | `k8s/system-a/litellm.yaml` (and `config/model-routing/litellm-config.yaml` for the docker-compose path) |
+| `spec.components.inference_providers[]` | `config/model-routing/litellm-config.yaml` `model_list:` and the mirrored `litellm-config` ConfigMap inside `k8s/system-a/litellm.yaml` |
+| `spec.components.execution_backends[]` | `k8s/system-b/offload-worker.yaml` (location, replicas, resources) |
+| `spec.components.artifact_store.bucket` / `.location` | `k8s/system-b/minio.yaml` + `scripts/create-minio-bucket.sh` |
+| `spec.components.chat_adapters[]` | `examples/openclawinstance-intel-demo.yaml` (`channels.*` inside the embedded `openclaw.json`) |
+| `spec.model_aliases.*` | `config/model-routing/litellm-config.yaml` and `config/operator-chat-config.template.json` (`models.providers.litellm.models[]`) |
+| `spec.supported_execution_modes` | declarative — make sure every `execution_mode` referenced from `catalog/scenarios.yaml` is in this list |
+| `spec.topology.clusters[].runtime` (k3s/kind/k3d) | `docs/port-map.md` install flags + your kubeconfig `contexts:` |
+
+After the hand-translation pass, run:
+
+```bash
+python3 scripts/validate-demo-templates.py
+./scripts/check-tier2-environment.sh
+./scripts/check-upstream-pins.sh
+```
+
+— and only then attempt `APPLY=1 ./scripts/install-openclaw-operator.sh`.
+
+Automating this rendering is a known gap (see
+`docs/internal/operator-gap-analysis.md`).
+
 ## Provider plug points
 
 An architecture's `inference_providers[]` is the single place you declare

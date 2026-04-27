@@ -25,7 +25,7 @@ image: pulled successfully", treat the entry as candidate.
 
 | Date | k3s | OpenClaw operator ref | OpenClaw image | LiteLLM | vLLM chart | Local SLM | Cloud reasoning | Status |
 |------|-----|-----------------------|----------------|---------|------------|-----------|-----------------|--------|
-| _pending_ | `v1.31.4+k3s1` | `v0.30.0` | `ghcr.io/openclaw-rocks/openclaw:v0.30.0` | `main-v1.63.11-stable` | `core/helm-charts/vllm` (CHART_REF pinned per env) | `Qwen/Qwen3-4B-Instruct-2507` | `bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0` | **Candidate** — operator image is private (HTTP 403 from public GHCR); needs `imagePullSecret` or registry mirror before live validation. Tracked as gap #4 in `docs/operator-gap-analysis.md`. |
+| _pending_ | `v1.31.4+k3s1` | `v0.30.0` | `ghcr.io/openclaw-rocks/openclaw:v0.30.0` | `main-v1.63.11-stable` | `core/helm-charts/vllm` (CHART_REF pinned per env) | `Qwen/Qwen3-4B-Instruct-2507` | `bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0` | **Candidate** — operator image is private (HTTP 403 from public GHCR); needs `imagePullSecret` or registry mirror before live validation. Tracked as gap #4 in `docs/internal/operator-gap-analysis.md`. |
 
 When the row above is validated on a real stand, append a new row with
 `Status: green`, set the validation date, and set

@@ -106,7 +106,7 @@ The router can't reach LiteLLM or LiteLLM can't reach the model.
    kubectl logs job/<session-id>-job -n agents
    ```
    Common failures: image pull error (likely a private registry — see
-   `imagePullSecret` in `docs/operator-config-checklist.md`), OOMKilled
+   `imagePullSecret` in `docs/internal/operator-config-checklist.md`), OOMKilled
    (bump the profile or shrink the workload).
 3. **Fall back to Terminal Agent.** `large_build_test`'s
    `fallback_scenario` is `terminal_agent`. The orchestrator should

@@ -389,7 +389,7 @@ lives in `docs/reproducibility.md` under "Values to fill in".
    filters: `operator`, `session`, `gateway`, `litellm`, `vllm`,
    `offload`, `minio`).
 
-Refer to `docs/operator-runbook.md` and `docs/operator-gap-analysis.md` as
+Refer to `docs/operator-runbook.md` and `docs/internal/operator-gap-analysis.md` as
 the source of truth for operator bring-up and known blockers.
 
 Use Tier 2 when you need to reproduce the shipped demo end-to-end.
@@ -424,11 +424,11 @@ production. "Simulated" means the UX flow is shown but no real backend runs.
   multi-agent fan-out table survives a control-plane restart. The
   `kube` backend reads from k8s and never needed a local cache.
 - Full operator-managed OpenClaw instance lifecycle still depends on
-  upstream pins — see `docs/operator-gap-analysis.md` gaps #1, #4, #5,
+  upstream pins — see `docs/internal/operator-gap-analysis.md` gaps #1, #4, #5,
   #7 for the four candidate pins (operator ref, runtime image, Ready
   phase, vLLM chart).
 
-See `docs/operator-gap-analysis.md` for the active gap list.
+See `docs/internal/operator-gap-analysis.md` for the active gap list.
 
 ## Known unknowns (must be supplied by the deployer)
 
@@ -478,7 +478,7 @@ see `docs/reproducibility.md` "Recovery / reset".
 - Deploying on a different topology (single-node, multi-system, alternative
   token providers): `docs/architecture-spec.md`, `templates/architecture/`.
 - Operator bring-up issues: `docs/operator-runbook.md`,
-  `docs/operator-gap-analysis.md`.
+  `docs/internal/operator-gap-analysis.md`.
 - Component-by-component reuse/build decisions:
   `docs/reusable-components.md`.
 - Validate scenarios + architecture files for consistency with the specs:

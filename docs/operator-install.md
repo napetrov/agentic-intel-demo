@@ -8,9 +8,11 @@ a configurable ref:
 
 - **Upstream repo** (`OPENCLAW_OPERATOR_REPO`): defaults to
   `https://github.com/openclaw-rocks/openclaw-operator.git`.
-- **Upstream ref** (`OPENCLAW_OPERATOR_REF`): defaults to `main`. Pin to a
-  tag or commit SHA in your environment for reproducible installs — the
-  script prints a warning when left at `main`.
+- **Upstream ref** (`OPENCLAW_OPERATOR_REF`): defaults to `v0.30.0` (the
+  candidate pin recorded in `config/versions.yaml` and
+  `docs/versions-tested.md`). Override in your environment to bump; the
+  script prints a "candidate ref" notice unless
+  `OPENCLAW_OPERATOR_REF_VERIFIED=1` is set.
 - **CRD path** (`OPERATOR_CRD_PATH`): defaults to
   `config/crd/bases/openclawinstances.openclaw.rocks.yaml` inside the
   checkout.
@@ -42,10 +44,10 @@ So the CRD should not be treated as just another file in a naive `kubectl apply 
 
 ```bash
 # Dry-run first (no kubectl, no clone with apply):
-OPENCLAW_OPERATOR_REF=v0.1.0 ./scripts/install-openclaw-operator.sh
+OPENCLAW_OPERATOR_REF=v0.30.0 ./scripts/install-openclaw-operator.sh
 
 # Then apply against the current kube context:
-APPLY=1 OPENCLAW_OPERATOR_REF=v0.1.0 ./scripts/install-openclaw-operator.sh
+APPLY=1 OPENCLAW_OPERATOR_REF=v0.30.0 ./scripts/install-openclaw-operator.sh
 ```
 
 Equivalent raw commands (what the script runs in `server-side-crd` mode):

@@ -14,7 +14,7 @@
 > - `docs/demo-setup.md` (tiered bring-up, hardware/network, Telegram,
 >   recovery)
 > - `docs/operator-runbook.md` (install + apply `OpenClawInstance`)
-> - `docs/operator-gap-analysis.md` (remaining work)
+> - `docs/internal/operator-gap-analysis.md` (remaining work)
 >
 > The text below is kept verbatim only for historical context. Concrete
 > commands, model names, and component choices in it are out of date.

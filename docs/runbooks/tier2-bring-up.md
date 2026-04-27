@@ -355,7 +355,7 @@ APPLY=1 KUBECTL="kubectl --context system-a" \
 
 ## Where to look next
 
-- Pin status / known-unknowns: `docs/operator-gap-analysis.md`,
+- Pin status / known-unknowns: `docs/internal/operator-gap-analysis.md`,
   `docs/demo-setup.md` "Known unknowns".
 - Full reference for environment values: `docs/reproducibility.md`.
 - Operator-specific troubleshooting (CRD annotation size, install

@@ -90,7 +90,7 @@ If the operator image pull fails with `403 Forbidden` from
 `ghcr.io/openclaw-rocks/openclaw:v0.30.0`, the registry is private on
 this stand. Either configure an `imagePullSecret` on the
 OpenClawInstance, or mirror the image to a registry the cluster can
-read. Tracked as gap #4 in `docs/operator-gap-analysis.md`.
+read. Tracked as gap #4 in `docs/internal/operator-gap-analysis.md`.
 
 ## Step 4 — apply the OpenClawInstance and wait for `Running`
 

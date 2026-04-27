@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ARCHIVED — historical SSH-into-`onedal-build` vLLM bring-up.
+# The canonical replacement is scripts/setup-system-b-vllm-local.sh, which
+# operates against the current kube context via kubectl/helm without SSH.
+# This file is kept for reference only; do not use for new bring-ups.
 set -euo pipefail
 
 SYSTEM_B_HOST="${SYSTEM_B_HOST:-system-b}"

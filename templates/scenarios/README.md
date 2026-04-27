@@ -21,12 +21,13 @@ ones in YAML keys.
 
 1. Pick the architecture variant from `docs/architecture-variants.md` that
    fits your scenario.
-2. Open `scenario-spec.template.yaml` and copy ONLY the `<scenario_id>:`
-   block (the indented entry), not the outer `scenarios:` line. Paste it as
-   a new entry under the existing `scenarios:` map in
-   `catalog/scenarios.yaml`, then fill in `id`, `label`, `execution_mode`,
-   `task_family`, and the other fields listed in `docs/scenario-spec.md`.
-   Never add a second top-level `scenarios:` key to `catalog/scenarios.yaml`.
+2. Open `scenario-spec.template.yaml`. The whole file is already a fragment
+   with no outer `scenarios:` key — paste it as a new entry under the
+   existing `scenarios:` map in `catalog/scenarios.yaml`, indented one
+   level. Fill in the slots (`<scenario_id>`, `label`, `execution_mode`,
+   `task_family`, …). Required and optional fields are listed in
+   `docs/scenario-spec.md`; the validator (`scripts/validate-demo-templates.py`)
+   will fail loudly on anything missing.
 3. Create `agents/scenarios/<id>/` and copy `flow.template.md` into
    `flow.md` and `task-brief.template.md` into `<task-name>.md`. Fill both in.
    If your scenario needs seed data (CSVs, sample JSON, fixtures for an

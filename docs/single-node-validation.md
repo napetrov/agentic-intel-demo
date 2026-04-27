@@ -1,33 +1,46 @@
-# Single-Node Validation Guide (onedal-build)
+# Single-Node Validation Guide
 
-Use this guide to validate the full demo stack on `onedal-build`
-before real System A / System B hardware is available.
+Use this guide to validate the full Tier 2 stack on **one machine** before
+real System A / System B hardware is available. Two k3s instances run
+side-by-side on the same host and emulate the cross-cluster path.
+
+This is a sanity-check rig, not the demo path — for a real bring-up follow
+`docs/runbooks/tier2-bring-up.md`.
 
 ---
 
-## What onedal-build simulates
+## What this rig simulates
 
 - **System A cluster** — agent session pods, control plane, LiteLLM
-- **System B cluster** — vLLM SLM, MinIO, offload API, offload-worker
+- **System B cluster** — vLLM SLM, MinIO, offload-worker
 - Both run as two separate k3s instances on one machine
-- Uses different API server ports (6443 / 6444) and data directories
+- Different API server ports and data directories
 - NodePorts still work — both clusters expose services on the same host IP
-- Cross-cluster traffic = localhost:<NodePort>
+- Cross-cluster traffic = `localhost:<NodePort>`
+
+> The earlier version of this guide was pinned to a specific lab host
+> (`onedal-build`). This version is host-neutral; size the fitted profile
+> below to whatever single machine you actually have.
 
 ---
 
-## Hardware: onedal-build
-- 8 vCPU, 32 GB RAM, Ubuntu
-- Model: `Qwen/Qwen3-4B-Instruct-2507` via vLLM (canonical; needs
-  16 CPU / 32Gi at 32768 ctx — drop `--max-model-len` to fit on a
-  smaller host).
-- Remaining for k3s + pods: ~24 GB on a fitted profile.
+## Hardware target
+
+Pick a fitted profile based on the host you have:
+
+| Host | Fits |
+|---|---|
+| 8 vCPU / 32 GB | vLLM at `MAX_MODEL_LEN=8192` + everything else; the 32768 ctx shipped default will not schedule. |
+| 16+ vCPU / 64+ GB | full default Tier 2 profile (Qwen3-4B at 32768 ctx, 16 CPU / 32Gi). |
+
+In all cases, vLLM serves `Qwen/Qwen3-4B-Instruct-2507` on NodePort 30434
+(OpenAI-compatible).
 
 ---
 
 ## Step 1 — Install two k3s instances
 
-See `docs/port-map.md` for exact install commands.
+See `docs/port-map.md` for exact install flags.
 
 Quick recap:
 ```bash
@@ -38,13 +51,18 @@ Quick recap:
 After install:
 - kubeconfig for A: `/etc/rancher/k3s/k3s-a.yaml`
 - kubeconfig for B: `/etc/rancher/k3s/k3s-b.yaml`
-- Fix server IP in both files (replace 127.0.0.1 with LAN IP)
+- Replace `127.0.0.1` in both kubeconfigs with the LAN IP so cross-context
+  traffic works.
 
 Verify:
 ```bash
 kubectl --kubeconfig k3s-a.yaml get nodes  # one node Ready
 kubectl --kubeconfig k3s-b.yaml get nodes  # one node Ready
 ```
+
+If you don't have root / can't run two k3s servers, `k3d` or `kind` with
+two clusters works equally well — the rest of this guide only depends on
+having `system-a` / `system-b` contexts.
 
 ---
 
@@ -53,7 +71,7 @@ kubectl --kubeconfig k3s-b.yaml get nodes  # one node Ready
 ### vLLM (fitted profile for an 8 vCPU host)
 
 `scripts/setup-system-b-vllm-local.sh` defaults to 16 CPU / 32Gi / 32768
-context, which won't schedule on this host. Override the resource and
+context, which won't schedule on a small host. Override the resource and
 context env knobs explicitly:
 
 ```bash
@@ -72,9 +90,8 @@ APPLY=1 \
 curl http://localhost:30434/v1/models
 ```
 
-Tune up if `onedal-build` has more than the 8 vCPU / 32 GB baseline; the
-full Tier 2 profile is documented in `docs/demo-setup.md` "Hardware and
-network requirements".
+The full Tier 2 profile is in `docs/demo-setup.md` "Hardware and network
+requirements".
 
 ### MinIO
 ```bash
@@ -114,31 +131,24 @@ upstream project — see `docs/operator-install.md`). Single-node validation
 uses the same path as a real cluster.
 
 ```bash
-./scripts/install-openclaw-operator.sh
+APPLY=1 OPENCLAW_OPERATOR_REF=v0.30.0 ./scripts/install-openclaw-operator.sh
 ./scripts/check-operator-prereqs.sh
-kubectl apply -f examples/openclawinstance-intel-demo.yaml
-# Instance name comes from metadata.name in the manifest above.
-kubectl get openclawinstance intel-demo-operator -n default -o yaml
+kubectl --context system-a apply -f examples/openclawinstance-intel-demo.yaml
+kubectl --context system-a get openclawinstance intel-demo-operator -o yaml
 ```
 
 ---
 
 ## Step 5 — End-to-end smoke test
 
-`./scripts/smoke-test-operator-instance.sh` is a checklist printer — it
-emits the `kubectl` commands you should run to verify the instance
-reached a healthy state, it does not execute assertions or gate on
-readiness. Run the suggested commands manually and confirm each one:
-
 ```bash
-./scripts/smoke-test-operator-instance.sh   # prints the checklist
-kubectl get crd openclawinstances.openclaw.rocks
-kubectl get openclawinstance intel-demo-operator -n default -o yaml
-kubectl get pods -A | grep -E 'openclaw|operator|intel-demo-operator'
+APPLY=1 ./scripts/smoke-test-operator-instance.sh
+APPLY=1 SYSTEM_A_KUBECTL="kubectl --context system-a" \
+  ./scripts/smoke-test-demo-task.sh
+APPLY=1 ./scripts/smoke-test-offload-k8s.sh   # optional: full offload roundtrip
 ```
 
-Then send a test message through Telegram and verify a response comes
-back.
+Then send a test message through Telegram and verify a response comes back.
 
 ---
 
@@ -162,17 +172,16 @@ Storage:
 - [ ] Read test from inside a test pod (simulates cross-cluster)
 
 Agent session:
-- [ ] Control plane creates a session pod on `POST /sessions`
-- [ ] Session pod starts, OpenClaw daemon running
+- [ ] Operator-managed `OpenClawInstance` reaches Ready
+- [ ] Session pod created via the operator on demand
 - [ ] Tool execution works: `exec("echo hello")` returns result
 - [ ] Model call from inside pod reaches LiteLLM and returns a response
 - [ ] Artifact write/read roundtrip via Control Plane API works
 
 End-to-end:
-- [ ] Telegram message triggers session pod execution
+- [ ] Telegram message triggers a session
 - [ ] Agent returns result to Telegram
-- [ ] Offload job submitted, worker runs, artifact returned (Task 2 path)
-- [ ] Scale-up request creates sibling job, result collected (Task 3 path)
+- [ ] Offload job submitted, worker runs, artifact returned (market-research path)
 
 ---
 
@@ -181,6 +190,6 @@ End-to-end:
 - Two-cluster architecture works in principle
 - vLLM on CPU (with AMX on GNR) is fast enough for demo UX
 - Session pod image works (OpenClaw daemon, tools, model client)
-- Control Plane correctly creates/terminates pods and jobs
+- Operator-managed lifecycle correctly creates/terminates pods and jobs
 - Cross-"cluster" (cross-NodePort) artifact and API paths work
 - Actual RAM/CPU numbers for sizing real System A and System B hardware
