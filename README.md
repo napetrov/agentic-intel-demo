@@ -203,13 +203,23 @@ Architecture details and the full status-mapping table live in
 
 ### Optional: Flowise alt orchestrator
 
-Flowise (visual flow builder) is shipped as an opt-in overlay:
+Flowise (visual flow builder) is shipped as an opt-in overlay. The overlay
+also brings up the LiteLLM gateway it depends on (mock-default, opt-in
+real providers) and a one-shot seeder that pre-creates the credential and
+Variables every flow expects, so `compose up` boots end-to-end:
 
 ```bash
 # .env: FLOWISE_USERNAME, FLOWISE_PASSWORD, FLOWISE_SECRETKEY_OVERWRITE
+eval "$(scripts/lib/load-versions.sh)"   # pin LITELLM_IMAGE
 docker compose -f docker-compose.yaml -f docker-compose.flowise.yaml up --build
-# Flowise UI: http://localhost:3000
+# Flowise UI: http://localhost:3000   (login with the FLOWISE_* values)
+# LiteLLM:    http://localhost:4000   (OpenAI-compatible /v1/*)
 ```
+
+The chatflow itself is still a one-time UI step — follow
+`config/flowise/flows/terminal-agent.md` to drop in the four nodes; the
+`litellm-openai` credential and the `LITELLM_BASE_URL` /
+`CONTROL_PLANE_BASE_URL` Variables it references are already there.
 
 For Kubernetes, apply `k8s/system-a/flowise.yaml` after creating the
 `flowise-auth` Secret; the UI is exposed at NodePort 31300. Full
