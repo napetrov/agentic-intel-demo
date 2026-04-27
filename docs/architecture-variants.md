@@ -175,3 +175,25 @@ When authoring a new scenario:
 
 If a proposed scenario does not fit cleanly into one of the three variants,
 prefer splitting it into two scenarios rather than inventing a fourth mode.
+
+## Optional overlay: confidential (TDX) on System A
+
+Independent of the three execution-mode variants above, any individual
+System A agent can be marked **confidential** in the demo template
+definition. When a session targets that agent (or passes
+`confidential: tdx` explicitly), the kube backend renders the session
+Pod with `runtimeClassName` + a TDX `nodeSelector` so the workload is
+admitted only on a TDX-enabled node.
+
+- Declared in: `config/agents.yaml` (`confidential: tdx` per agent) and
+  `templates/architecture/<...>.yaml` (`spec.confidential_runtimes[]`).
+- Shipped example: `openclaw-a-3` (System A) is marked `confidential: tdx`,
+  and `templates/architecture/examples/two-system/architecture.yaml`
+  declares the matching `tdx-kata` runtime.
+- Full setup + cluster prerequisites: `docs/tdx-confidential.md`.
+
+The overlay is orthogonal to `execution_mode` — a `local-standard`,
+`local-large`, or `offload` session can each be paired with a
+TDX-protected System A agent. The variant still controls *where* heavy
+work runs; the confidential flag controls whether the System A pod is
+inside a TEE.

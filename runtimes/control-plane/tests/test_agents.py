@@ -631,3 +631,165 @@ def test_load_seed_rejects_non_list_agents(tmp_path):
     )
     with pytest.raises(ValueError, match="`agents` must be a list"):
         ar.load_seed(str(p))
+
+
+# --------------------- confidential / TDX -------------------------------
+
+
+def test_load_seed_accepts_confidential_tdx(tmp_path):
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - id: tee-1
+            name: TEE 1
+            kind: openclaw
+            system: system_a
+            capabilities: [shell]
+            confidential: tdx
+        """,
+    )
+    seed = ar.load_seed(str(p))
+    assert seed[0].confidential == "tdx"
+
+
+def test_load_seed_rejects_unknown_confidential(tmp_path):
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - id: a, name: A, kind: openclaw, system: system_a, capabilities: [], confidential: sgx
+        """,
+    )
+    # The malformed YAML above (intentional: confidential as a string in a
+    # bracket-style list) makes the comma-style entry parse — so we use a
+    # block-style entry with the actual fields:
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - id: a
+            name: A
+            kind: openclaw
+            system: system_a
+            capabilities: []
+            confidential: sgx
+        """,
+    )
+    with pytest.raises(ValueError, match="confidential"):
+        ar.load_seed(str(p))
+
+
+def test_load_seed_rejects_non_string_confidential(tmp_path):
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - id: a
+            name: A
+            kind: openclaw
+            system: system_a
+            capabilities: []
+            confidential: 1
+        """,
+    )
+    with pytest.raises(ValueError, match="confidential"):
+        ar.load_seed(str(p))
+
+
+@pytest.fixture
+def cp_app_with_tdx_agent(tmp_path, monkeypatch):
+    """Reload app.py with a registry that contains one TDX-protected agent.
+
+    Used by the inheritance / render tests below — the SessionCreateRequest
+    must auto-promote a session targeting agent_id=tdx-a-1 to
+    confidential=tdx without the caller asking for it explicitly.
+    """
+    p = _write_seed(
+        tmp_path,
+        """
+        apiVersion: demo.agents/v1
+        kind: AgentRegistry
+        agents:
+          - id: plain-a-1
+            name: Plain A
+            kind: openclaw
+            system: system_a
+            capabilities: [shell]
+          - id: tdx-a-1
+            name: TDX A
+            kind: openclaw
+            system: system_a
+            capabilities: [shell]
+            confidential: tdx
+        """,
+    )
+    monkeypatch.setenv("AGENT_REGISTRY_PATH", str(p))
+    monkeypatch.delenv("AGENT_DISCOVERY", raising=False)
+    spec = importlib.util.spec_from_file_location(
+        f"control_plane_app_tdx_{tmp_path.name}", _HERE / "app.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_get_agents_surfaces_confidential(cp_app_with_tdx_agent):
+    tc = TestClient(cp_app_with_tdx_agent.app)
+    r = tc.get("/agents")
+    assert r.status_code == 200
+    by_id = {a["id"]: a for a in r.json()["agents"]}
+    assert by_id["tdx-a-1"]["confidential"] == "tdx"
+    assert by_id["plain-a-1"]["confidential"] is None
+
+
+def test_session_inherits_confidential_from_agent(cp_app_with_tdx_agent):
+    """Operator-friendly default: the session create call doesn't have
+    to repeat `confidential: tdx` when it already targets a TDX-marked
+    agent — the registry value flows through."""
+    tc = TestClient(cp_app_with_tdx_agent.app)
+    r = tc.post(
+        "/sessions",
+        json={"scenario": "terminal-agent", "profile": "small", "agent_id": "tdx-a-1"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["agent_id"] == "tdx-a-1"
+    assert body["confidential"] == "tdx"
+
+
+def test_session_targeting_plain_agent_is_not_confidential(cp_app_with_tdx_agent):
+    tc = TestClient(cp_app_with_tdx_agent.app)
+    r = tc.post(
+        "/sessions",
+        json={"scenario": "terminal-agent", "profile": "small", "agent_id": "plain-a-1"},
+    )
+    assert r.status_code == 201
+    assert r.json()["confidential"] is None
+
+
+def test_explicit_confidential_overrides_agent_default(cp_app_with_tdx_agent):
+    """An explicit value on the request beats the registry default —
+    lets an operator promote a session onto a TEE for a one-off run
+    without re-flagging the agent."""
+    tc = TestClient(cp_app_with_tdx_agent.app)
+    r = tc.post(
+        "/sessions",
+        json={
+            "scenario": "terminal-agent",
+            "profile": "small",
+            "agent_id": "plain-a-1",
+            "confidential": "tdx",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["confidential"] == "tdx"

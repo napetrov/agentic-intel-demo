@@ -359,6 +359,7 @@ class _FlakyBackend:
         session_id=None,
         target_system=None,
         agent_id=None,
+        confidential=None,
     ):
         self.calls += 1
         if self.calls > self.succeed_n:
@@ -372,6 +373,7 @@ class _FlakyBackend:
             backend=self.name,
             target_system=target_system,
             agent_id=agent_id,
+            confidential=confidential,
         )
         self._records.append(rec)
         return rec
@@ -752,6 +754,186 @@ def test_kube_render_job_clears_inherited_target_system_label_on_default():
     assert "target-system" not in spec["metadata"]["labels"]
     pod_labels = spec["spec"]["template"]["metadata"]["labels"]
     assert "target-system" not in pod_labels
+
+
+# ---- confidential / TDX scheduling (System A confidential pod) ----
+
+
+def test_local_backend_accepts_confidential_tdx():
+    backend = sm.LocalSessionBackend()
+    rec = backend.create(scenario="x", profile="small", confidential="tdx")
+    assert rec.confidential == "tdx"
+
+
+def test_local_backend_confidential_none_passes_through():
+    """`None` is "no TEE requirement" and must survive unchanged so a
+    plain session is never silently promoted onto the constrained TDX
+    node pool."""
+    backend = sm.LocalSessionBackend()
+    rec = backend.create(scenario="x", profile="small", confidential=None)
+    assert rec.confidential is None
+
+
+def test_local_backend_rejects_unknown_confidential():
+    backend = sm.LocalSessionBackend()
+    with pytest.raises(ValueError, match="unknown confidential"):
+        backend.create(scenario="x", profile="small", confidential="sgx")
+
+
+def test_confidential_runtimes_endpoint_lists_kinds_and_defaults(client):
+    r = client.get("/sessions/confidential-runtimes")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["default"] is None
+    assert body["confidential"] == ["tdx"]
+    # Resolved scheduling defaults exposed so the UI can show what the
+    # control plane will actually request.
+    tdx = body["scheduling"]["tdx"]
+    assert tdx["runtime_class"]
+    assert isinstance(tdx["node_selector"], dict) and tdx["node_selector"]
+
+
+def test_create_accepts_confidential_tdx(client):
+    r = client.post(
+        "/sessions",
+        json={"scenario": "x", "profile": "small", "confidential": "tdx"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["confidential"] == "tdx"
+
+
+def test_create_rejects_unknown_confidential(client):
+    r = client.post(
+        "/sessions",
+        json={"scenario": "x", "profile": "small", "confidential": "sgx"},
+    )
+    assert r.status_code == 400
+    assert "unknown confidential" in r.json()["detail"]
+
+
+def test_kube_render_job_applies_tdx_runtime_and_node_selector(monkeypatch):
+    """When confidential=tdx, the rendered Pod must carry:
+      * runtimeClassName matching TDX_RUNTIME_CLASS (or the default)
+      * nodeSelector including the TDX label
+      * confidential=tdx label on Job + Pod
+      * CONFIDENTIAL=tdx env on the agent container
+    so the workload is admitted only on a TDX-enabled node and the
+    operator's `kubectl get jobs -l confidential=tdx` filter works.
+    """
+    monkeypatch.setenv("TDX_RUNTIME_CLASS", "kata-qemu-tdx")
+    monkeypatch.setenv("TDX_NODE_SELECTOR_KEY", "intel.feature.node.kubernetes.io/tdx")
+    monkeypatch.setenv("TDX_NODE_SELECTOR_VALUE", "true")
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    spec, _ = backend._render_job(
+        "sess-1", "terminal-agent", "small", confidential="tdx"
+    )
+    pod_spec = spec["spec"]["template"]["spec"]
+    assert pod_spec["runtimeClassName"] == "kata-qemu-tdx"
+    assert pod_spec["nodeSelector"] == {
+        "intel.feature.node.kubernetes.io/tdx": "true",
+    }
+    assert spec["metadata"]["labels"]["confidential"] == "tdx"
+    pod_labels = spec["spec"]["template"]["metadata"]["labels"]
+    assert pod_labels["confidential"] == "tdx"
+    envs = pod_spec["containers"][0]["env"]
+    assert {"name": "CONFIDENTIAL", "value": "tdx"} in envs
+
+
+def test_kube_render_job_omits_tdx_when_not_requested():
+    """No confidential field → no runtimeClassName, no TDX nodeSelector,
+    no label, no env var. Otherwise a defaulted session would silently
+    require a TDX node and stay Pending forever on a regular cluster."""
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small")
+    pod_spec = spec["spec"]["template"]["spec"]
+    assert "runtimeClassName" not in pod_spec
+    assert "nodeSelector" not in pod_spec
+    assert "confidential" not in spec["metadata"]["labels"]
+    assert "confidential" not in spec["spec"]["template"]["metadata"]["labels"]
+    envs = pod_spec["containers"][0]["env"]
+    assert all(e.get("name") != "CONFIDENTIAL" for e in envs)
+
+
+def test_kube_render_job_clears_stale_tdx_when_confidential_omitted(monkeypatch):
+    """An operator-edited template might already carry runtimeClassName,
+    a TDX nodeSelector key, a confidential=tdx label, or a CONFIDENTIAL
+    env from a prior render. When confidential=None on a fresh call, all
+    of those must be scrubbed — otherwise the API contract for "no TEE
+    requirement" silently breaks and Pods sit Pending."""
+    monkeypatch.setenv("TDX_NODE_SELECTOR_KEY", "intel.feature.node.kubernetes.io/tdx")
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "metadata": {"labels": {"confidential": "tdx"}},
+            "spec": {
+                "template": {
+                    "metadata": {"labels": {"confidential": "tdx"}},
+                    "spec": {
+                        "runtimeClassName": "kata-qemu-tdx",
+                        "nodeSelector": {
+                            "intel.feature.node.kubernetes.io/tdx": "true",
+                            "topology.kubernetes.io/zone": "us-east-2a",
+                        },
+                        "containers": [
+                            {
+                                "name": "agent",
+                                "image": "x",
+                                "env": [{"name": "CONFIDENTIAL", "value": "tdx"}],
+                            }
+                        ],
+                    },
+                }
+            },
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small", confidential=None)
+    pod_spec = spec["spec"]["template"]["spec"]
+    assert "runtimeClassName" not in pod_spec
+    # Unrelated nodeSelector keys (topology zone) survive — only the TDX
+    # key is stripped.
+    assert pod_spec["nodeSelector"] == {"topology.kubernetes.io/zone": "us-east-2a"}
+    assert "confidential" not in spec["metadata"]["labels"]
+    assert "confidential" not in spec["spec"]["template"]["metadata"]["labels"]
+    envs = pod_spec["containers"][0]["env"]
+    assert all(e.get("name") != "CONFIDENTIAL" for e in envs)
+
+
+def test_kube_render_job_rejects_unknown_confidential():
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    with pytest.raises(ValueError, match="unknown confidential"):
+        backend._render_job("sess-1", "x", "small", confidential="sgx")
+
+
+def test_kube_record_for_job_reads_confidential_label_back():
+    """Round-trip: the kube backend persists `confidential` only as a
+    Job label, so a control-plane restart must be able to re-derive it
+    from the cluster. _record_for_job has to read it back."""
+    be = sm.KubeSessionBackend.__new__(sm.KubeSessionBackend)
+    job = SimpleNamespace(
+        metadata=SimpleNamespace(
+            name="sess-1-job",
+            labels={
+                "scenario": "terminal-agent",
+                "profile": "small",
+                "confidential": "tdx",
+            },
+            creation_timestamp=None,
+        ),
+        status={"conditions": [], "active": 0, "start_time": None},
+    )
+    rec = be._record_for_job("sess-1", job, pods=[])
+    assert rec.confidential == "tdx"
 
 
 def test_kube_create_wraps_template_read_apiexception():

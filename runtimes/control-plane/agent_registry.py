@@ -33,6 +33,10 @@ logger = logging.getLogger("control-plane.agents")
 
 AGENT_KINDS: frozenset[str] = frozenset({"openclaw", "flowise"})
 AGENT_SYSTEMS: frozenset[str] = frozenset({"system_a", "system_b"})
+# Confidential-computing runtime kinds supported by the agent schema.
+# Today only Intel TDX is wired end-to-end; new TEEs (SGX, SEV-SNP) can be
+# added here once the matching scheduler hooks are in place.
+CONFIDENTIAL_KINDS: frozenset[str] = frozenset({"tdx"})
 # Mirror schemas/agents.schema.json AND the nginx edge regex AND the
 # kube session-job label budget. Keep the three in sync — divergence
 # between them is exactly what this validation prevents.
@@ -64,6 +68,12 @@ class AgentRecord:
     source: str = "seed"
     message: Optional[str] = None
     discovery: dict[str, Any] = field(default_factory=dict)
+    # Optional confidential-computing requirement. None = run on regular
+    # nodes; "tdx" = the session Pod must be admitted onto a TDX-capable
+    # node (control plane sets runtimeClassName + nodeSelector at render
+    # time). Surfaced to the UI so a viewer can tell at a glance which
+    # agent in the pool is running inside a TEE.
+    confidential: Optional[str] = None
 
     def to_public(self) -> dict[str, Any]:
         return asdict(self)
@@ -110,6 +120,13 @@ def _validate_agent_dict(idx: int, raw: dict[str, Any]) -> AgentRecord:
         discovery = {}
     if not isinstance(discovery, dict):
         raise ValueError(f"agents[{idx}]: discovery must be a mapping")
+    confidential = raw.get("confidential")
+    if confidential is not None:
+        if not isinstance(confidential, str) or confidential not in CONFIDENTIAL_KINDS:
+            raise ValueError(
+                f"agents[{idx}]: confidential {confidential!r} must be one of "
+                f"{sorted(CONFIDENTIAL_KINDS)} or omitted"
+            )
     return AgentRecord(
         id=raw["id"],
         name=raw["name"],
@@ -117,6 +134,7 @@ def _validate_agent_dict(idx: int, raw: dict[str, Any]) -> AgentRecord:
         system=raw["system"],
         capabilities=list(caps_raw),
         discovery=discovery,
+        confidential=confidential,
     )
 
 

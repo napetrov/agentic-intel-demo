@@ -62,6 +62,9 @@ TOPOLOGY_SUPPORTED_MODES: dict[str, set[str]] = {
     "two_system": {"local_standard", "local_large", "offload_system_b"},
     "multi_system": {"local_standard", "local_large", "offload_system_b"},
 }
+# Confidential-computing kinds the demo plumbs end-to-end. Mirrors
+# schemas/architecture.schema.json + agent_registry.CONFIDENTIAL_KINDS.
+CONFIDENTIAL_KINDS = {"tdx"}
 
 
 @dataclass
@@ -227,20 +230,26 @@ def iter_architecture_files() -> Iterable[Path]:
             yield p
 
 
-def validate_architecture(report: Report, path: Path) -> set[str]:
-    """Return the set of supported_execution_modes declared by this file."""
+def validate_architecture(report: Report, path: Path) -> tuple[set[str], set[str]]:
+    """Validate one architecture file.
+
+    Returns a tuple of:
+      * supported_execution_modes declared by this file
+      * confidential_runtimes kinds declared by this file (e.g. {"tdx"});
+        empty when the optional block is absent.
+    """
     where = str(path.relative_to(REPO_ROOT))
     try:
         doc = load_yaml(path) or {}
     except yaml.YAMLError as e:
         report.add_error(f"{where}: YAML parse error: {e}")
-        return set()
+        return set(), set()
     if not isinstance(doc, dict):
         report.add_error(
             f"{where}: root document must be a mapping, got "
             f"{type(doc).__name__}"
         )
-        return set()
+        return set(), set()
 
     if doc.get("apiVersion") != "demo.architecture/v1":
         report.add_error(
@@ -372,8 +381,65 @@ def validate_architecture(report: Report, path: Path) -> set[str]:
                 f"for topology `{mode}`"
             )
 
+    # Optional confidential_runtimes block. Each entry declares a TEE
+    # runtime class the operator has installed on a cluster; the agent
+    # registry can then reference one of these `kind` values via
+    # `confidential: <kind>`. Spec-only — actual k8s RuntimeClass +
+    # node-label installation is out-of-band (Kata-TDX or Confidential
+    # Containers operator).
+    cruntimes = spec.get("confidential_runtimes")
+    declared_kinds: set[str] = set()
+    if cruntimes is not None:
+        if not isinstance(cruntimes, list):
+            report.add_error(
+                f"{where}: spec.confidential_runtimes must be a list"
+            )
+            cruntimes = []
+        seen_names: set[str] = set()
+        for i, entry in enumerate(cruntimes):
+            label = f"spec.confidential_runtimes[{i}]"
+            if not isinstance(entry, dict):
+                report.add_error(f"{where}: {label} must be a mapping")
+                continue
+            for required in ("name", "kind", "location", "runtime_class", "node_selector"):
+                if required not in entry:
+                    report.add_error(f"{where}: {label}.{required} is required")
+            name = entry.get("name")
+            if isinstance(name, str):
+                if name in seen_names:
+                    report.add_error(f"{where}: {label}.name `{name}` duplicated")
+                else:
+                    seen_names.add(name)
+            kind = entry.get("kind")
+            if isinstance(kind, str):
+                if kind not in CONFIDENTIAL_KINDS:
+                    report.add_error(
+                        f"{where}: {label}.kind `{kind}` not in "
+                        f"{sorted(CONFIDENTIAL_KINDS)}"
+                    )
+                else:
+                    declared_kinds.add(kind)
+            check_location(f"{label}.location", entry.get("location"))
+            ns = entry.get("node_selector")
+            if ns is None:
+                pass
+            elif not isinstance(ns, dict) or not ns:
+                report.add_error(
+                    f"{where}: {label}.node_selector must be a non-empty mapping"
+                )
+            else:
+                for k, v in ns.items():
+                    if not isinstance(k, str) or not k:
+                        report.add_error(
+                            f"{where}: {label}.node_selector keys must be non-empty strings"
+                        )
+                    if not isinstance(v, str) or not v:
+                        report.add_error(
+                            f"{where}: {label}.node_selector[{k!r}] must be a non-empty string"
+                        )
+
     report.ok(f"{where}: architecture structure OK")
-    return normalized_sem
+    return normalized_sem, declared_kinds
 
 
 def _load_litellm_aliases(report: Report) -> set[str]:
@@ -658,7 +724,7 @@ AGENT_SYSTEMS = {"system_a", "system_b"}
 # without overrunning the 63-char DNS-1035 label budget.
 AGENT_ID_RE = re.compile(r"^[a-z]([a-z0-9-]*[a-z0-9])?$")
 AGENT_ID_MAX_LEN = 59
-AGENT_ALLOWED_KEYS = {"id", "name", "kind", "system", "capabilities", "discovery"}
+AGENT_ALLOWED_KEYS = {"id", "name", "kind", "system", "capabilities", "discovery", "confidential"}
 AGENT_DISCOVERY_ALLOWED_KEYS = {
     "openclaw_instance",
     "deployment",
@@ -667,13 +733,22 @@ AGENT_DISCOVERY_ALLOWED_KEYS = {
 }
 
 
-def validate_agents_registry(report: Report) -> None:
+def validate_agents_registry(
+    report: Report, confidential_kinds_declared: set[str] | None = None
+) -> None:
     """Validate config/agents.yaml against the demo.agents/v1 shape.
 
     The registry is optional — a missing file is fine for repos that
     haven't seeded long-lived agents yet. Anything else (bad YAML,
     wrong apiVersion, duplicate ids, unknown kind/system) is hard error.
+
+    `confidential_kinds_declared` is the union of TEE kinds declared
+    across architecture examples; when an agent declares
+    `confidential: <kind>` we cross-check that at least one shipped
+    architecture example covers that kind, the same pattern as the
+    `execution_mode` cross-check in validate_scenarios.
     """
+    confidential_kinds_declared = confidential_kinds_declared or set()
     path = REPO_ROOT / "config" / "agents.yaml"
     where = "config/agents.yaml"
     if not path.exists():
@@ -775,6 +850,22 @@ def validate_agents_registry(report: Report) -> None:
                         report.add_error(
                             f"{prefix}: discovery.{key} must be a non-empty string or null"
                         )
+        confidential = agent.get("confidential")
+        if confidential is not None:
+            if not isinstance(confidential, str) or confidential not in CONFIDENTIAL_KINDS:
+                report.add_error(
+                    f"{prefix}: confidential {confidential!r} must be one of "
+                    f"{sorted(CONFIDENTIAL_KINDS)} or omitted"
+                )
+            elif (
+                confidential_kinds_declared
+                and confidential not in confidential_kinds_declared
+            ):
+                report.add_error(
+                    f"{prefix}: confidential `{confidential}` is not declared by "
+                    f"any shipped architecture example's "
+                    f"spec.confidential_runtimes[]"
+                )
     report.ok(f"{where}: {len(agents)} agent(s)")
 
 
@@ -782,12 +873,15 @@ def main() -> int:
     report = Report()
 
     supported_modes_union: set[str] = set()
+    confidential_kinds_union: set[str] = set()
     for path in iter_architecture_files():
-        supported_modes_union |= validate_architecture(report, path)
+        modes, kinds = validate_architecture(report, path)
+        supported_modes_union |= modes
+        confidential_kinds_union |= kinds
 
     validate_scenarios(report, supported_modes_union)
     validate_chat_configs(report)
-    validate_agents_registry(report)
+    validate_agents_registry(report, confidential_kinds_union)
 
     for note in report.checked:
         print(f"OK  {note}")

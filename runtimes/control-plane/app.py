@@ -39,10 +39,12 @@ if str(_HERE) not in _sys.path:
 
 from persistence import SqliteJsonStore  # noqa: E402
 from session_manager import (  # noqa: E402  (after sys.path tweak)
+    CONFIDENTIAL_KINDS,
     DEFAULT_PROFILE,
     PROFILES,
     TARGET_SYSTEMS,
     SessionBackend,
+    confidential_scheduling_defaults,
     make_backend,
 )
 from agent_registry import (  # noqa: E402
@@ -440,6 +442,13 @@ class SessionCreateRequest(BaseModel):
     # ephemeral (today's behavior). Validated against the registry at
     # the API edge (unknown id → 400) so the backend stays decoupled.
     agent_id: Optional[str] = Field(default=None, max_length=_K8S_LABEL_MAX)
+    # Optional confidential-computing requirement. None = run on regular
+    # nodes. "tdx" = the kube backend renders runtimeClassName +
+    # nodeSelector so the Pod is admitted only on a TDX-enabled node.
+    # When omitted but the chosen agent declares
+    # `confidential` in the registry, the API edge inherits it so the
+    # operator only has to mark the agent once.
+    confidential: Optional[str] = Field(default=None)
 
 
 class SessionBatchRequest(BaseModel):
@@ -451,6 +460,7 @@ class SessionBatchRequest(BaseModel):
     count: int = Field(gt=0)
     target_system: Optional[str] = Field(default=None)
     agent_id: Optional[str] = Field(default=None, max_length=_K8S_LABEL_MAX)
+    confidential: Optional[str] = Field(default=None)
 
 
 class SessionResponse(BaseModel):
@@ -469,6 +479,7 @@ class SessionResponse(BaseModel):
     message: Optional[str] = None
     target_system: Optional[str] = None
     agent_id: Optional[str] = None
+    confidential: Optional[str] = None
 
 
 class SessionListResponse(BaseModel):
@@ -512,6 +523,26 @@ def list_target_systems() -> dict[str, Any]:
     }
 
 
+@app.get("/sessions/confidential-runtimes")
+def list_confidential_runtimes() -> dict[str, Any]:
+    """Confidential-computing kinds the kube backend can render onto a
+    session Job.
+
+    Surfaces both the allow-list (so the UI can render a "TDX" toggle
+    without hard-coding the value) and the resolved scheduling defaults
+    (RuntimeClass name + nodeSelector key/value) so an operator can
+    sanity-check what the control plane will actually request without
+    reaching into the env or the source. Sensitive cluster details
+    don't appear here — the values are exactly what end up on the Pod
+    spec.
+    """
+    return {
+        "default": None,
+        "confidential": sorted(CONFIDENTIAL_KINDS),
+        "scheduling": confidential_scheduling_defaults(),
+    }
+
+
 def _validate_agent_id_request(agent_id: Optional[str]) -> None:
     """Reject unknown agent_id values at the API edge.
 
@@ -531,6 +562,52 @@ def _validate_agent_id_request(agent_id: Optional[str]) -> None:
                 f"registered={sorted(known) or '[]'}"
             ),
         )
+
+
+def _validate_confidential_request(confidential: Optional[str]) -> None:
+    """Reject unknown confidential values at the API edge.
+
+    Mirrors the target_system / agent_id validators: keep the backend
+    agnostic, surface a clear allow-list error to the caller. `None` is
+    a first-class value (= "no TEE requirement") and skips the check.
+    """
+    if confidential is None:
+        return
+    if confidential not in CONFIDENTIAL_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown confidential {confidential!r}; "
+                f"allowed={sorted(CONFIDENTIAL_KINDS)}"
+            ),
+        )
+
+
+def _resolve_confidential(
+    requested: Optional[str], agent_id: Optional[str]
+) -> Optional[str]:
+    """Resolve the effective confidential requirement for a session.
+
+    Precedence:
+      1. Explicit value on the request (operator override).
+      2. Agent registry — when the chosen agent_id is marked
+         `confidential: tdx`, inherit it so the operator only has to
+         declare the requirement once.
+      3. None (default — schedule on regular nodes).
+
+    The explicit override wins so an operator can promote a session
+    onto a TEE for a one-off run without re-flagging the agent. It can
+    also DEMOTE — passing an empty string is treated as "no TEE", but
+    we leave that decision to the request validator (None vs absent).
+    """
+    if requested is not None:
+        return requested
+    if not agent_id:
+        return None
+    rec = _agent_registry.get(agent_id)
+    if rec is None:
+        return None
+    return rec.confidential
 
 
 def _validate_target_system_request(target_system: Optional[str]) -> None:
@@ -563,6 +640,8 @@ def create_session(req: SessionCreateRequest) -> SessionResponse:
         )
     _validate_target_system_request(req.target_system)
     _validate_agent_id_request(req.agent_id)
+    _validate_confidential_request(req.confidential)
+    confidential = _resolve_confidential(req.confidential, req.agent_id)
     try:
         rec = _session_backend.create(
             scenario=req.scenario,
@@ -570,6 +649,7 @@ def create_session(req: SessionCreateRequest) -> SessionResponse:
             session_id=req.session_id,
             target_system=req.target_system,
             agent_id=req.agent_id,
+            confidential=confidential,
         )
     except ValueError as exc:
         # Duplicate session_id and unknown-profile both surface here.
@@ -611,6 +691,8 @@ def create_session_batch(
         )
     _validate_target_system_request(req.target_system)
     _validate_agent_id_request(req.agent_id)
+    _validate_confidential_request(req.confidential)
+    confidential = _resolve_confidential(req.confidential, req.agent_id)
     created = []
     error: Optional[str] = None
     for _ in range(req.count):
@@ -620,6 +702,7 @@ def create_session_batch(
                 profile=req.profile,
                 target_system=req.target_system,
                 agent_id=req.agent_id,
+                confidential=confidential,
             )
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
@@ -716,6 +799,11 @@ class AgentResponse(BaseModel):
     source: str
     message: Optional[str] = None
     discovery: dict[str, Any] = Field(default_factory=dict)
+    # Optional TEE requirement declared in the registry (e.g. "tdx"). The
+    # UI uses this to show a "TDX" badge on the agent card; the control
+    # plane uses it to inherit the requirement onto sessions that target
+    # this agent without an explicit override.
+    confidential: Optional[str] = None
 
 
 class AgentListResponse(BaseModel):

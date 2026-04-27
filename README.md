@@ -92,7 +92,7 @@ Ports bound on `127.0.0.1`: `8080` (web UI + `/api`), `8090` (control-plane), `9
 
 When container registries are blocked (sandboxes / air-gapped CI), `scripts/dev-up.sh` brings up the same stack from a Python venv with `moto[server]` standing in for MinIO. Same `/api/*` contract.
 
-`config/agents.yaml` declares the long-lived agent pool; the control plane exposes it read-only via `GET /api/agents`. Short-lived tasks go through `POST /sessions` (multi-agent fan-out, status polled in the web UI). Optional Flowise / OpenWebUI overlays add `:3000` / `:3030`.
+`config/agents.yaml` declares the long-lived agent pool; the control plane exposes it read-only via `GET /api/agents`. Short-lived tasks go through `POST /sessions` (multi-agent fan-out, status polled in the web UI). Optional Flowise / OpenWebUI overlays add `:3000` / `:3030`. One System A agent (`openclaw-a-3`) is marked `confidential: tdx` so its session pod is rendered with the TDX `runtimeClassName` + nodeSelector — see [docs/tdx-confidential.md](docs/tdx-confidential.md) for cluster prerequisites.
 
 Full env vars, persistence, multi-agent fan-out, overlay setup, and the service-launchers panel are documented in [docs/demo-setup.md](docs/demo-setup.md), [docs/architecture.md](docs/architecture.md), [docs/flowise-integration.md](docs/flowise-integration.md), and [web-demo/README.md](web-demo/README.md).
 

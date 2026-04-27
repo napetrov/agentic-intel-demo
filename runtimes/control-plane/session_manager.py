@@ -71,6 +71,38 @@ DEFAULT_PROFILE = "small"
 # routing contract may evolve — keep the override path explicit).
 TARGET_SYSTEMS: frozenset[str] = frozenset({"system_a", "system_b"})
 
+# Confidential-computing kinds the kube backend can render onto a session
+# Job. Mirrors agent_registry.CONFIDENTIAL_KINDS — kept in code (not
+# imported) so the local backend can validate without depending on the
+# registry module shape, same pattern as TARGET_SYSTEMS / PROFILES above.
+CONFIDENTIAL_KINDS: frozenset[str] = frozenset({"tdx"})
+
+# Per-kind scheduling defaults. Each entry maps a confidential kind to:
+#   runtime_class   — k8s RuntimeClass name (must already exist in the
+#                     cluster; the operator installs it via Kata-TDX or
+#                     Confidential Containers).
+#   node_selector   — labels the rendered Pod must match. The default key
+#                     mirrors what the Confidential Containers operator
+#                     and Intel's NFD source typically expose; operators
+#                     on a different cluster shape can override per-kind
+#                     via env vars (TDX_RUNTIME_CLASS,
+#                     TDX_NODE_SELECTOR_KEY, TDX_NODE_SELECTOR_VALUE).
+# Kept as a function so test code can monkeypatch env vars between cases.
+def confidential_scheduling_defaults() -> dict[str, dict[str, Any]]:
+    return {
+        "tdx": {
+            "runtime_class": os.environ.get(
+                "TDX_RUNTIME_CLASS", "kata-qemu-tdx"
+            ),
+            "node_selector": {
+                os.environ.get(
+                    "TDX_NODE_SELECTOR_KEY",
+                    "intel.feature.node.kubernetes.io/tdx",
+                ): os.environ.get("TDX_NODE_SELECTOR_VALUE", "true"),
+            },
+        },
+    }
+
 # Session status vocabulary. Aligns with k8s Job conditions so the kube
 # backend can map 1:1 without inventing extra states.
 STATUS_PENDING = "Pending"
@@ -108,6 +140,13 @@ class SessionRecord:
     # Validation (must be a registered id) happens at the API edge so
     # the backend can stay agnostic of the registry.
     agent_id: Optional[str] = None
+    # Optional confidential-computing requirement for the rendered Pod.
+    # `None` = run on regular nodes. `"tdx"` = the kube backend sets
+    # runtimeClassName + nodeSelector so the Pod is admitted only on a
+    # TDX-enabled node. Round-tripped on the public schema so the UI can
+    # show a "TDX" badge next to a session and `kubectl get jobs -l
+    # confidential=tdx` finds every Job that's been steered into a TEE.
+    confidential: Optional[str] = None
     # Backend-specific extras (e.g. raw k8s phase) live here so callers
     # can introspect without leaking k8s types into the public schema.
     extras: dict[str, Any] = field(default_factory=dict)
@@ -128,6 +167,7 @@ class SessionBackend(Protocol):
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
         agent_id: Optional[str] = None,
+        confidential: Optional[str] = None,
     ) -> SessionRecord: ...
     def get(self, session_id: str) -> Optional[SessionRecord]: ...
     def list(self) -> list[SessionRecord]: ...
@@ -149,6 +189,24 @@ def _validate_target_system(target_system: Optional[str]) -> Optional[str]:
             f"unknown target_system {target_system!r}; allowed={sorted(TARGET_SYSTEMS)}"
         )
     return target_system
+
+
+def _validate_confidential(confidential: Optional[str]) -> Optional[str]:
+    """Reject anything outside the supported TEE allow-list.
+
+    Same shape as _validate_target_system: `None` = "no confidential
+    requirement" and survives unchanged; an unknown value fails loud so a
+    typo can't silently downgrade a TDX-required session onto a plain
+    node.
+    """
+    if confidential is None:
+        return None
+    if confidential not in CONFIDENTIAL_KINDS:
+        raise ValueError(
+            f"unknown confidential {confidential!r}; "
+            f"allowed={sorted(CONFIDENTIAL_KINDS)}"
+        )
+    return confidential
 
 
 def _new_session_id() -> str:
@@ -253,10 +311,12 @@ class LocalSessionBackend:
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
         agent_id: Optional[str] = None,
+        confidential: Optional[str] = None,
     ) -> SessionRecord:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}; allowed={sorted(PROFILES)}")
         target_system = _validate_target_system(target_system)
+        confidential = _validate_confidential(confidential)
         sid = session_id or _new_session_id()
         with self._lock:
             if sid in self._records:
@@ -276,6 +336,7 @@ class LocalSessionBackend:
                 message="simulated session created (local backend)",
                 target_system=target_system,
                 agent_id=agent_id,
+                confidential=confidential,
             )
             # Durable write first — if SQLite barfs, the in-memory cache
             # stays empty and the caller sees the failure instead of a
@@ -445,9 +506,15 @@ class KubeSessionBackend:
         profile: str,
         target_system: Optional[str] = None,
         agent_id: Optional[str] = None,
+        confidential: Optional[str] = None,
     ) -> tuple[dict, str]:
         if profile not in PROFILES:
             raise ValueError(f"unknown profile {profile!r}")
+        if confidential is not None and confidential not in CONFIDENTIAL_KINDS:
+            raise ValueError(
+                f"unknown confidential {confidential!r}; "
+                f"allowed={sorted(CONFIDENTIAL_KINDS)}"
+            )
         specs = PROFILES[profile]
         spec = self._load_template()
         # Strip generateName if the template carries one — we provide an
@@ -488,6 +555,17 @@ class KubeSessionBackend:
             labels["agent-id"] = agent_id
         else:
             labels.pop("agent-id", None)
+        if confidential:
+            # Round-trip the TEE requirement on the Job too, mirroring
+            # target-system / agent-id. `kubectl get jobs -l confidential=tdx`
+            # is the operator's quick filter for "what's running inside
+            # a TEE right now"; without the label the kube backend's
+            # post-restart read couldn't tell a TDX-required Job apart
+            # from a plain one (the runtimeClassName + nodeSelector hints
+            # live deeper in the Pod template).
+            labels["confidential"] = confidential
+        else:
+            labels.pop("confidential", None)
 
         job_spec = spec.setdefault("spec", {})
         job_spec.setdefault("ttlSecondsAfterFinished", self._ttl)
@@ -512,6 +590,10 @@ class KubeSessionBackend:
             pod_labels["agent-id"] = agent_id
         else:
             pod_labels.pop("agent-id", None)
+        if confidential:
+            pod_labels["confidential"] = confidential
+        else:
+            pod_labels.pop("confidential", None)
         pod_spec = pod_template.setdefault("spec", {})
         containers = pod_spec.get("containers") or []
         if not containers:
@@ -529,7 +611,10 @@ class KubeSessionBackend:
         # the rendered spec is deterministic regardless of template
         # provenance. Other template envs (model creds, etc.) survive.
         envs = container.setdefault("env", [])
-        _OWNED_ENV_KEYS = {"SESSION_ID", "SCENARIO", "PROFILE", "TARGET_SYSTEM", "AGENT_ID"}
+        _OWNED_ENV_KEYS = {
+            "SESSION_ID", "SCENARIO", "PROFILE", "TARGET_SYSTEM",
+            "AGENT_ID", "CONFIDENTIAL",
+        }
         envs[:] = [e for e in envs if e.get("name") not in _OWNED_ENV_KEYS]
         envs.append({"name": "SESSION_ID", "value": session_id})
         envs.append({"name": "SCENARIO", "value": scenario})
@@ -538,6 +623,8 @@ class KubeSessionBackend:
             envs.append({"name": "TARGET_SYSTEM", "value": target_system})
         if agent_id:
             envs.append({"name": "AGENT_ID", "value": agent_id})
+        if confidential:
+            envs.append({"name": "CONFIDENTIAL", "value": confidential})
         # Profile-driven resources override whatever the template set.
         container["resources"] = {
             "requests": {
@@ -549,6 +636,48 @@ class KubeSessionBackend:
                 "memory": specs["memory_limit"],
             },
         }
+
+        # Confidential-runtime hooks. When set, steer the rendered Pod
+        # onto a TEE-capable node by:
+        #   1. setting runtimeClassName to a Kata-TDX / CoCo class
+        #   2. merging a nodeSelector that NFD (or the operator) labels
+        #      onto the TDX-enabled node
+        # Operators with a different cluster shape (different RuntimeClass
+        # name, different NFD label, different value) override via env —
+        # see confidential_scheduling_defaults().
+        # When confidential is None we still scrub any TEE-specific keys
+        # the underlying template might already carry, so a control-plane
+        # restart can't read back a stale TDX requirement and silently
+        # keep scheduling onto the constrained node pool.
+        defaults = confidential_scheduling_defaults()
+        all_node_selector_keys = {
+            k
+            for cfg in defaults.values()
+            for k in cfg["node_selector"]
+        }
+        if confidential:
+            tee = defaults[confidential]
+            pod_spec["runtimeClassName"] = tee["runtime_class"]
+            existing_selector = pod_spec.get("nodeSelector") or {}
+            if not isinstance(existing_selector, dict):
+                existing_selector = {}
+            # Drop any sibling-TEE keys the template might already carry
+            # so we don't accidentally require both a TDX label and an
+            # SGX label on the same node.
+            for k in all_node_selector_keys:
+                existing_selector.pop(k, None)
+            existing_selector.update(tee["node_selector"])
+            pod_spec["nodeSelector"] = existing_selector
+        else:
+            pod_spec.pop("runtimeClassName", None)
+            existing_selector = pod_spec.get("nodeSelector") or {}
+            if isinstance(existing_selector, dict):
+                for k in all_node_selector_keys:
+                    existing_selector.pop(k, None)
+                if existing_selector:
+                    pod_spec["nodeSelector"] = existing_selector
+                else:
+                    pod_spec.pop("nodeSelector", None)
         return spec, job_name
 
     @staticmethod
@@ -602,6 +731,7 @@ class KubeSessionBackend:
         # process restarted between create and the next poll.
         target_system = labels.get("target-system") or None
         agent_id = labels.get("agent-id") or None
+        confidential = labels.get("confidential") or None
         specs = PROFILES.get(profile, PROFILES[DEFAULT_PROFILE])
         status, started_at, completed_at, message = self._status_from_job(job, pods)
         created_at = (
@@ -626,6 +756,7 @@ class KubeSessionBackend:
             message=message,
             target_system=target_system,
             agent_id=agent_id,
+            confidential=confidential,
         )
 
     def create(
@@ -635,8 +766,10 @@ class KubeSessionBackend:
         session_id: Optional[str] = None,
         target_system: Optional[str] = None,
         agent_id: Optional[str] = None,
+        confidential: Optional[str] = None,
     ) -> SessionRecord:
         target_system = _validate_target_system(target_system)
+        confidential = _validate_confidential(confidential)
         sid = session_id or _new_session_id()
         # Wrap the template-read AND the Job create in the same translator.
         # _render_job() calls _load_template() which does a ConfigMap GET —
@@ -650,6 +783,7 @@ class KubeSessionBackend:
                 sid, scenario, profile,
                 target_system=target_system,
                 agent_id=agent_id,
+                confidential=confidential,
             )
             self._batch.create_namespaced_job(namespace=self._namespace, body=spec)
         except self._client.exceptions.ApiException as exc:
@@ -686,6 +820,7 @@ class KubeSessionBackend:
                 message="job created; status not yet available",
                 target_system=target_system,
                 agent_id=agent_id,
+                confidential=confidential,
             )
         return self._record_for_job(sid, job, pods=[])
 
