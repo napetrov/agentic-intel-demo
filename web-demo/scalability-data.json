@@ -1,6 +1,6 @@
 {
-  "schema_version": "1",
-  "_about": "Mock numbers for the 'Scalability story' page (web-demo/scalability.html). All values are synthetic and editable in one place: changing a number here rewrites every tile and re-shapes the chart on the page automatically. See web-demo/scalability.js for derived-value formulas.",
+  "schema_version": "2",
+  "_about": "Mock numbers for the 'Scalability story' page (web-demo/scalability.html). All values are synthetic and editable in one place: changing a number here rewrites every tile and re-shapes the chart on the page automatically. See web-demo/scalability.js for derived-value formulas. Schema v2: on-prem framing — instances no longer carry an hourly $ rate; economics are expressed as 'API cost avoided per day' against a Frontier-API comparator.",
   "comparators": [
     {
       "id": "frontier-api-small",
@@ -17,24 +17,20 @@
   ],
   "instances": [
     {
-      "id": "xeon-cwf-32",
+      "id": "xeon-cwf-dual",
       "label": "Intel Xeon CWF",
-      "subtitle": "32 vCPU · 128 GB",
-      "vcpu": 32,
-      "memory_gb": 128,
-      "hourly_usd": 1.36,
-      "idle_cost_usd": 0.00,
-      "notes": "Synthetic on-demand reference, comparable to AWS c7i.8xlarge list price ($1.36/hr, us-east-1). Idle cost is zero because session pods run as on-demand k8s Jobs, not long-lived Deployments."
+      "subtitle": "576 vCPU · 1536 GB",
+      "vcpu": 576,
+      "memory_gb": 1536,
+      "notes": "Dual-socket Clearwater Forest reference: 288 E-cores per socket, ~3 GB / core. Owned hardware — no cloud hourly rate; capital and power costs are out of scope for this page."
     },
     {
-      "id": "gnr-96",
+      "id": "gnr-dual",
       "label": "Intel GNR",
-      "subtitle": "96 vCPU · 512 GB",
-      "vcpu": 96,
-      "memory_gb": 512,
-      "hourly_usd": 4.10,
-      "idle_cost_usd": 0.00,
-      "notes": "Synthetic reference for a Granite Rapids node sized for shared offload + SLM workloads. Idle cost is zero — workers scale to minReplicas=1 and Jobs spawn on demand."
+      "subtitle": "256 vCPU · 1024 GB",
+      "vcpu": 256,
+      "memory_gb": 1024,
+      "notes": "Dual-socket Granite Rapids reference: 128 P-cores per socket, ~4 GB / core. AMX accelerates the SLM offload path. Owned hardware — no cloud hourly rate."
     }
   ],
   "workloads": [
@@ -65,18 +61,17 @@
     {
       "id": "xeon-small-density",
       "label": "Xeon CWF · small agents",
-      "story": "How dense and how cheap a single Xeon node gets when you pack it with light terminal agents.",
-      "instance_id": "xeon-cwf-32",
+      "story": "How dense a single dual-socket CWF node gets when packed with light terminal agents — and how much frontier-API spend that displaces.",
+      "instance_id": "xeon-cwf-dual",
       "workload_id": "small-terminal-agent",
       "scaling": {
         "model": "queueing",
-        "max_parallel_slots": 24,
         "datapoints": [
-          { "concurrency":   5, "p50_s": 1.5, "p95_s":  2.0, "throughput_per_min":  37, "utilization_pct": 21 },
-          { "concurrency":  15, "p50_s": 1.6, "p95_s":  2.2, "throughput_per_min": 110, "utilization_pct": 62 },
-          { "concurrency":  25, "p50_s": 1.9, "p95_s":  3.0, "throughput_per_min": 178, "utilization_pct": 96 },
-          { "concurrency":  50, "p50_s": 3.4, "p95_s":  5.2, "throughput_per_min": 220, "utilization_pct": 99 },
-          { "concurrency": 100, "p50_s": 8.1, "p95_s": 13.0, "throughput_per_min": 230, "utilization_pct": 99 }
+          { "concurrency": 100, "p50_s":  8.0, "p95_s": 10.0, "throughput_per_min":  750, "utilization_pct":  17 },
+          { "concurrency": 300, "p50_s":  8.0, "p95_s": 12.0, "throughput_per_min": 2250, "utilization_pct":  52 },
+          { "concurrency": 460, "p50_s":  8.5, "p95_s": 14.0, "throughput_per_min": 3450, "utilization_pct":  80 },
+          { "concurrency": 576, "p50_s": 11.0, "p95_s": 22.0, "throughput_per_min": 4320, "utilization_pct": 100 },
+          { "concurrency": 900, "p50_s": 20.0, "p95_s": 38.0, "throughput_per_min": 4320, "utilization_pct": 100 }
         ]
       },
       "economics": {
@@ -85,29 +80,28 @@
       "tiles": [
         "density",
         "throughput",
-        "cost_per_task",
-        "vs_comparator",
         "sweet_spot",
-        "idle_cost",
         "daily_volume",
+        "tokens_per_day",
+        "api_cost_avoided",
+        "marginal_cost",
         "human_equivalent"
       ]
     },
     {
       "id": "gnr-research-volume",
       "label": "GNR · research workload",
-      "story": "Scaled-up node running heavier research agents, with multi-call inference and offload — same density story, different price-point.",
-      "instance_id": "gnr-96",
+      "story": "Heavier research agents on a GNR node with multi-call inference and offload — same density story, different price-point.",
+      "instance_id": "gnr-dual",
       "workload_id": "medium-research",
       "scaling": {
         "model": "queueing",
-        "max_parallel_slots": 22,
         "datapoints": [
-          { "concurrency":   5, "p50_s": 45.0, "p95_s":  52.0, "throughput_per_min":  6.6, "utilization_pct": 23 },
-          { "concurrency":  12, "p50_s": 46.0, "p95_s":  55.0, "throughput_per_min": 15.7, "utilization_pct": 55 },
-          { "concurrency":  22, "p50_s": 48.0, "p95_s":  62.0, "throughput_per_min": 27.3, "utilization_pct": 96 },
-          { "concurrency":  40, "p50_s": 75.0, "p95_s": 110.0, "throughput_per_min": 29.0, "utilization_pct": 99 },
-          { "concurrency":  60, "p50_s":118.0, "p95_s": 175.0, "throughput_per_min": 30.0, "utilization_pct": 99 }
+          { "concurrency":  10, "p50_s": 45.0, "p95_s":  52.0, "throughput_per_min": 13.3, "utilization_pct":  16 },
+          { "concurrency":  30, "p50_s": 46.0, "p95_s":  60.0, "throughput_per_min": 40.0, "utilization_pct":  47 },
+          { "concurrency":  50, "p50_s": 48.0, "p95_s":  78.0, "throughput_per_min": 66.7, "utilization_pct":  78 },
+          { "concurrency":  64, "p50_s": 58.0, "p95_s": 115.0, "throughput_per_min": 85.3, "utilization_pct": 100 },
+          { "concurrency": 100, "p50_s": 85.0, "p95_s": 160.0, "throughput_per_min": 85.3, "utilization_pct": 100 }
         ]
       },
       "economics": {
@@ -116,11 +110,11 @@
       "tiles": [
         "density",
         "throughput",
-        "cost_per_task",
-        "vs_comparator",
         "sweet_spot",
-        "idle_cost",
         "daily_volume",
+        "tokens_per_day",
+        "api_cost_avoided",
+        "marginal_cost",
         "human_equivalent"
       ]
     }

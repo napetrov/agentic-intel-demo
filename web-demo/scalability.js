@@ -2,10 +2,14 @@
  * Scalability story page renderer.
  *
  * Pure client-side: loads scalability-data.json, builds derived numbers
- * (sweet spot, knee, cost-per-task, etc.) on the client, and renders
- * tiles + an SVG latency chart. No backend, no demo runs — the JSON is
- * the source of truth and any number can be edited there to reshape the
- * page automatically.
+ * (max parallel slots, sweet spot, knee, daily volume, displaced API
+ * spend) on the client, and renders tiles + an SVG latency chart. No
+ * backend, no demo runs — the JSON is the source of truth and any
+ * number can be edited there to reshape the page automatically.
+ *
+ * Framing: instances are owned hardware, so there is no $/hr on our
+ * side. Economics are expressed as "API cost avoided per day" against
+ * a Frontier-API comparator, with marginal cost on owned hardware = $0.
  *
  * Tile renderer registry: each entry takes a `ctx` ({ scenario, instance,
  * workload, comparator, derived }) and returns { label, value, sub,
@@ -17,21 +21,30 @@
 
   const DATA_URL = "./scalability-data.json";
 
-  const fmtUSD = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 4,
-  });
   const fmtUSD2 = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 2,
+  });
+  const fmtUSD0 = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
   });
   const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const fmtFloat1 = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
+
+  // Compact "11.4 B" / "1.4 B" / "850 M" formatter for token volumes.
+  function fmtBigCount(n) {
+    if (!Number.isFinite(n)) return "—";
+    if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)} B`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} M`;
+    if (n >= 1e3) return `${(n / 1e3).toFixed(0)} K`;
+    return fmtInt.format(n);
+  }
 
   // ---------- derived-value helpers ----------
 
@@ -66,16 +79,23 @@
   }
 
   /**
-   * Per-task cost in USD, evaluated at the sweet-spot throughput.
-   *  hourly_usd / 60 = $/min ; throughput in tasks/min ; result $/task.
+   * Max concurrent agents the instance can hold, derived from resources.
+   * Single source of truth: floor(min(vcpu/per-agent, mem/per-agent)).
+   * The JSON used to carry this number directly; deriving it here keeps
+   * it in sync with the instance and workload definitions.
    *
-   * Returns null when throughput is zero or missing — economics are
-   * "unavailable" in that case, not "free". Callers must treat null
-   * explicitly (tile renderers below show "n/a" rather than $0).
+   * Returns null if any per-agent resource is non-positive — division
+   * would otherwise yield Infinity / NaN and the density tile would
+   * render "∞ agents" on a typo. Renderers must treat null as "n/a".
    */
-  function costPerTask(instance, throughputPerMin) {
-    if (!throughputPerMin || throughputPerMin <= 0) return null;
-    return instance.hourly_usd / 60 / throughputPerMin;
+  function maxParallelSlots(instance, workload) {
+    const vcpuPer = workload.vcpu_per_agent;
+    const memPer = workload.memory_gb_per_agent;
+    if (!(vcpuPer > 0) || !(memPer > 0)) return null;
+    if (!(instance.vcpu >= 0) || !(instance.memory_gb >= 0)) return null;
+    const byVcpu = Math.floor(instance.vcpu / vcpuPer);
+    const byMem = Math.floor(instance.memory_gb / memPer);
+    return Math.max(0, Math.min(byVcpu, byMem));
   }
 
   function buildDerived(scenario, instance, workload, comparator) {
@@ -85,31 +105,32 @@
     const maxThroughput = dps.length
       ? Math.max(...dps.map((d) => d.throughput_per_min))
       : 0;
-    // All economic tiles below use the *sweet-spot* throughput. Picking
-    // the peak throughput makes per-task cost look better but it lives
-    // in the queueing zone (p95 way above baseline), so it's not where
-    // a real operator would run. Anchoring on sweet-spot keeps the
-    // "this is what you'd actually run" story internally consistent.
+    // Volume tiles anchor on *sweet-spot* throughput, not peak. Peak
+    // sits in the queueing zone (p95 way above baseline) so it's not
+    // where a real operator would run. Anchoring on sweet-spot keeps
+    // the "this is what you'd actually run" story internally consistent.
     const throughputAtSweet = sweet ? sweet.throughput_per_min : 0;
     const haveThroughput = throughputAtSweet > 0;
-    const cpt = costPerTask(instance, throughputAtSweet);
-    const cpt1k = cpt == null ? null : cpt * 1000;
+    const tasksPerDay = haveThroughput ? throughputAtSweet * 60 * 24 : null;
+    const tokensPerDay =
+      tasksPerDay != null ? tasksPerDay * workload.tokens_per_task : null;
+    // API cost avoided / day = what running the same daily volume on
+    // the comparator API would cost. On owned hardware the marginal
+    // cost is $0; this tile expresses the *displaced* spend.
+    const apiCostPerDay =
+      tasksPerDay != null && comparator
+        ? (tasksPerDay / 1000) * comparator.cost_per_1k_tasks_usd
+        : null;
     return {
+      maxParallelSlots: maxParallelSlots(instance, workload),
       sweetSpot: sweet,
       knee: knee,
       maxThroughput: maxThroughput,
       sweetThroughput: haveThroughput ? throughputAtSweet : null,
-      costPerTaskUsd: cpt,
-      costPer1kTasksUsd: cpt1k,
-      tasksPerDay: haveThroughput ? throughputAtSweet * 60 * 24 : null,
-      dailyCostUsd: instance.hourly_usd * 24,
+      tasksPerDay: tasksPerDay,
+      tokensPerDay: tokensPerDay,
       comparator: comparator || null,
-      // savings ratio = comparator-cost / our-cost. >1 means we're cheaper.
-      // null when our cost is unknown, so the tile can render "n/a".
-      savingsRatio:
-        comparator && cpt1k != null && cpt1k > 0
-          ? comparator.cost_per_1k_tasks_usd / cpt1k
-          : null,
+      apiCostPerDay: apiCostPerDay,
     };
   }
 
@@ -117,13 +138,21 @@
 
   const TILE_RENDERERS = {
     density: (ctx) => {
-      const { scenario, instance, workload } = ctx;
-      const slots = scenario.scaling.max_parallel_slots;
-      const perCore = slots / instance.vcpu;
+      const { instance, workload, derived } = ctx;
+      const slots = derived.maxParallelSlots;
+      if (slots == null) {
+        return {
+          label: "Density",
+          value: "n/a",
+          sub: "Per-agent vCPU or memory must be positive — check the workload definition.",
+          accent: "default",
+        };
+      }
+      const perCore = instance.vcpu > 0 ? slots / instance.vcpu : 0;
       const memUsedGb = slots * workload.memory_gb_per_agent;
       return {
         label: "Density",
-        value: `${slots} agents`,
+        value: `${fmtInt.format(slots)} agents`,
         sub: `${fmtFloat1.format(perCore)} agents per vCPU · ${fmtInt.format(memUsedGb)} / ${fmtInt.format(instance.memory_gb)} GB used`,
         accent: "default",
       };
@@ -150,70 +179,6 @@
       };
     },
 
-    cost_per_task: (ctx) => {
-      const { derived } = ctx;
-      if (derived.costPer1kTasksUsd == null) {
-        return {
-          label: "Cost per 1 000 tasks",
-          value: "n/a",
-          sub: "throughput unavailable — cannot derive per-task cost",
-          accent: "default",
-        };
-      }
-      // Headline as $/1k tasks — easier to read than fractional cents.
-      return {
-        label: "Cost per 1 000 tasks",
-        value: fmtUSD2.format(derived.costPer1kTasksUsd),
-        sub: `${fmtUSD.format(derived.costPerTaskUsd)} per task at sweet-spot throughput`,
-        accent: "accent-good",
-      };
-    },
-
-    vs_comparator: (ctx) => {
-      const { derived } = ctx;
-      if (!derived.comparator) {
-        return {
-          label: "vs baseline",
-          value: "n/a",
-          sub: "no comparator configured",
-          accent: "default",
-        };
-      }
-      const cmp = derived.comparator;
-      const ratio = derived.savingsRatio;
-      if (ratio == null) {
-        return {
-          label: `vs ${cmp.label}`,
-          value: "n/a",
-          sub: "scenario cost unavailable — cannot compute ratio",
-          accent: "default",
-        };
-      }
-      // ratio = comparator-cost / our-cost. >1 → we're cheaper, <1 → we're
-      // more expensive. A naive "X× cheaper" string flips meaning when the
-      // scenario is more expensive than the comparator (e.g. 0.8× cheaper
-      // is wrong); split on direction explicitly.
-      const fmtMul = (x) =>
-        x >= 10 ? `${fmtInt.format(x)}×` : `${fmtFloat1.format(x)}×`;
-      let value, accent;
-      if (ratio >= 1.05) {
-        value = `${fmtMul(ratio)} cheaper`;
-        accent = "accent-good";
-      } else if (ratio <= 0.95) {
-        value = `${fmtMul(1 / ratio)} more expensive`;
-        accent = "accent-warm";
-      } else {
-        value = "≈ comparable";
-        accent = "default";
-      }
-      return {
-        label: `vs ${cmp.label}`,
-        value,
-        sub: `${fmtUSD2.format(derived.costPer1kTasksUsd)} vs ${fmtUSD2.format(cmp.cost_per_1k_tasks_usd)} per 1 000 tasks`,
-        accent,
-      };
-    },
-
     sweet_spot: (ctx) => {
       const { derived } = ctx;
       const s = derived.sweetSpot;
@@ -223,20 +188,6 @@
         value: `${s.concurrency} concurrent`,
         sub: `p95 ${fmtFloat1.format(s.p95_s)}s · ${s.utilization_pct}% utilization · stays under 2× baseline latency`,
         accent: "accent",
-      };
-    },
-
-    idle_cost: (ctx) => {
-      const { instance } = ctx;
-      const idle = instance.idle_cost_usd || 0;
-      return {
-        label: "Idle cost",
-        value: fmtUSD2.format(idle) + " / hr",
-        sub:
-          idle === 0
-            ? "Job-model: no agents running, no charge — no Deployments held warm."
-            : "Active even when idle.",
-        accent: idle === 0 ? "accent-good" : "accent-warm",
       };
     },
 
@@ -253,19 +204,71 @@
       return {
         label: "Daily volume",
         value: `${fmtInt.format(derived.tasksPerDay)} tasks`,
-        sub: `${fmtUSD2.format(derived.dailyCostUsd)} per node-day at peak load`,
+        sub: "Sustained at sweet-spot concurrency over 24 h on a single node.",
         accent: "default",
       };
     },
 
+    tokens_per_day: (ctx) => {
+      const { workload, derived } = ctx;
+      if (derived.tokensPerDay == null) {
+        return {
+          label: "Tokens / day",
+          value: "n/a",
+          sub: "throughput unavailable",
+          accent: "default",
+        };
+      }
+      return {
+        label: "Tokens / day",
+        value: fmtBigCount(derived.tokensPerDay),
+        sub: `${fmtInt.format(derived.tasksPerDay)} tasks × ${fmtInt.format(workload.tokens_per_task)} tokens each.`,
+        accent: "default",
+      };
+    },
+
+    api_cost_avoided: (ctx) => {
+      const { derived } = ctx;
+      if (!derived.comparator) {
+        return {
+          label: "API cost avoided",
+          value: "n/a",
+          sub: "no comparator configured",
+          accent: "default",
+        };
+      }
+      if (derived.apiCostPerDay == null) {
+        return {
+          label: "API cost avoided",
+          value: "n/a",
+          sub: "throughput unavailable — cannot project API spend",
+          accent: "default",
+        };
+      }
+      const cmp = derived.comparator;
+      return {
+        label: "API cost avoided",
+        value: `${fmtUSD0.format(derived.apiCostPerDay)} / day`,
+        sub: `Same volume on ${cmp.label} @ ${fmtUSD2.format(cmp.cost_per_1k_tasks_usd)} / 1 000 tasks. On owned hardware: $0 marginal cost.`,
+        accent: "accent-good",
+      };
+    },
+
+    marginal_cost: () => ({
+      label: "Marginal cost / task",
+      value: "$0",
+      sub: "Owned hardware — no per-call API spend. Power and CapEx amortization are out of scope for this page.",
+      accent: "accent-good",
+    }),
+
     human_equivalent: (ctx) => {
       const { workload, derived } = ctx;
       const hoursPer1k = (workload.human_minutes_per_task * 1000) / 60;
-      if (derived.sweetThroughput == null || derived.costPer1kTasksUsd == null) {
+      if (derived.sweetThroughput == null) {
         return {
           label: "Human-time equivalent",
           value: `${fmtInt.format(hoursPer1k)} h saved`,
-          sub: `1 000 tasks ≈ ${fmtInt.format(hoursPer1k)} human-hours · instance time/cost unavailable`,
+          sub: `1 000 tasks ≈ ${fmtInt.format(hoursPer1k)} human-hours · instance time unavailable`,
           accent: "accent",
         };
       }
@@ -275,7 +278,7 @@
         value: `${fmtInt.format(hoursPer1k)} h saved`,
         sub: `1 000 tasks ≈ ${fmtInt.format(hoursPer1k)} human-hours; ~${fmtFloat1.format(
           minutesOnInstance
-        )} min on the instance @ ${fmtUSD2.format(derived.costPer1kTasksUsd)}`,
+        )} min on the instance.`,
         accent: "accent",
       };
     },
@@ -342,7 +345,7 @@
       el("h3", { text: instance.label }),
       el("p", {
         class: "sc-spec",
-        text: `${instance.subtitle} · ${fmtUSD2.format(instance.hourly_usd)} / hr`,
+        text: `${instance.subtitle} · owned hardware`,
       }),
     ]);
     const right = el("div", {}, [
