@@ -24,7 +24,11 @@ WEB_DIR = Path(
         str(Path(__file__).resolve().parent.parent / "web-demo"),
     )
 )
-CONTROL_PLANE = os.environ.get("CONTROL_PLANE_URL", "http://127.0.0.1:8090").rstrip("/")
+CONTROL_PLANE = (
+    os.environ.get("WEB_DEMO_CONTROL_PLANE_URL")
+    or os.environ.get("CONTROL_PLANE_URL")
+    or "http://127.0.0.1:8090"
+).rstrip("/")
 
 app = FastAPI(title="dev-web-proxy")
 

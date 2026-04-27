@@ -138,9 +138,13 @@ spec:
             initialDelaySeconds: 600
             periodSeconds: 30
           resources:
+            # Keep requests aligned with the live System B capacity that was
+            # validated for the demo. Higher requests can make a redeploy
+            # unschedulable on the single GNR node even though vLLM can run
+            # with these conservative reservations.
             requests:
-              cpu: "16"
-              memory: "32Gi"
+              cpu: "4"
+              memory: "24Gi"
             limits:
               cpu: "32"
               memory: "48Gi"
