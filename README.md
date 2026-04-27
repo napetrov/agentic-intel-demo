@@ -184,8 +184,15 @@ Two ways to drive it:
 # CLI: fan out 10 medium market-research sessions, then watch
 scripts/load-simulate.sh -s market-research -p medium -c 10 -w
 
+# CLI: same fan-out, but explicitly pin every spawned session to System B
+scripts/load-simulate.sh -s market-research -p medium -c 10 -t system_b -w
+
 # Web UI: the "Multi-agent fan-out" panel on http://localhost:8080 —
-# pick scenario / profile / count, hit Spawn, watch the table update.
+# pick scenario / profile / target system / count, hit Spawn, watch the
+# table update. The target-system picker selects which demo system runs
+# the spawned agents (System A, System B, or the scenario default);
+# system_b-targeted sessions render in the System B pool of the
+# architecture diagram.
 ```
 
 The k8s side also ships `k8s/system-b/offload-worker-hpa.yaml`, a CPU-

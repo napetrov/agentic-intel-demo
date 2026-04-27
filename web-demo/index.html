@@ -199,6 +199,12 @@
               <option value="medium">medium (4 vCPU)</option>
               <option value="large">large (16 vCPU)</option>
             </select>
+            <label for="multi-session-target" class="multi-session-label">Target system</label>
+            <select id="multi-session-target" class="multi-session-select" title="Pick which system runs the spawned agents. Default uses the scenario's catalog route.">
+              <option value="">scenario default</option>
+              <option value="system_a">System A (local)</option>
+              <option value="system_b">System B (offload)</option>
+            </select>
             <label for="multi-session-count" class="multi-session-label">Count</label>
             <input
               id="multi-session-count"
@@ -223,6 +229,7 @@
                   <th scope="col">Session</th>
                   <th scope="col">Scenario</th>
                   <th scope="col">Profile</th>
+                  <th scope="col">Target</th>
                   <th scope="col">Status</th>
                   <th scope="col">Pod / Job</th>
                   <th scope="col">Age</th>
@@ -230,7 +237,7 @@
                 </tr>
               </thead>
               <tbody id="multi-session-rows">
-                <tr class="multi-session-empty"><td colspan="7">No sessions yet. Spawn some above.</td></tr>
+                <tr class="multi-session-empty"><td colspan="8">No sessions yet. Spawn some above.</td></tr>
               </tbody>
             </table>
           </div>

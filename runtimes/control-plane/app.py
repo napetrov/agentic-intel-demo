@@ -41,6 +41,7 @@ from persistence import SqliteJsonStore  # noqa: E402
 from session_manager import (  # noqa: E402  (after sys.path tweak)
     DEFAULT_PROFILE,
     PROFILES,
+    TARGET_SYSTEMS,
     SessionBackend,
     make_backend,
 )
@@ -396,6 +397,11 @@ class SessionCreateRequest(BaseModel):
     scenario: str = Field(min_length=1, max_length=_K8S_LABEL_MAX)
     profile: str = Field(default=DEFAULT_PROFILE)
     session_id: Optional[str] = Field(default=None, max_length=_SESSION_ID_MAX)
+    # Optional override of the system that runs the agent. None = use the
+    # scenario's catalog default (today: System A for everything).
+    # Validated against TARGET_SYSTEMS in the route handler so the error
+    # body lists the allowed values.
+    target_system: Optional[str] = Field(default=None)
 
 
 class SessionBatchRequest(BaseModel):
@@ -405,6 +411,7 @@ class SessionBatchRequest(BaseModel):
     profile: str = Field(default=DEFAULT_PROFILE)
     # gt=0: zero sessions is a no-op the client could just not send.
     count: int = Field(gt=0)
+    target_system: Optional[str] = Field(default=None)
 
 
 class SessionResponse(BaseModel):
@@ -421,6 +428,7 @@ class SessionResponse(BaseModel):
     cpu_request: Optional[str] = None
     memory_request: Optional[str] = None
     message: Optional[str] = None
+    target_system: Optional[str] = None
 
 
 class SessionListResponse(BaseModel):
@@ -450,6 +458,41 @@ def list_profiles() -> dict[str, Any]:
     }
 
 
+@app.get("/sessions/target-systems")
+def list_target_systems() -> dict[str, Any]:
+    """Allowed target_system values for /sessions and /sessions/batch.
+
+    Lets the web UI render the system picker without hard-coding the
+    list — when a new system is added to TARGET_SYSTEMS the picker
+    picks it up on the next page reload.
+    """
+    return {
+        "default": None,
+        "target_systems": sorted(TARGET_SYSTEMS),
+    }
+
+
+def _validate_target_system_request(target_system: Optional[str]) -> None:
+    """Reject unknown target_system values at the API edge.
+
+    We could let the backend's _validate_target_system raise — it does,
+    and the handler turns ValueError into 400 — but doing it here too
+    keeps the error message consistent with the profile validator (which
+    is also enforced at the API edge before the backend call). One
+    rejection path is easier for the UI to message about than two.
+    """
+    if target_system is None:
+        return
+    if target_system not in TARGET_SYSTEMS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown target_system {target_system!r}; "
+                f"allowed={sorted(TARGET_SYSTEMS)}"
+            ),
+        )
+
+
 @app.post("/sessions", response_model=SessionResponse, status_code=201)
 def create_session(req: SessionCreateRequest) -> SessionResponse:
     if req.profile not in PROFILES:
@@ -457,11 +500,13 @@ def create_session(req: SessionCreateRequest) -> SessionResponse:
             status_code=400,
             detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
         )
+    _validate_target_system_request(req.target_system)
     try:
         rec = _session_backend.create(
             scenario=req.scenario,
             profile=req.profile,
             session_id=req.session_id,
+            target_system=req.target_system,
         )
     except ValueError as exc:
         # Duplicate session_id and unknown-profile both surface here.
@@ -501,11 +546,16 @@ def create_session_batch(
             status_code=400,
             detail=f"unknown profile {req.profile!r}; allowed={sorted(PROFILES)}",
         )
+    _validate_target_system_request(req.target_system)
     created = []
     error: Optional[str] = None
     for _ in range(req.count):
         try:
-            rec = _session_backend.create(scenario=req.scenario, profile=req.profile)
+            rec = _session_backend.create(
+                scenario=req.scenario,
+                profile=req.profile,
+                target_system=req.target_system,
+            )
         except (ValueError, RuntimeError) as exc:
             error = str(exc)
             break

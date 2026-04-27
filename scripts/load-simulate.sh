@@ -23,17 +23,19 @@ CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-http://localhost:8090}"
 SCENARIO="terminal-agent"
 PROFILE="small"
 COUNT=5
+TARGET_SYSTEM=""
 WATCH=0
 WATCH_INTERVAL=2
 
 usage() {
   cat <<EOF
-Usage: $0 [-s scenario] [-p profile] [-c count] [-w] [-i interval]
+Usage: $0 [-s scenario] [-p profile] [-c count] [-t target] [-w] [-i interval]
 
 Options:
   -s SCENARIO    Scenario name (default: terminal-agent)
   -p PROFILE     Pod profile: small | medium | large (default: small)
   -c COUNT       Sessions to spawn in this batch (default: 5)
+  -t TARGET      Target system: system_a | system_b (default: scenario default)
   -w             After spawn, watch /sessions every -i seconds until all terminal
   -i SECONDS     Watch interval in seconds (default: 2)
 
@@ -42,11 +44,12 @@ Env:
 EOF
 }
 
-while getopts ":s:p:c:wi:h" opt; do
+while getopts ":s:p:c:t:wi:h" opt; do
   case "$opt" in
     s) SCENARIO="$OPTARG" ;;
     p) PROFILE="$OPTARG" ;;
     c) COUNT="$OPTARG" ;;
+    t) TARGET_SYSTEM="$OPTARG" ;;
     w) WATCH=1 ;;
     i) WATCH_INTERVAL="$OPTARG" ;;
     h) usage; exit 0 ;;
@@ -72,7 +75,15 @@ if [ "$WATCH" = 1 ] && [ "$HAVE_JQ" != 1 ]; then
   exit 2
 fi
 
-payload=$(printf '{"scenario":"%s","profile":"%s","count":%d}' "$SCENARIO" "$PROFILE" "$COUNT")
+# Only include target_system in the JSON when the operator passed -t.
+# Omitting the key lets the server record null = "use scenario default",
+# which is a different semantic from explicitly picking system_a.
+if [ -n "$TARGET_SYSTEM" ]; then
+  payload=$(printf '{"scenario":"%s","profile":"%s","count":%d,"target_system":"%s"}' \
+    "$SCENARIO" "$PROFILE" "$COUNT" "$TARGET_SYSTEM")
+else
+  payload=$(printf '{"scenario":"%s","profile":"%s","count":%d}' "$SCENARIO" "$PROFILE" "$COUNT")
+fi
 echo "[load-simulate] POST $CONTROL_PLANE_URL/sessions/batch  body=$payload"
 
 response=$(curl -fsS -X POST \

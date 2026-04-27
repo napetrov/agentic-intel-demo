@@ -289,10 +289,14 @@ let liveBackendAvailable = false;
 
 let currentScenario = null;
 let currentPhase = 'idle';
+// Tracks whether the running scenario has spawned its subagent yet; used
+// by redrawSystemB() so a /sessions poll mid-run doesn't toggle the
+// scenario subagent off when only the multi-session pool changed.
+let currentIncludeSubagent = false;
 // Latest snapshot of multi-session records this tab is tracking. Updated
 // every time refreshMultiSession() polls /api/sessions; used by
-// renderSystemA() so the agent pool reflects spawned sessions, not just the
-// scenario primary agent.
+// renderSystemA() / renderSystemB() so each agent pool reflects spawned
+// sessions, not just the scenario primary agent.
 let lastSessionRecords = [];
 let runTimers = [];
 let liveRunId = 0;
@@ -415,6 +419,14 @@ function sessionAgentRowHtml(rec) {
   `;
 }
 
+// True if the session was explicitly routed to System B by the operator
+// via the multi-agent fan-out target picker. `null` / `undefined`
+// `target_system` means "use scenario default" — today that's always
+// System A, so those sessions render in the System A pool.
+function isSystemBSession(rec) {
+  return rec && rec.target_system === 'system_b';
+}
+
 function renderSystemA(scenario, phase) {
   const rows = [];
   let usedVcpu = 0;
@@ -427,9 +439,11 @@ function renderSystemA(scenario, phase) {
   }
 
   // Spawned multi-session agents (Pending + Running). Terminal rows are
-  // dropped so the pool drains as Jobs complete.
+  // dropped so the pool drains as Jobs complete. system_b-targeted
+  // sessions belong in the other pool — see renderSystemB.
   for (const rec of lastSessionRecords) {
     if (!rec || TERMINAL_STATUSES.has(rec.status)) continue;
+    if (isSystemBSession(rec)) continue;
     rows.push(sessionAgentRowHtml(rec));
     if (rec.status === 'Running') usedVcpu += profileToVcpu(rec.profile);
   }
@@ -450,21 +464,63 @@ function redrawSystemA() {
   renderSystemA(scenario, currentPhase);
 }
 
+function renderSystemB(scenario, phase, includeSubagent) {
+  // System B's pool is populated from two sources:
+  //   1. The scenario's offload subagent (only if the scenario routes
+  //      to System B and the run has actually spawned it).
+  //   2. Multi-session fan-out where the operator picked target_system
+  //      = 'system_b' explicitly.
+  // Either source alone is enough to show rows; both contribute to the
+  // capacity bar.
+  const rows = [];
+  let usedVcpu = 0;
+
+  const hasSubagent = scenario && scenario.subagent && phase !== 'idle';
+  if (hasSubagent && includeSubagent) {
+    const { subagent } = scenario;
+    const state = phase === 'running' ? 'running' : 'planned';
+    rows.push(agentRowHtml(subagent.name, subagent.vcpu, state));
+    if (state === 'running') usedVcpu += subagent.vcpu;
+  }
+
+  for (const rec of lastSessionRecords) {
+    if (!rec || TERMINAL_STATUSES.has(rec.status)) continue;
+    if (!isSystemBSession(rec)) continue;
+    rows.push(sessionAgentRowHtml(rec));
+    if (rec.status === 'Running') usedVcpu += profileToVcpu(rec.profile);
+  }
+
+  if (!rows.length) {
+    // Preserve the planned-subagent hint so a viewer mid-scenario still
+    // sees "subagent planned" instead of a flat "no agents" — the
+    // planned hint is the most informative thing we can show at that
+    // moment.
+    if (hasSubagent && !includeSubagent) {
+      sysBOffloadEl.innerHTML = '<div class="agent-row-empty">subagent planned (will spawn during run)</div>';
+    } else {
+      sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no agents on this system</div>';
+    }
+    renderCapacityB(0);
+    return;
+  }
+  sysBOffloadEl.innerHTML = rows.join('');
+  renderCapacityB(usedVcpu);
+}
+
+// Back-compat shim: scenario flow still calls renderOffload(...) and we
+// also use it to remember the latest includeSubagent flag for the poll
+// loop's redraw.
 function renderOffload(scenario, phase, includeSubagent) {
-  if (!scenario || !scenario.subagent || phase === 'idle') {
-    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">no agents on this system</div>';
-    renderCapacityB(0);
-    return;
-  }
-  if (!includeSubagent) {
-    sysBOffloadEl.innerHTML = '<div class="agent-row-empty">subagent planned (will spawn during run)</div>';
-    renderCapacityB(0);
-    return;
-  }
-  const { subagent } = scenario;
-  const state = phase === 'running' ? 'running' : 'planned';
-  sysBOffloadEl.innerHTML = agentRowHtml(subagent.name, subagent.vcpu, state);
-  renderCapacityB(state === 'running' ? subagent.vcpu : 0);
+  currentIncludeSubagent = Boolean(includeSubagent);
+  renderSystemB(scenario, phase, currentIncludeSubagent);
+}
+
+// Re-render System B using current scenario + multi-session state.
+// Called from the /api/sessions poll loop alongside redrawSystemA so
+// system_b-targeted fan-out sessions appear in the right pool.
+function redrawSystemB() {
+  const scenario = currentScenario ? scenarios[currentScenario] : null;
+  renderSystemB(scenario, currentPhase, currentIncludeSubagent);
 }
 
 function setCrossArrow(visible) {
@@ -1352,6 +1408,7 @@ const multiSessionPanel = document.getElementById('multi-session-panel');
 const multiSessionForm = document.getElementById('multi-session-form');
 const multiSessionScenario = document.getElementById('multi-session-scenario');
 const multiSessionProfile = document.getElementById('multi-session-profile');
+const multiSessionTarget = document.getElementById('multi-session-target');
 const multiSessionCount = document.getElementById('multi-session-count');
 const multiSessionSpawn = document.getElementById('multi-session-spawn');
 const multiSessionStatus = document.getElementById('multi-session-status');
@@ -1384,10 +1441,21 @@ function setMultiSessionStatus(text, kind) {
   multiSessionStatus.dataset.kind = kind || '';
 }
 
+// Map a target_system value to a short, friendly column label. Defaulted
+// (null) sessions show "default" so the operator can tell the difference
+// between "I picked scenario default" and "I picked System A".
+function formatTargetSystem(rec) {
+  const t = rec.target_system;
+  if (!t) return 'default';
+  if (t === 'system_a') return 'System A';
+  if (t === 'system_b') return 'System B';
+  return t;
+}
+
 function renderMultiSessionRows(records) {
   if (!multiSessionRows) return;
   if (!records.length) {
-    multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="7">No sessions yet. Spawn some above.</td></tr>';
+    multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="8">No sessions yet. Spawn some above.</td></tr>';
     return;
   }
   const now = Date.now() / 1000;
@@ -1407,6 +1475,7 @@ function renderMultiSessionRows(records) {
           <td><code>${escapeHtml(rec.session_id)}</code></td>
           <td>${escapeHtml(rec.scenario || '—')}</td>
           <td>${escapeHtml(rec.profile || '—')}</td>
+          <td>${escapeHtml(formatTargetSystem(rec))}</td>
           <td><span class="session-status ${statusClass}">${escapeHtml(rec.status || '—')}</span></td>
           <td><code>${escapeHtml(podOrJob)}</code></td>
           <td>${escapeHtml(age)}</td>
@@ -1467,6 +1536,7 @@ async function refreshMultiSession() {
     // capacity for someone who hasn't spawned anything yet.
     lastSessionRecords = records.filter((r) => trackedSessionIds.has(r.session_id));
     redrawSystemA();
+    redrawSystemB();
 
     // Slow polling once everything settles; speed back up when a new
     // batch is in flight.
@@ -1506,16 +1576,26 @@ function scheduleMultiSessionPoll(ms) {
   }, ms);
 }
 
-async function spawnSessionBatch(scenario, profile, count) {
-  setMultiSessionStatus(`Submitting ${count} × ${scenario} (${profile})…`, 'pending');
+async function spawnSessionBatch(scenario, profile, count, targetSystem) {
+  // targetSystem is the form's raw value: '' = "scenario default" (omit
+  // from the wire payload so the server records null) or 'system_a' /
+  // 'system_b'. The status line shows the explicit choice when made so
+  // the operator sees what they're about to submit.
+  const targetLabel = targetSystem ? ` → ${targetSystem}` : '';
+  setMultiSessionStatus(
+    `Submitting ${count} × ${scenario} (${profile})${targetLabel}…`,
+    'pending'
+  );
   multiSessionSpawn.disabled = true;
   const originalLabel = multiSessionSpawn.textContent;
   multiSessionSpawn.textContent = 'Submitting…';
   try {
+    const payload = { scenario, profile, count };
+    if (targetSystem) payload.target_system = targetSystem;
     const body = await fetchJson(`${API_BASE}/sessions/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario, profile, count }),
+      body: JSON.stringify(payload),
       timeoutMs: 30_000,
     });
     const created = Array.isArray(body && body.sessions) ? body.sessions : [];
@@ -1552,8 +1632,9 @@ if (multiSessionForm) {
     ev.preventDefault();
     const scenario = multiSessionScenario.value;
     const profile = multiSessionProfile.value;
+    const targetSystem = multiSessionTarget ? multiSessionTarget.value : '';
     const count = Math.max(1, Math.min(50, parseInt(multiSessionCount.value, 10) || 1));
-    spawnSessionBatch(scenario, profile, count);
+    spawnSessionBatch(scenario, profile, count, targetSystem);
   });
 }
 

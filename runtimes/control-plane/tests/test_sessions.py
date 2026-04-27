@@ -352,7 +352,7 @@ class _FlakyBackend:
         self.calls = 0
         self._records: list[sm.SessionRecord] = []
 
-    def create(self, scenario, profile, session_id=None):
+    def create(self, scenario, profile, session_id=None, target_system=None):
         self.calls += 1
         if self.calls > self.succeed_n:
             raise self.exc
@@ -363,6 +363,7 @@ class _FlakyBackend:
             status=sm.STATUS_PENDING,
             created_at=time.time(),
             backend=self.name,
+            target_system=target_system,
         )
         self._records.append(rec)
         return rec
@@ -587,6 +588,138 @@ def test_batch_response_body_carries_error_reason(monkeypatch):
     )
     assert r2.status_code == 201
     assert r2.json().get("error") is None
+
+
+# ---- target_system selection (multi-agent fan-out runtime picker) -----
+
+
+def test_local_backend_accepts_target_system_system_a():
+    backend = sm.LocalSessionBackend()
+    rec = backend.create(scenario="x", profile="small", target_system="system_a")
+    assert rec.target_system == "system_a"
+
+
+def test_local_backend_accepts_target_system_system_b():
+    backend = sm.LocalSessionBackend()
+    rec = backend.create(scenario="x", profile="small", target_system="system_b")
+    assert rec.target_system == "system_b"
+
+
+def test_local_backend_target_system_none_passes_through():
+    """`None` is a first-class value (= "use scenario default") and must
+    survive the create path unchanged so the UI can fall back to its
+    catalog-driven render."""
+    backend = sm.LocalSessionBackend()
+    rec = backend.create(scenario="x", profile="small", target_system=None)
+    assert rec.target_system is None
+
+
+def test_local_backend_rejects_unknown_target_system():
+    backend = sm.LocalSessionBackend()
+    with pytest.raises(ValueError, match="unknown target_system"):
+        backend.create(scenario="x", profile="small", target_system="system_z")
+
+
+def test_target_systems_endpoint_lists_allowed_values(client):
+    r = client.get("/sessions/target-systems")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["default"] is None
+    assert body["target_systems"] == ["system_a", "system_b"]
+
+
+def test_create_accepts_target_system(client):
+    r = client.post(
+        "/sessions",
+        json={"scenario": "x", "profile": "small", "target_system": "system_b"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["target_system"] == "system_b"
+
+
+def test_create_defaults_target_system_to_null(client):
+    """Omitting target_system must leave the response field null so the
+    UI can distinguish "user didn't choose" from "user picked System A"."""
+    r = client.post("/sessions", json={"scenario": "x", "profile": "small"})
+    assert r.status_code == 201, r.text
+    assert r.json()["target_system"] is None
+
+
+def test_create_rejects_unknown_target_system(client):
+    r = client.post(
+        "/sessions",
+        json={"scenario": "x", "profile": "small", "target_system": "system_z"},
+    )
+    assert r.status_code == 400
+    assert "unknown target_system" in r.json()["detail"]
+
+
+def test_batch_propagates_target_system(client):
+    r = client.post(
+        "/sessions/batch",
+        json={
+            "scenario": "x",
+            "profile": "small",
+            "count": 3,
+            "target_system": "system_b",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["total"] == 3
+    assert all(rec["target_system"] == "system_b" for rec in body["sessions"])
+
+
+def test_batch_rejects_unknown_target_system(client):
+    r = client.post(
+        "/sessions/batch",
+        json={
+            "scenario": "x",
+            "profile": "small",
+            "count": 2,
+            "target_system": "system_z",
+        },
+    )
+    assert r.status_code == 400
+    assert "unknown target_system" in r.json()["detail"]
+
+
+def test_kube_render_job_adds_target_system_label():
+    """Operators run `kubectl get jobs -l target-system=system_b` to see
+    fan-out destined for the offload backend. _render_job must put the
+    label on both the Job and the Pod template so the selector works on
+    pods too."""
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    spec, _ = backend._render_job(
+        "sess-1", "x", "small", target_system="system_b"
+    )
+    assert spec["metadata"]["labels"]["target-system"] == "system_b"
+    pod_labels = spec["spec"]["template"]["metadata"]["labels"]
+    assert pod_labels["target-system"] == "system_b"
+    # Env var injected so the agent process can read its destination.
+    envs = spec["spec"]["template"]["spec"]["containers"][0]["env"]
+    assert {"name": "TARGET_SYSTEM", "value": "system_b"} in envs
+
+
+def test_kube_render_job_omits_target_system_label_when_default():
+    """`None` (= use scenario default) must NOT add a label or env var —
+    otherwise listing by `target-system=` would catch defaulted Jobs and
+    confuse operators."""
+    backend = _kube_backend_with_stubs(
+        load_template=lambda: {
+            "spec": {"template": {"spec": {"containers": [{"name": "agent", "image": "x"}]}}}
+        },
+    )
+    spec, _ = backend._render_job("sess-1", "x", "small", target_system=None)
+    assert "target-system" not in spec["metadata"]["labels"]
+    pod_labels = spec["spec"]["template"]["metadata"]["labels"]
+    assert "target-system" not in pod_labels
+    envs = spec["spec"]["template"]["spec"]["containers"][0]["env"]
+    assert all(e.get("name") != "TARGET_SYSTEM" for e in envs)
 
 
 def test_kube_create_wraps_template_read_apiexception():
