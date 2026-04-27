@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Demo scenario: market-research
 # Invoked by the offload-worker via task_type=shell. Output budget ~3.5 KB.
+#
+# Set DEMO_QUIET=1 (or pass payload.quiet=true to /api/offload) to suppress the
+# [scenario]/[step] narration so the transcript shows only the synthetic source
+# notes and the structured result fragment.
 set -euo pipefail
 
 SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../_lib.sh
+. "$SCENARIO_DIR/../_lib.sh"
 TASK_BRIEF="$SCENARIO_DIR/report-task.md"
 
-echo "[scenario] market-research"
-echo "[step 1/4] read research brief"
+narrate "[scenario] market-research"
+narrate "[step 1/4] read research brief"
 if [ -f "$TASK_BRIEF" ]; then
   echo "--- $(basename "$TASK_BRIEF") (first 6 lines) ---"
   sed -n '1,6p' "$TASK_BRIEF"
@@ -15,8 +21,8 @@ else
   echo "task-brief: not found at $TASK_BRIEF"
 fi
 
-echo
-echo "[step 2/4] gather synthetic source notes"
+narrate_blank
+narrate "[step 2/4] gather synthetic source notes"
 cat <<NOTES
 [1] pricing pressure increasing
 [2] competitor launch window shifted
@@ -25,17 +31,17 @@ cat <<NOTES
 [5] integration story improving
 NOTES
 
-echo
-echo "[step 3/4] cluster + synthesize (offload to System B)"
+narrate_blank
+narrate "[step 3/4] cluster + synthesize (offload to System B)"
 echo "+ route: System B (GNR) for retrieval/synthesis"
 echo "+ inference: LiteLLM -> SambaNova"
 echo "clusters identified: 2"
 echo "summary length: short"
 
-echo
-echo "[step 4/4] result fragment"
+narrate_blank
+narrate "[step 4/4] result fragment"
 cat <<JSON
 {"scenario":"market-research","route":"system-b","status":"ok","clusters":2}
 JSON
-echo
-echo "Brief ready: top signals, risks, follow-up questions."
+narrate_blank
+narrate "Brief ready: top signals, risks, follow-up questions."

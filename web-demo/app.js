@@ -966,6 +966,12 @@ const agentForm = document.getElementById('agent-command-form');
 const agentInput = document.getElementById('agent-command-input');
 const agentSubmit = document.getElementById('agent-command-submit');
 const agentStatusEl = document.getElementById('agent-command-status');
+// Panel-local log: keep agent-command output visible right under the form
+// instead of scrolling the user down to the scenario-level "Live command log".
+// The previous wiring appended to commandLogEl, which lives in a different
+// section — easy to miss, so users reported "no logs output" even when the
+// command had succeeded.
+const agentLogEl = document.getElementById('agent-command-log');
 const agentSubmitOriginalLabel = agentSubmit ? agentSubmit.textContent : 'Run agent command';
 
 function setAgentStatus(text, kind) {
@@ -974,10 +980,15 @@ function setAgentStatus(text, kind) {
   agentStatusEl.dataset.kind = kind || '';
 }
 
+function resetAgentLog() {
+  if (!agentLogEl) return;
+  agentLogEl.textContent = '';
+}
+
 function appendAgentLog(text) {
-  if (!commandLogEl) return;
-  commandLogEl.textContent += (commandLogEl.textContent ? '\n' : '') + text;
-  commandLogEl.scrollTop = commandLogEl.scrollHeight;
+  if (!agentLogEl) return;
+  agentLogEl.textContent += (agentLogEl.textContent ? '\n' : '') + text;
+  agentLogEl.scrollTop = agentLogEl.scrollHeight;
 }
 
 function renderAgentResult(payload) {
@@ -1039,6 +1050,9 @@ async function runAgentCommand(text) {
   }
   const sessionId = `web-agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   setAgentStatus(`submitting "${text}"…`, 'pending');
+  // Each invocation is its own transcript — clearing avoids piling history on
+  // top of an old run that may have errored or been about a different tool.
+  resetAgentLog();
   appendAgentLog(`$ POST /api/offload {task_type:"agent_invoke", tool:"command", text:${JSON.stringify(text)}}`);
 
   // Deadline guards the entire submit+poll flow. Each fetchJson call gets
