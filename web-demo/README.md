@@ -180,7 +180,7 @@ The bottom panel renders the most recent scenario run:
 - `service-views.html` — "Behind the scenes" view: per-service
   status, log tails, and config snapshots.
 - `scalability.html` — "Scalability story": density, throughput, and
-  per-task economics on synthetic data.
+  the frontier-API spend displaced per day on synthetic data.
 
 ## Backend env vars that affect the UI
 

@@ -25,11 +25,16 @@ test('scalability page renders all 8 tiles + chart for default scenario', async 
   // Headline tile values are non-empty and look numeric/$
   await expect(tiles.first().locator('.sc-tile-value')).toContainText(/\d/);
 
-  // Specific expected numbers from JSON for the first scenario
-  await expect(page.locator('#sc-tiles')).toContainText(/24 agents/);
-  await expect(page.locator('#sc-tiles')).toContainText(/\$0\.13/);
-  await expect(page.locator('#sc-tiles')).toContainText(/35×|35x/);
-  await expect(page.locator('#sc-tiles')).toContainText(/256,320 tasks/);
+  // Specific expected numbers from JSON for the first CWF scenario:
+  //  density = floor(min(576/1, 1536/2)) = 576 agents
+  //  sweet spot at concurrency=460, throughput=3450/min
+  //  daily volume = 3450 * 60 * 24 = 4,968,000 tasks
+  //  api cost avoided = (4,968,000 / 1000) * $4.40 = $21,859 / day
+  //  marginal cost = $0
+  await expect(page.locator('#sc-tiles')).toContainText(/576 agents/);
+  await expect(page.locator('#sc-tiles')).toContainText(/4,968,000 tasks/);
+  await expect(page.locator('#sc-tiles')).toContainText(/\$21,859/);
+  await expect(page.locator('#sc-tiles')).toContainText(/\$0/);
 
   // Chart has SVG content
   const paths = page.locator('#sc-chart path');
@@ -52,8 +57,13 @@ test('switching to GNR scenario re-renders tiles + chart', async ({ page }) => {
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
 
   await expect(page.locator('#sc-instance')).toContainText(/Intel GNR/);
-  await expect(page.locator('#sc-tiles')).toContainText(/22 agents/);
-  await expect(page.locator('#sc-tiles')).toContainText(/\$2\.50/);
+  // GNR scenario: density = floor(min(256/4, 1024/8)) = 64 agents
+  // sweet spot at concurrency=50, throughput=66.7/min
+  // daily volume = 66.7 * 60 * 24 = 96,048 tasks
+  // api cost avoided = (96,048 / 1000) * $24 = $2,305 / day
+  await expect(page.locator('#sc-tiles')).toContainText(/64 agents/);
+  await expect(page.locator('#sc-tiles')).toContainText(/96,048 tasks/);
+  await expect(page.locator('#sc-tiles')).toContainText(/\$2,305/);
 });
 
 test('homepage hero has the Scalability story link', async ({ page }) => {
@@ -64,11 +74,12 @@ test('homepage hero has the Scalability story link', async ({ page }) => {
 });
 
 // Future-edit safety: the page is JSON-driven and editable by anyone.
-// Cover two edge cases a future edit could introduce:
+// Cover edge cases a future edit could introduce:
 //  1. A scaling curve where the sweet-spot datapoint has zero throughput
-//     — economic tiles must say "n/a", not "$0.00".
-//  2. A scenario whose per-task cost exceeds the comparator's price —
-//     the vs-comparator tile must say "more expensive", not "cheaper".
+//     — volume / api-cost tiles must say "n/a", not "$0".
+//  2. A scenario without a comparator — the api-cost tile must say "n/a".
+//  3. Density derives from instance + workload; JSON edits to either
+//     must reshape the density tile automatically.
 
 function injectMockScenario(page, mock) {
   // Intercept the JSON fetch and substitute a single hand-crafted
@@ -84,7 +95,7 @@ function injectMockScenario(page, mock) {
 
 const BASE_INSTANCE = {
   id: 'i', label: 'Test Instance', subtitle: '8 vCPU · 32 GB',
-  vcpu: 8, memory_gb: 32, hourly_usd: 1.0, idle_cost_usd: 0,
+  vcpu: 8, memory_gb: 32,
   notes: 'test instance',
 };
 const BASE_WORKLOAD = {
@@ -94,9 +105,9 @@ const BASE_WORKLOAD = {
   notes: 'test workload',
 };
 
-test('zero-throughput sweet spot renders n/a, not $0.00', async ({ page }) => {
+test('zero-throughput sweet spot renders n/a, not $0', async ({ page }) => {
   await injectMockScenario(page, {
-    schema_version: '1',
+    schema_version: '2',
     comparators: [{ id: 'c', label: 'Test Comparator', cost_per_1k_tasks_usd: 5.0, notes: 'n' }],
     instances: [BASE_INSTANCE],
     workloads: [BASE_WORKLOAD],
@@ -105,7 +116,6 @@ test('zero-throughput sweet spot renders n/a, not $0.00', async ({ page }) => {
       instance_id: 'i', workload_id: 'w',
       scaling: {
         model: 'queueing',
-        max_parallel_slots: 4,
         // All datapoints have zero throughput — pathological but legal.
         datapoints: [
           { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 0, utilization_pct: 0 },
@@ -113,7 +123,7 @@ test('zero-throughput sweet spot renders n/a, not $0.00', async ({ page }) => {
         ],
       },
       economics: { comparator_id: 'c' },
-      tiles: ['cost_per_task', 'throughput', 'vs_comparator', 'daily_volume'],
+      tiles: ['throughput', 'daily_volume', 'tokens_per_day', 'api_cost_avoided'],
     }],
   });
 
@@ -121,37 +131,65 @@ test('zero-throughput sweet spot renders n/a, not $0.00', async ({ page }) => {
   const tiles = page.locator('#sc-tiles .sc-tile');
   await expect(tiles).toHaveCount(4);
 
-  // None of the cost / throughput / volume tiles should silently render $0.
+  // None of the volume / api-cost tiles should silently render $0 / 0 tasks.
   const tilesText = await page.locator('#sc-tiles').textContent();
-  expect(tilesText).not.toMatch(/\$0\.00\s*\/\s*1/);
-  expect(tilesText).toMatch(/n\/a/i);
+  expect(tilesText).not.toMatch(/\$0\s*\/\s*day/);
+  expect(tilesText).not.toMatch(/0 tasks(?!\s*[×x])/);
+  // n/a appears at least four times (one per tile).
+  const naMatches = tilesText.match(/n\/a/gi) || [];
+  expect(naMatches.length).toBeGreaterThanOrEqual(4);
 });
 
-test('scenario more expensive than comparator says "more expensive"', async ({ page }) => {
+test('api_cost_avoided tile says n/a when no comparator is configured', async ({ page }) => {
   await injectMockScenario(page, {
-    schema_version: '1',
-    // Comparator is cheap; our scenario will end up *more* expensive.
-    comparators: [{ id: 'c', label: 'Cheap Reference', cost_per_1k_tasks_usd: 0.05, notes: 'n' }],
-    instances: [{ ...BASE_INSTANCE, hourly_usd: 10.0 }],
+    schema_version: '2',
+    comparators: [],
+    instances: [BASE_INSTANCE],
     workloads: [BASE_WORKLOAD],
     scenarios: [{
-      id: 's', label: 'Inverted-cost case', story: '',
+      id: 's', label: 'No comparator', story: '',
       instance_id: 'i', workload_id: 'w',
       scaling: {
         model: 'queueing',
-        max_parallel_slots: 4,
         datapoints: [
           { concurrency: 1, p50_s: 10, p95_s: 12, throughput_per_min: 6, utilization_pct: 12 },
           { concurrency: 2, p50_s: 10, p95_s: 12, throughput_per_min: 12, utilization_pct: 25 },
         ],
       },
-      economics: { comparator_id: 'c' },
-      tiles: ['vs_comparator', 'cost_per_task'],
+      // No economics block → no comparator wired up.
+      tiles: ['api_cost_avoided', 'marginal_cost'],
     }],
   });
 
   await page.goto(BASE + '/scalability.html');
+  const tiles = page.locator('#sc-tiles .sc-tile');
+  await expect(tiles).toHaveCount(2);
   const tilesText = await page.locator('#sc-tiles').textContent();
-  expect(tilesText).toMatch(/more expensive/i);
-  expect(tilesText).not.toMatch(/cheaper/i);
+  expect(tilesText).toMatch(/n\/a/i);
+  // Marginal cost tile is data-independent and always renders "$0".
+  expect(tilesText).toMatch(/\$0/);
+});
+
+test('density tile derives slot count from instance + workload', async ({ page }) => {
+  await injectMockScenario(page, {
+    schema_version: '2',
+    comparators: [],
+    // 16 vCPU + 32 GB; per-agent 2 vCPU / 4 GB → min(8, 8) = 8 agents.
+    instances: [{ ...BASE_INSTANCE, vcpu: 16, memory_gb: 32 }],
+    workloads: [{ ...BASE_WORKLOAD, vcpu_per_agent: 2, memory_gb_per_agent: 4 }],
+    scenarios: [{
+      id: 's', label: 'Derived density', story: '',
+      instance_id: 'i', workload_id: 'w',
+      scaling: {
+        model: 'queueing',
+        datapoints: [
+          { concurrency: 1, p50_s: 10, p95_s: 12, throughput_per_min: 6, utilization_pct: 12 },
+        ],
+      },
+      tiles: ['density'],
+    }],
+  });
+
+  await page.goto(BASE + '/scalability.html');
+  await expect(page.locator('#sc-tiles')).toContainText(/8 agents/);
 });
