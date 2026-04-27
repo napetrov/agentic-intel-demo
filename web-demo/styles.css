@@ -432,6 +432,16 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   min-height: 180px;
 }
 .scenario-card:hover { transform: translateY(-2px); }
+.scenario-card.selected {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+  background: linear-gradient(180deg, rgba(69,226,213,.18), rgba(18,39,66,.98));
+  box-shadow: 0 0 0 4px rgba(69,226,213,.18), 0 8px 24px rgba(0,0,0,.35);
+}
+.scenario-card.selected .tag {
+  background: rgba(69,226,213,.3);
+  color: #eafffb;
+}
 .tag {
   display: inline-block;
   padding: 6px 10px;
