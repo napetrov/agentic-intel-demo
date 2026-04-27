@@ -24,13 +24,31 @@ kind: AgentRegistry
 
 agents:
   - id: openclaw-a-1
-    name: "OpenClaw on System A"
+    name: "OpenClaw 1"
     kind: openclaw
     system: system_a
     capabilities: [shell, read_file, list_files, summarize]
     discovery:
       # Name of the OpenClawInstance CR the kube backend should look up.
       openclaw_instance: openclaw-intel-demo
+      namespace: openclaw
+
+  - id: openclaw-a-2
+    name: "OpenClaw 2"
+    kind: openclaw
+    system: system_a
+    capabilities: [shell, read_file, list_files, summarize]
+    discovery:
+      openclaw_instance: openclaw-intel-demo-2
+      namespace: openclaw
+
+  - id: openclaw-a-3
+    name: "OpenClaw 3"
+    kind: openclaw
+    system: system_a
+    capabilities: [shell, read_file, list_files, summarize]
+    discovery:
+      openclaw_instance: openclaw-intel-demo-3
       namespace: openclaw
 
   - id: flowise-a-1
@@ -47,7 +65,7 @@ agents:
       chatflow_id: null
 
   - id: openclaw-b-1
-    name: "OpenClaw on System B"
+    name: "OpenClaw"
     kind: openclaw
     system: system_b
     capabilities: [shell, summarize]
@@ -57,13 +75,3 @@ agents:
       # control plane only reads status.
       openclaw_instance: openclaw-system-b
       namespace: openclaw
-
-  - id: flowise-b-1
-    name: "Flowise market-research flow"
-    kind: flowise
-    system: system_b
-    capabilities: [market-research]
-    discovery:
-      deployment: flowise
-      namespace: flowise
-      chatflow_id: null
