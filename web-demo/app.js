@@ -36,11 +36,11 @@ const scenarios = {
       Tools: 'exec, read',
       Artifacts: '2'
     },
-    // What "Run demo" sends through the OpenClaw gateway when the live
-    // backend is reachable. The worker forwards this to /tools/invoke; the
-    // gateway classifies the input and runs a real tool, so the command log
-    // shows actual tool output instead of a scripted narration.
-    agentInvoke: { tool: 'command', args: { text: 'read BOOTSTRAP.md' } },
+    // What "Run demo" sends when the live backend is reachable. These are
+    // the server-side allow-listed scenario scripts in the System B
+    // offload-worker, not ad-hoc shell commands. The Agent command panel is
+    // the separate surface for direct agent_invoke/tool calls.
+    liveScenario: { task_type: 'shell', payload: { scenario: 'terminal-agent', timeout_seconds: 120 } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run terminal-agent --isolated' },
       { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
@@ -119,12 +119,7 @@ const scenarios = {
       Tools: 'read, summarize',
       Artifacts: '1'
     },
-    agentInvoke: {
-      tool: 'command',
-      args: {
-        text: 'summarize OpenClaw orchestrates agentic execution on Intel CPUs across CWF and offload paths to keep latency predictable for SMB customers.'
-      }
-    },
+    liveScenario: { task_type: 'shell', payload: { scenario: 'market-research', timeout_seconds: 120 } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run market-research --isolated' },
       { icon: '🌐', tool: 'api_call', value: 'POST /v1/chat/completions (LiteLLM → SambaNova)' },
@@ -203,7 +198,7 @@ const scenarios = {
       Tools: 'exec, read, summarize',
       Artifacts: '3'
     },
-    agentInvoke: { tool: 'command', args: { text: 'read AGENTS.md' } },
+    liveScenario: { task_type: 'shell', payload: { scenario: 'large-build-test', timeout_seconds: 120 } },
     toolActivity: [
       { icon: '💻', tool: 'terminal', value: 'openclaw demo run large-build-test --burst' },
       { icon: '📖', tool: 'read_file', value: 'agents/scenarios/large-build-test/build-task.md' },
@@ -561,13 +556,13 @@ function renderLiveAgentArchitecture(key, state = 'running') {
   renderCapacityB(isRunning ? 1 : 0);
   setCrossArrow(true);
   renderConsole({
-    mode: 'live agent_invoke',
+    mode: 'live scenario',
     route: 'web demo → System A → System B',
     'system a': 'control-plane-offload',
-    'system b': 'offload-worker → agent-stub',
-    'agent runtime': 'System B agent-stub',
-    'model route': 'not used for this command',
-    'artifact view': 'live job result'
+    'system b': 'offload-worker scenario script',
+    'worker runtime': 'System B offload-worker',
+    'model route': 'scenario-defined / local tools',
+    'artifact view': 'live scenario transcript'
   });
 }
 
@@ -818,41 +813,41 @@ async function runLiveWalkthrough(scenarioKey) {
   if (!scenario) return;
   const myRunId = ++liveRunId;
   const sessionId = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const liveRoute = 'web demo → System A control plane → System B offload-worker → System B agent-stub';
-  const liveAgent = 'System B agent-stub';
-  const invoke = scenario.agentInvoke || { tool: 'command', args: { text: 'read BOOTSTRAP.md' } };
-  const liveInput = invoke.args && invoke.args.text ? invoke.args.text : invoke.tool;
+  const liveRoute = 'web demo → System A control-plane → System B offload-worker → allow-listed scenario script';
+  const liveAgent = 'System B offload-worker';
+  const liveScenario = scenario.liveScenario || { task_type: 'shell', payload: { scenario: scenarioKey, timeout_seconds: 120 } };
+  const liveInput = `${liveScenario.task_type}:${(liveScenario.payload && liveScenario.payload.scenario) || scenarioKey}`;
 
   renderLiveAgentArchitecture(scenarioKey, 'running');
 
-  // Live walkthrough goes through the System B agent-stub gateway via task_type=agent_invoke
-  // (the worker forwards to OPENCLAW_GATEWAY_URL/tools/invoke). The gateway
-  // classifies the input and runs a real allow-listed tool, so the command
-  // log shows actual stdout/result rather than a scripted narration.
+  // Run the real demo scenario scripts described in k8s/system-b/offload-worker.yaml.
+  // These are server-side allow-listed scripts (`task_type=shell` with a scenario
+  // name), not ad-hoc agent commands. The separate Agent command panel still uses
+  // agent_invoke for direct OpenClaw-gateway tool calls.
   const submitBody = {
-    task_type: 'agent_invoke',
-    payload: { tool: invoke.tool, args: invoke.args },
+    task_type: liveScenario.task_type,
+    payload: liveScenario.payload,
     session_id: sessionId
   };
   commandLogEl.textContent = [
-    `Live run: ${scenarioKey}`,
+    `Live scenario: ${scenarioKey}`,
     `Route: ${liveRoute}`,
-    `Agent: ${liveAgent}`,
-    `Input: ${liveInput}`,
+    `Worker: ${liveAgent}`,
+    `Task: ${liveInput}`,
     '',
-    `[live 1/5] Health checks are green; preparing agent_invoke payload`,
+    `[live 1/5] Health checks are green; preparing allow-listed scenario payload`,
     `[live 2/5] POST /api/offload → System A control-plane`
   ].join('\n');
-  result.textContent = `Live backend run started for ${scenarioKey}; submitting ${liveInput}…`;
+  result.textContent = `Live scenario run started for ${scenarioKey}; executing System B scenario script…`;
   result.className = 'result empty-state';
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'active' }
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (${liveInput})`, status: 'active' }
   ]);
   renderMetrics({
     Status: 'submitting',
     Route: 'System A → System B',
-    Agent: liveAgent,
-    Tool: invoke.tool
+    Worker: liveAgent,
+    Scenario: scenarioKey
   });
 
   const stillCurrent = () => myRunId === liveRunId;
@@ -888,12 +883,12 @@ async function runLiveWalkthrough(scenarioKey) {
   renderMetrics({
     Status: 'accepted',
     Route: 'System A → System B',
-    Agent: liveAgent,
-    Tool: invoke.tool,
+    Worker: liveAgent,
+    Scenario: scenarioKey,
     'Job ID': submit.job_id
   });
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (${liveInput})`, status: 'done' },
     { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'active' }
   ]);
 
@@ -902,7 +897,7 @@ async function runLiveWalkthrough(scenarioKey) {
   // stay correct if the relay ever switches to async.
   const renderPollError = (detail) => {
     renderToolActivity([
-      { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
+      { icon: '🌐', tool: 'api_call', value: `POST /api/offload (${liveInput})`, status: 'done' },
       { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'error' }
     ]);
     result.textContent = detail;
@@ -925,8 +920,8 @@ async function runLiveWalkthrough(scenarioKey) {
     renderMetrics({
       Status: status.status,
       Route: 'System A → System B',
-      Agent: liveAgent,
-      Tool: invoke.tool,
+      Worker: liveAgent,
+      Scenario: scenarioKey,
       'Job ID': submit.job_id
     });
     if (status.status === 'completed' || status.status === 'error') break;
@@ -946,86 +941,44 @@ async function runLiveWalkthrough(scenarioKey) {
     return;
   }
 
-  // offload-worker's agent_invoke wraps the gateway response under
-  // result.response (parsed JSON) or result.response_text (raw body when the
-  // gateway returned a non-JSON 200). When over the inline threshold it
-  // lands as result_ref and we have to fetch the artifact to get the wrapper
-  // back. We only render the JSON shape; a response_text means the gateway
-  // didn't speak our protocol, which is a failure even at HTTP 200.
-  let agentPayload = null;
-  if (status.result) {
-    const wrapper = status.result;
-    if (wrapper && typeof wrapper === 'object' && 'response' in wrapper) {
-      agentPayload = wrapper.response;
-    } else if (wrapper && typeof wrapper === 'object' && 'response_text' in wrapper) {
-      const text = String(wrapper.response_text ?? '');
-      appendLog(`[warn] gateway returned non-JSON body (${text.length} chars):`);
-      appendLog(text.slice(0, 500) + (text.length > 500 ? ' …[truncated]' : ''));
-      result.textContent = `Live run finished, but the gateway returned a non-JSON body (job ${submit.job_id}).`;
-      finalizeLive('error');
-      return;
-    } else {
-      agentPayload = wrapper;
-    }
-  } else if (status.result_ref) {
-    agentPayload = await fetchArtifactPayload(status.result_ref, appendLog);
+  let scenarioResult = status.result || null;
+  if (!scenarioResult && status.result_ref) {
+    scenarioResult = await fetchArtifactPayload(status.result_ref, appendLog);
     if (!stillCurrent()) return;
-    if (!agentPayload) {
-      result.textContent = `Live run finished, but response artifact fetch failed (job ${submit.job_id}).`;
+    if (!scenarioResult) {
+      result.textContent = `Live scenario finished, but response artifact fetch failed (job ${submit.job_id}).`;
       finalizeLive('error');
       return;
     }
-  } else {
-    appendLog(`[agent] empty response (no inline result, no artifact ref)`);
-    result.textContent = `Live run returned no payload (job ${submit.job_id}).`;
+  }
+  if (!scenarioResult || typeof scenarioResult !== 'object' || Array.isArray(scenarioResult)) {
+    appendLog(`[scenario] invalid response payload (got ${typeof scenarioResult})`);
+    result.textContent = `Live scenario returned no structured payload (job ${submit.job_id}).`;
     finalizeLive('error');
     return;
   }
-
-  // fetchArtifactPayload's unwrap can also yield a string when only
-  // response_text is set on the artifact. Reject anything that isn't a
-  // proper JSON object so the verdict logic below can't silently coerce
-  // an unstructured body into PASS.
-  if (!agentPayload || typeof agentPayload !== 'object' || Array.isArray(agentPayload)) {
-    appendLog(`[agent] gateway response was not a JSON object (got ${typeof agentPayload})`);
-    result.textContent = `Live run finished, but the gateway response wasn't a JSON object (job ${submit.job_id}).`;
-    finalizeLive('error');
-    return;
-  }
-
-  appendLog(`[live 5/5] System B agent-stub returned JSON tool trace; rendering backend output`);
-  emitAgentResult(agentPayload, appendLog);
 
   const elapsedMs = (status.completed_at && status.submitted_at)
     ? Math.max(0, (status.completed_at - status.submitted_at) * 1000)
     : null;
-  const inner = (agentPayload.result && agentPayload.result.chosen_tool)
-    ? agentPayload.result.result
-    : (agentPayload.result || null);
-  const chosenTool = (agentPayload.result && agentPayload.result.chosen_tool)
-    || agentPayload.tool
-    || invoke.tool;
-  // Require an explicit status==='ok' from the gateway. Anything else
-  // (missing field, "error", unrecognized value) must not coerce to PASS.
-  const agentOk = agentPayload.status === 'ok';
-  // Treat shell exit_code !== 0 as failure too, since the gateway can return
-  // status=ok with an inner non-zero exit (e.g. command-not-found through
-  // the shell tool). Other tools don't carry exit_code, so default to ok.
-  const exitCode = inner && typeof inner === 'object' && 'exit_code' in inner
-    ? inner.exit_code
-    : null;
-  const succeeded = agentOk && (exitCode === null || exitCode === 0);
+  const exitCode = typeof scenarioResult.exit_code === 'number' ? scenarioResult.exit_code : null;
+  const succeeded = exitCode === null || exitCode === 0;
+  const stdout = String(scenarioResult.stdout || '').trimEnd();
+  const stderr = String(scenarioResult.stderr || '').trimEnd();
+  appendLog(`[live 5/5] System B scenario script completed; rendering stdout/stderr`);
+  if (stdout) appendLog(stdout.length > 1600 ? `${stdout.slice(0, 1600)}\n…[stdout truncated in live log]` : stdout);
+  if (stderr) appendLog(`--- stderr ---\n${stderr.length > 800 ? `${stderr.slice(0, 800)}\n…[stderr truncated]` : stderr}`);
 
   renderToolActivity([
-    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (agent_invoke: ${invoke.tool})`, status: 'done' },
+    { icon: '🌐', tool: 'api_call', value: `POST /api/offload (${liveInput})`, status: 'done' },
     { icon: '🔁', tool: 'poll_job', value: `GET /api/offload/${submit.job_id}`, status: 'done' },
-    { icon: '🤖', tool: 'openclaw', value: `tool=${chosenTool}${exitCode !== null ? ` exit=${exitCode}` : ''}`, status: succeeded ? 'done' : 'error' }
+    { icon: '⚙️', tool: 'scenario_script', value: `${scenarioKey}${exitCode !== null ? ` exit=${exitCode}` : ''}`, status: succeeded ? 'done' : 'error' }
   ]);
   renderMetrics({
     Status: succeeded ? 'completed' : 'failed',
     Route: 'System A → System B',
-    Agent: liveAgent,
-    Tool: chosenTool,
+    Worker: liveAgent,
+    Scenario: scenarioKey,
     Exit: exitCode === null ? '—' : String(exitCode),
     Elapsed: elapsedMs !== null ? `${(elapsedMs / 1000).toFixed(2)}s` : '—',
     'Job ID': submit.job_id
@@ -1034,15 +987,15 @@ async function runLiveWalkthrough(scenarioKey) {
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
-    chosenTool,
+    chosenTool: 'scenario_script',
     exitCode,
     elapsedMs,
     route: liveRoute,
     agent: liveAgent,
     succeeded,
     resultRef: status.result_ref || null,
-    agentElapsedMs: typeof agentPayload?.elapsed_ms === 'number' ? agentPayload.elapsed_ms : null,
-    output: liveOutputSummary(chosenTool, inner)
+    agentElapsedMs: null,
+    output: [stdout, stderr ? `--- stderr ---\n${stderr}` : ''].filter(Boolean).join('\n')
   });
   result.className = 'result';
   finish();
@@ -1552,9 +1505,9 @@ function dotStateForProbe(probe) {
 async function probeBackend() {
   // /health says the relay is up; /ready says the worker is also reachable.
   // We additionally probe OpenClaw because Run demo now submits
-  // task_type=agent_invoke, which the worker forwards to the gateway —
-  // a healthy worker with an unset/unreachable OPENCLAW_GATEWAY_URL would
-  // fail every live run, so live mode must require gateway reachability too.
+  // Run demo executes allow-listed scenario scripts through the worker.
+  // The Agent command panel separately uses task_type=agent_invoke, which
+  // the worker forwards to the gateway, so keep probing OpenClaw too.
   let cpHealthy = false;
   let workerReady = false;
   try {
@@ -1616,9 +1569,9 @@ async function probeBackend() {
   }
   liveBackendAvailable = cpHealthy && workerReady && openclawOk;
   runDemoBtn.title = liveBackendAvailable
-    ? 'Live backend detected — submits agent_invoke through /api/offload to the OpenClaw gateway.'
+    ? 'Live backend detected — runs the selected allow-listed scenario through /api/offload on System B.'
     : (cpHealthy && workerReady && !openclawOk
-        ? 'OpenClaw gateway unreachable — runs scripted walkthrough only.'
+        ? 'OpenClaw gateway unreachable — scenario runner is healthy, but agent commands are disabled.'
         : 'Backend not detected — runs scripted walkthrough only.');
 }
 
