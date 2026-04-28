@@ -8,7 +8,7 @@ test('scalability page renders all 8 tiles + chart for default scenario', async 
   page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 
   await page.goto(BASE + '/scalability.html');
-  await expect(page.locator('h2')).toContainText(/many agents/i);
+  await expect(page.locator('h2')).toContainText(/scaled out/i);
 
   // Tabs render with all scenarios (2 single-node + 3 rack-scale).
   const tabs = page.locator('#sc-tabs .sc-tab');
