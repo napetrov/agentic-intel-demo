@@ -662,18 +662,6 @@ def test_load_seed_rejects_unknown_confidential(tmp_path):
         apiVersion: demo.agents/v1
         kind: AgentRegistry
         agents:
-          - id: a, name: A, kind: openclaw, system: system_a, capabilities: [], confidential: sgx
-        """,
-    )
-    # The malformed YAML above (intentional: confidential as a string in a
-    # bracket-style list) makes the comma-style entry parse — so we use a
-    # block-style entry with the actual fields:
-    p = _write_seed(
-        tmp_path,
-        """
-        apiVersion: demo.agents/v1
-        kind: AgentRegistry
-        agents:
           - id: a
             name: A
             kind: openclaw

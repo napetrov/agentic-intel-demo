@@ -596,9 +596,11 @@ def _resolve_confidential(
       3. None (default — schedule on regular nodes).
 
     The explicit override wins so an operator can promote a session
-    onto a TEE for a one-off run without re-flagging the agent. It can
-    also DEMOTE — passing an empty string is treated as "no TEE", but
-    we leave that decision to the request validator (None vs absent).
+    onto a TEE for a one-off run without re-flagging the agent. To
+    demote (run a session that targets a TDX-marked agent on regular
+    nodes), the request validator only accepts None / field omitted —
+    an empty string is rejected with 400 by
+    `_validate_confidential_request`, not silently treated as "no TEE".
     """
     if requested is not None:
         return requested

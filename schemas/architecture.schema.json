@@ -197,6 +197,7 @@
         "node_selector": {
           "type": "object",
           "minProperties": 1,
+          "propertyNames": { "type": "string", "minLength": 1 },
           "additionalProperties": { "type": "string", "minLength": 1 }
         }
       }

@@ -63,7 +63,7 @@ in this repo installs the host-side bits.
      pins this to a KBS resource policy.
 3. **Node label.** Apply the label the control plane selects on:
    ```
-   kubectl label node <tdx-node> intel.feature.node.kubernetes.io/tdx=true
+   kubectl label node <tdx-node> intel.feature.node.kubernetes.io/tdx=true --overwrite
    ```
    The default key matches what NFD's Intel feature source typically
    exposes; if your cluster uses a different key, override

@@ -88,17 +88,36 @@ CONFIDENTIAL_KINDS: frozenset[str] = frozenset({"tdx"})
 #                     via env vars (TDX_RUNTIME_CLASS,
 #                     TDX_NODE_SELECTOR_KEY, TDX_NODE_SELECTOR_VALUE).
 # Kept as a function so test code can monkeypatch env vars between cases.
+def _required_env(name: str, default: str) -> str:
+    """Read an env override that must not be empty if it's set.
+
+    `os.environ.get(name, default)` would treat an explicitly-empty env
+    var (e.g. `TDX_RUNTIME_CLASS=`) as a valid value and produce a Pod
+    spec with an empty `runtimeClassName` / nodeSelector key, which
+    only fails much later at the kube API. Validate at resolve time so
+    a misconfigured operator gets a clear error instead of an
+    untouchable Pending Pod.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    if not value:
+        raise RuntimeError(
+            f"{name} must be a non-empty string (got {raw!r})"
+        )
+    return value
+
+
 def confidential_scheduling_defaults() -> dict[str, dict[str, Any]]:
     return {
         "tdx": {
-            "runtime_class": os.environ.get(
-                "TDX_RUNTIME_CLASS", "kata-qemu-tdx"
-            ),
+            "runtime_class": _required_env("TDX_RUNTIME_CLASS", "kata-qemu-tdx"),
             "node_selector": {
-                os.environ.get(
+                _required_env(
                     "TDX_NODE_SELECTOR_KEY",
                     "intel.feature.node.kubernetes.io/tdx",
-                ): os.environ.get("TDX_NODE_SELECTOR_VALUE", "true"),
+                ): _required_env("TDX_NODE_SELECTOR_VALUE", "true"),
             },
         },
     }

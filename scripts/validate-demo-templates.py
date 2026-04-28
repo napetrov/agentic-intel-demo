@@ -420,23 +420,28 @@ def validate_architecture(report: Report, path: Path) -> tuple[set[str], set[str
                 else:
                     declared_kinds.add(kind)
             check_location(f"{label}.location", entry.get("location"))
-            ns = entry.get("node_selector")
-            if ns is None:
-                pass
-            elif not isinstance(ns, dict) or not ns:
-                report.add_error(
-                    f"{where}: {label}.node_selector must be a non-empty mapping"
-                )
-            else:
-                for k, v in ns.items():
-                    if not isinstance(k, str) or not k:
-                        report.add_error(
-                            f"{where}: {label}.node_selector keys must be non-empty strings"
-                        )
-                    if not isinstance(v, str) or not v:
-                        report.add_error(
-                            f"{where}: {label}.node_selector[{k!r}] must be a non-empty string"
-                        )
+            # `node_selector` is required; both an explicit null and a
+            # non-mapping shape must fail (the earlier `not in entry`
+            # check catches a missing key, this catches "key present but
+            # null/0/[]"). Without this, `node_selector: null` would
+            # silently pass and the architecture file would claim a TEE
+            # runtime with no scheduling constraint at all.
+            if "node_selector" in entry:
+                ns = entry.get("node_selector")
+                if not isinstance(ns, dict) or not ns:
+                    report.add_error(
+                        f"{where}: {label}.node_selector must be a non-empty mapping"
+                    )
+                else:
+                    for k, v in ns.items():
+                        if not isinstance(k, str) or not k:
+                            report.add_error(
+                                f"{where}: {label}.node_selector keys must be non-empty strings"
+                            )
+                        if not isinstance(v, str) or not v:
+                            report.add_error(
+                                f"{where}: {label}.node_selector[{k!r}] must be a non-empty string"
+                            )
 
     report.ok(f"{where}: architecture structure OK")
     return normalized_sem, declared_kinds

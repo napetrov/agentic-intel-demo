@@ -905,6 +905,27 @@ def test_kube_render_job_clears_stale_tdx_when_confidential_omitted(monkeypatch)
     assert all(e.get("name") != "CONFIDENTIAL" for e in envs)
 
 
+def test_confidential_scheduling_defaults_rejects_empty_env(monkeypatch):
+    """An explicitly-empty TDX_* override would build an invalid Pod
+    spec and only fail much later at the kube API. _required_env must
+    reject empty values up front so the operator gets a clear error."""
+    monkeypatch.setenv("TDX_RUNTIME_CLASS", "")
+    with pytest.raises(RuntimeError, match="TDX_RUNTIME_CLASS"):
+        sm.confidential_scheduling_defaults()
+
+
+def test_confidential_scheduling_defaults_uses_default_when_unset(monkeypatch):
+    """Unset env (vs explicit empty) falls back to the documented default."""
+    monkeypatch.delenv("TDX_RUNTIME_CLASS", raising=False)
+    monkeypatch.delenv("TDX_NODE_SELECTOR_KEY", raising=False)
+    monkeypatch.delenv("TDX_NODE_SELECTOR_VALUE", raising=False)
+    out = sm.confidential_scheduling_defaults()
+    assert out["tdx"]["runtime_class"] == "kata-qemu-tdx"
+    assert out["tdx"]["node_selector"] == {
+        "intel.feature.node.kubernetes.io/tdx": "true",
+    }
+
+
 def test_kube_render_job_preserves_non_tee_runtime_class(monkeypatch):
     """Codex P1: a non-TEE runtimeClassName configured in
     session-job-template (e.g. baseline `gvisor` for sandboxing) must
