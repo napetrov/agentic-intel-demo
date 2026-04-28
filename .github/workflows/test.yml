@@ -130,9 +130,13 @@ jobs:
         run: pytest -v
 
   dev-web-proxy:
-    # Unit-tests scripts/dev_web_proxy.py (the no-Docker stand-in for
-    # nginx) with httpx.MockTransport. No real backend required; this
-    # closes a coverage gap on a script the demo entry path now relies on.
+    # Runs the full scripts/tests/ pytest suite. Originally introduced
+    # to unit-test scripts/dev_web_proxy.py (the no-Docker stand-in for
+    # nginx) with httpx.MockTransport; now also covers the
+    # operator-secrets pipeline (create-operator-secrets.sh,
+    # verify-operator-secrets.sh, session-pod-template.yaml shapes) so
+    # GH_TOKEN passthrough wiring can't regress silently. No real
+    # backend or cluster required.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,11 +144,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: install proxy deps + pytest
+        # PyYAML is consumed by scripts/tests/test_operator_secrets.py
+        # to assert on the session-pod template + OpenClawInstance
+        # shapes; keep it pinned so a runner update can't quietly
+        # change behavior.
         run: |
           pip install \
             fastapi==0.115.12 \
             'uvicorn[standard]==0.34.2' \
             httpx==0.28.1 \
+            pyyaml==6.0.2 \
             pytest==8.3.5
       - name: pytest
         run: pytest -v scripts/tests

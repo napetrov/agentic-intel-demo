@@ -115,15 +115,18 @@ APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
   ./scripts/create-operator-secrets.sh
 kubectl --context system-a delete pods -n agents -l role=session-pod
 
-# remove (drop GitHub access entirely)
-kubectl --context system-a delete secret github-token -n agents
-# also re-run create-operator-secrets.sh WITHOUT GH_TOKEN exported so
-# the operator-namespace Secret stops carrying the key:
+# remove (drop GitHub access entirely) — re-run the script WITHOUT
+# GH_TOKEN exported. The unset path explicitly deletes the
+# agents/github-token mirror so restarted session pods can't keep
+# injecting the old PAT via secretKeyRef. This is the canonical
+# revoke-by-omission gesture; do NOT just delete the operator-namespace
+# Secret on its own.
 APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
   TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
   SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
   MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
   ./scripts/create-operator-secrets.sh
+kubectl --context system-a delete pods -n agents -l role=session-pod
 ```
 
 To verify presence without ever reading the value:

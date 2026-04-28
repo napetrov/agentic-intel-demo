@@ -77,27 +77,59 @@ kubectl apply -f examples/openclawinstance-intel-demo.yaml
 The OpenClaw instance can consume a GitHub PAT internally — it is used
 by tools running inside the session pod (`git`, `gh`, private GHCR
 pulls), never exposed on the gateway API or written into
-`openclaw.json`. Wire it via the same secret pipeline as the other
-credentials:
+`openclaw.json`. The token has to land in **two** Secrets, in two
+namespaces:
 
-1. Add `GH_TOKEN` to `intel-demo-operator-secrets` (referenced by
-   `OpenClawInstance.spec.envFromSecrets`). Either:
-   - Edit the placeholder in
-     `k8s/shared/intel-demo-operator-secrets.yaml.template` and
-     `kubectl apply` it, **or**
-   - Re-run `scripts/create-operator-secrets.sh` with `GH_TOKEN=ghp_...`
-     exported. The script also mirrors the value into the
-     `github-token` Secret in namespace `agents`, which the
-     session-pod template references via `secretKeyRef` (cross-namespace
-     refs are not allowed, so the mirror is required).
-2. The session pod exposes the value under **both** `GH_TOKEN` and
-   `GITHUB_TOKEN`. Both `secretKeyRef`s are marked `optional: true`, so
-   omitting the Secret does not block pod startup — the agent simply
-   runs without a credential.
-3. Verify wiring without reading the value:
-   `SCOPE=system-a ./scripts/verify-operator-secrets.sh`. Set
-   `REQUIRE_GH_TOKEN=1` to upgrade the "missing token" warning to a
-   hard failure on stands where GitHub access is mandatory.
+| Secret | Namespace | Read by |
+|--------|-----------|---------|
+| `intel-demo-operator-secrets` | `default` | the operator gateway pod via `OpenClawInstance.spec.envFromSecrets` |
+| `github-token` | `agents` | the session pod via `secretKeyRef` in `k8s/system-a/session-pod-template.yaml` |
+
+The mirror into `agents` is mandatory because `secretKeyRef` cannot
+cross namespaces — without it the session pod boots, but with no
+`GH_TOKEN`/`GITHUB_TOKEN` env var set.
+
+**Recommended path** — let `scripts/create-operator-secrets.sh` create
+both:
+
+```bash
+APPLY=1 SCOPE=system-a KUBECTL="kubectl --context system-a" \
+  TELEGRAM_BOT_TOKEN=... AWS_BEARER_TOKEN_BEDROCK=... \
+  SAMBANOVA_API_KEY="${SAMBANOVA_API_KEY:-}" \
+  MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+  GH_TOKEN=ghp_... \
+  ./scripts/create-operator-secrets.sh
+```
+
+This writes both Secrets via `kubectl create secret --dry-run=client
+-o yaml | kubectl apply -f -`, so plaintext never lands on disk.
+Re-running with `GH_TOKEN` **un**set deletes the mirror in `agents` —
+that's the canonical "revoke agent GitHub access" gesture.
+
+**Manual `kubectl apply` path** — if you must edit
+`k8s/shared/intel-demo-operator-secrets.yaml.template` directly, you
+**also** have to create `github-token` in `agents` yourself, e.g.:
+
+```bash
+kubectl --context system-a create secret generic github-token \
+  -n agents --from-literal=GH_TOKEN=ghp_... \
+  --dry-run=client -o yaml \
+  | kubectl --context system-a apply -f -
+```
+
+Editing the template alone is **not** sufficient — the session pod
+will boot without a credential because the `secretKeyRef`s in
+`k8s/system-a/session-pod-template.yaml` are `optional: true`.
+
+The session pod exposes the value under both `GH_TOKEN` and
+`GITHUB_TOKEN` so tools that look for either name find it. To verify
+wiring without reading the value:
+
+```bash
+SCOPE=system-a ./scripts/verify-operator-secrets.sh
+# Set REQUIRE_GH_TOKEN=1 to upgrade the "missing token" warning to a
+# hard failure on stands where GitHub access is mandatory.
+```
 
 See `docs/runbooks/tier2-bring-up.md` "GitHub token (`GH_TOKEN`)
 wiring" for the full flow, including rotation and removal.

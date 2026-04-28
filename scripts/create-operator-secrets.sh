@@ -217,14 +217,33 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   # operator instance Secret lives in the operator's namespace and
   # secretKeyRef can't cross namespaces, so this copy is what
   # session-pod-template.yaml's `secretKeyRef` actually points at.
+  #
+  # Critically, if GH_TOKEN is now unset but the Secret already exists
+  # from a prior run, we must DELETE it. Otherwise restarted session
+  # pods would silently keep injecting the stale PAT via secretKeyRef,
+  # even though the log line below says "agents will run without
+  # GitHub credentials". This is the revoke-by-omission contract:
+  # un-exporting GH_TOKEN and re-running the script is the canonical
+  # way to remove agent GitHub access.
   if [ -n "${GH_TOKEN:-}" ]; then
     emit "github token (session pod)" \
       "$GITHUB_SECRET_NAME" "$GITHUB_SECRET_NAMESPACE" \
       "GH_TOKEN=$GH_TOKEN"
   else
-    echo "[create-operator-secrets] GH_TOKEN unset — skipping github-token Secret."
-    echo "  Agents will run without GitHub credentials. Re-run with"
-    echo "  GH_TOKEN=ghp_... to enable git/gh/private GHCR pulls."
+    if [ "$APPLY" = "1" ]; then
+      if "${KUBECTL_CMD[@]}" -n "$GITHUB_SECRET_NAMESPACE" \
+            get secret "$GITHUB_SECRET_NAME" >/dev/null 2>&1; then
+        "${KUBECTL_CMD[@]}" -n "$GITHUB_SECRET_NAMESPACE" \
+          delete secret "$GITHUB_SECRET_NAME" >/dev/null
+        echo "[create-operator-secrets] GH_TOKEN unset — removed stale secret/$GITHUB_SECRET_NAME in ns/$GITHUB_SECRET_NAMESPACE."
+        echo "  Restart session pods (kubectl delete pods -n $GITHUB_SECRET_NAMESPACE -l role=session-pod) to drop the cached credential."
+      else
+        echo "[create-operator-secrets] GH_TOKEN unset — secret/$GITHUB_SECRET_NAME not present in ns/$GITHUB_SECRET_NAMESPACE; nothing to remove."
+      fi
+    else
+      echo "# GH_TOKEN unset — would delete secret/$GITHUB_SECRET_NAME in ns/$GITHUB_SECRET_NAMESPACE if present (revoke-by-omission)."
+    fi
+    echo "[create-operator-secrets] Re-run with GH_TOKEN=ghp_... to (re-)wire GitHub credentials for git/gh/private GHCR pulls."
   fi
 fi
 
