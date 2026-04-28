@@ -253,5 +253,43 @@
         "human_equivalent"
       ]
     }
-  ]
+  ],
+  "rack_builder": {
+    "_about": "Interactive rack composer. Each node_type carries a baseline_scenario_id pointing at one of the per-node scenarios above; the builder reads sweet-spot concurrency / throughput from that baseline and multiplies by node count to project rack-scale numbers live as the user adds or removes nodes. Keeping the baseline in scenarios[] (instead of duplicating numbers here) means edits to a single-node curve automatically reshape the builder.",
+    "rack_units_total": 42,
+    "rack_units_fixture": 4,
+    "rack_units_fixture_top": 2,
+    "max_total_nodes": 38,
+    "default_total_summary": "16× CWF + 16× GNR — the shipped 'mixed rack' baseline.",
+    "node_types": [
+      {
+        "id": "cwf",
+        "label": "Intel Xeon CWF",
+        "short_label": "CWF",
+        "subtitle": "agent host (1U)",
+        "vcpu_per_node": 576,
+        "memory_gb_per_node": 1536,
+        "default_count": 16,
+        "max_count": 32,
+        "baseline_scenario_id": "xeon-small-density",
+        "comparator_id": "frontier-api-small",
+        "swatch_class": "sc-rack-u-cwf",
+        "notes": "Hosts agent session pods. Scales out by 1 vCPU / 2 GB per agent."
+      },
+      {
+        "id": "gnr",
+        "label": "Intel GNR",
+        "short_label": "GNR",
+        "subtitle": "SLM + offload (1U)",
+        "vcpu_per_node": 256,
+        "memory_gb_per_node": 1024,
+        "default_count": 16,
+        "max_count": 32,
+        "baseline_scenario_id": "gnr-research-volume",
+        "comparator_id": "frontier-api-research",
+        "swatch_class": "sc-rack-u-gnr",
+        "notes": "Hosts vLLM and the research / analytics offload workers. AMX-accelerated."
+      }
+    ]
+  }
 }

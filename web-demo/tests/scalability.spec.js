@@ -68,11 +68,11 @@ test('switching to GNR scenario re-renders tiles + chart', async ({ page }) => {
 
 test('rack-scale CWF scenario reports 32-node rack capacity and rack-scale volume', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
-  const tabs = page.locator('#sc-tabs .sc-tab');
-  // Tab order: 0 xeon-small-density, 1 gnr-research-volume,
-  // 2 xeon-cwf-rack-density, 3 gnr-rack-research, 4 mixed-rack-blend.
-  await tabs.nth(2).click();
-  await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+  // Tabs are rendered with data-id=<scenario.id>; selecting by id keeps
+  // this test stable if scenarios get reordered in the JSON.
+  const cwfRackTab = page.locator('#sc-tabs .sc-tab[data-id="xeon-cwf-rack-density"]');
+  await cwfRackTab.click();
+  await expect(cwfRackTab).toHaveAttribute('aria-selected', 'true');
 
   // Rack scenarios show 8 tiles (rack_capacity replaces marginal_cost).
   const tiles = page.locator('#sc-tiles .sc-tile');
@@ -91,9 +91,9 @@ test('rack-scale CWF scenario reports 32-node rack capacity and rack-scale volum
 
 test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
-  const tabs = page.locator('#sc-tabs .sc-tab');
-  await tabs.nth(4).click();
-  await expect(tabs.nth(4)).toHaveAttribute('aria-selected', 'true');
+  const mixedRackTab = page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]');
+  await mixedRackTab.click();
+  await expect(mixedRackTab).toHaveAttribute('aria-selected', 'true');
 
   // The rack-capacity tile should call out the mixed composition.
   await expect(page.locator('#sc-tiles')).toContainText(/16× Intel Xeon CWF/);
@@ -101,6 +101,60 @@ test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ p
   // Density tile reflects only the 16-node CWF agent half:
   //   floor(min(9216/1, 24576/2)) = 9,216 agents.
   await expect(page.locator('#sc-tiles')).toContainText(/9,216 agents/);
+});
+
+test('rack builder renders default 16+16 composition with live tiles', async ({ page }) => {
+  await page.goto(BASE + '/scalability.html');
+
+  // Builder panel is visible with title.
+  await expect(page.locator('#sc-builder-title')).toContainText(/rack builder/i);
+
+  // Default 16 CWF + 16 GNR composition surfaces in the summary.
+  const summary = page.locator('#sc-builder-summary');
+  await expect(summary).toContainText(/16× CWF/);
+  await expect(summary).toContainText(/16× GNR/);
+  await expect(summary).toContainText(/32 of 38 usable U occupied/);
+
+  // Rack viz contains 42 U slots; 16 are tagged as CWF and 16 as GNR.
+  await expect(page.locator('#sc-builder-rack > div')).toHaveCount(42);
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(16);
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(16);
+
+  // Tiles: rack total + per-type + combined economics.
+  const tiles = page.locator('#sc-builder-tiles .sc-tile');
+  await expect(tiles).toHaveCount(4);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/32 nodes/);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/13,312 vCPU/);
+  // Default 16+16 mixed rack: ~$386,630/day combined API cost avoided.
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/\$386,630/);
+});
+
+test('rack builder updates live when nodes are added or removed', async ({ page }) => {
+  await page.goto(BASE + '/scalability.html');
+  const cwfCount = page.locator('[data-id="count-cwf"]');
+  const cwfInc = page.locator('[data-id="inc-cwf"]');
+  const cwfDec = page.locator('[data-id="dec-cwf"]');
+
+  await expect(cwfCount).toHaveText('16');
+
+  // Add one CWF node — count should advance and a CWF U slot should
+  // appear in the rack viz.
+  await cwfInc.click();
+  await expect(cwfCount).toHaveText('17');
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(17);
+
+  // Remove three GNR nodes; combined economics tile should drop accordingly.
+  const gnrDec = page.locator('[data-id="dec-gnr"]');
+  await gnrDec.click();
+  await gnrDec.click();
+  await gnrDec.click();
+  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('13');
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(13);
+
+  // Going below zero is blocked: dec is disabled at 0.
+  for (let i = 0; i < 13; i++) await gnrDec.click();
+  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('0');
+  await expect(gnrDec).toBeDisabled();
 });
 
 test('homepage hero has the Scalability story link', async ({ page }) => {

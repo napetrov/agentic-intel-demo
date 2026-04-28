@@ -180,7 +180,11 @@ The bottom panel renders the most recent scenario run:
   the frontier-API spend displaced per day on synthetic data. Includes
   per-node scenarios (CWF, GNR) and rack-scale scenarios (32-node CWF
   rack, 32-node GNR rack, and a mixed CWF-agent + GNR-offload rack)
-  that fan the per-node curve out across a full 42U rack.
+  that fan the per-node curve out across a full 42U rack. An
+  interactive **rack builder** at the bottom of the page lets you
+  add / remove CWF and GNR nodes from a 42U chassis and re-projects
+  every tile (rack capacity, density, throughput, displaced API
+  spend) live as the composition changes.
 
 ## Backend env vars that affect the UI
 

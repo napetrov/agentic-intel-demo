@@ -670,6 +670,294 @@
     }
   }
 
+  // ---------- rack builder ----------
+
+  /**
+   * Pull the per-node sweet-spot baseline (concurrency + throughput) out
+   * of a referenced single-node scenario. Same rule as the per-scenario
+   * tile pipeline: last datapoint where p95 stays under 2× the first
+   * datapoint's p95.
+   */
+  function baselineFromScenario(scenario) {
+    if (!scenario || !scenario.scaling || !scenario.scaling.datapoints?.length) {
+      return null;
+    }
+    const sweet = findSweetSpot(scenario.scaling.datapoints);
+    if (!sweet) return null;
+    return {
+      sweet_concurrency: sweet.concurrency,
+      sweet_throughput_per_min: sweet.throughput_per_min,
+    };
+  }
+
+  /**
+   * Compute live rack metrics from the current per-node-type counts.
+   * Returns a flat object the renderer can map straight onto tiles.
+   */
+  function computeBuilderMetrics(state, cfg, lookups, scenariosById) {
+    const perType = [];
+    let totalNodes = 0,
+      totalVcpu = 0,
+      totalMem = 0,
+      totalApiCostPerDay = 0,
+      totalTasksPerDay = 0;
+
+    for (const nt of cfg.node_types) {
+      const n = state[nt.id] || 0;
+      totalNodes += n;
+      totalVcpu += n * nt.vcpu_per_node;
+      totalMem += n * nt.memory_gb_per_node;
+
+      const baseline = baselineFromScenario(scenariosById[nt.baseline_scenario_id]);
+      const baseScenario = scenariosById[nt.baseline_scenario_id];
+      const workload = baseScenario ? lookups.workloads[baseScenario.workload_id] : null;
+      const comparator = lookups.comparators[nt.comparator_id];
+
+      let density = null,
+        throughput = null,
+        tasksPerDay = null,
+        apiCostPerDay = null;
+      if (workload) {
+        const byVcpu = Math.floor((n * nt.vcpu_per_node) / workload.vcpu_per_agent);
+        const byMem = Math.floor((n * nt.memory_gb_per_node) / workload.memory_gb_per_agent);
+        density = Math.max(0, Math.min(byVcpu, byMem));
+      }
+      if (baseline && n > 0) {
+        throughput = baseline.sweet_throughput_per_min * n;
+        tasksPerDay = throughput * 60 * 24;
+        if (comparator) {
+          apiCostPerDay = (tasksPerDay / 1000) * comparator.cost_per_1k_tasks_usd;
+          totalApiCostPerDay += apiCostPerDay;
+          totalTasksPerDay += tasksPerDay;
+        }
+      } else if (n === 0) {
+        // Zero nodes of this type: preserve null throughput/tasks so the
+        // tile reads "0 / min" honestly, and skip the comparator math.
+        throughput = 0;
+        tasksPerDay = 0;
+        apiCostPerDay = comparator ? 0 : null;
+      }
+
+      perType.push({
+        nodeType: nt,
+        count: n,
+        baseline,
+        workload,
+        comparator,
+        density,
+        throughput,
+        tasksPerDay,
+        apiCostPerDay,
+      });
+    }
+
+    return {
+      perType,
+      totalNodes,
+      totalVcpu,
+      totalMem,
+      totalApiCostPerDay,
+      totalTasksPerDay,
+    };
+  }
+
+  function renderBuilderRack(rackEl, state, cfg) {
+    rackEl.replaceChildren();
+    const total = cfg.rack_units_total;
+    const fixtureTop = cfg.rack_units_fixture_top || 0;
+    const fixtureBottom = (cfg.rack_units_fixture || 0) - fixtureTop;
+    const usable = total - fixtureTop - fixtureBottom;
+
+    // Build the slot list top-to-bottom. Top fixture rows first (top
+    // switches), then node rows in the order node_types are declared,
+    // then empty Us, then bottom fixture rows (PDUs).
+    const slots = [];
+    for (let i = 0; i < fixtureTop; i++) {
+      slots.push({ class: "sc-rack-u-fixture", text: i === 0 ? "switch" : "" });
+    }
+    let placed = 0;
+    for (const nt of cfg.node_types) {
+      const n = Math.min(state[nt.id] || 0, usable - placed);
+      for (let i = 0; i < n; i++) {
+        slots.push({ class: nt.swatch_class, text: nt.short_label || nt.label });
+      }
+      placed += n;
+    }
+    while (slots.length < fixtureTop + usable) {
+      slots.push({ class: "", text: "" });
+    }
+    for (let i = 0; i < fixtureBottom; i++) {
+      slots.push({
+        class: "sc-rack-u-fixture",
+        text: i === fixtureBottom - 1 ? "PDU" : "",
+      });
+    }
+
+    for (const s of slots) {
+      const cls = "sc-rack-u" + (s.class ? " " + s.class : "");
+      rackEl.appendChild(el("div", { class: cls, text: s.text || "" }));
+    }
+  }
+
+  function renderBuilderControls(controlsEl, state, cfg, onChange) {
+    controlsEl.replaceChildren();
+    for (const nt of cfg.node_types) {
+      const dec = el("button", {
+        type: "button",
+        class: "sc-builder-btn",
+        "data-id": `dec-${nt.id}`,
+        "aria-label": `Remove one ${nt.label} node`,
+      });
+      dec.textContent = "−";
+      const inc = el("button", {
+        type: "button",
+        class: "sc-builder-btn",
+        "data-id": `inc-${nt.id}`,
+        "aria-label": `Add one ${nt.label} node`,
+      });
+      inc.textContent = "+";
+      const count = el("span", {
+        class: "sc-builder-count",
+        "data-id": `count-${nt.id}`,
+      });
+      count.textContent = String(state[nt.id] || 0);
+
+      const meta = el("div", { class: "sc-builder-row-meta" }, [
+        el("span", { class: "sc-builder-row-label", text: nt.label }),
+        el("span", { class: "sc-builder-row-sub", text: nt.subtitle || "" }),
+      ]);
+
+      const row = el("div", { class: "sc-builder-row", "data-id": `row-${nt.id}` }, [
+        meta,
+        dec,
+        count,
+        inc,
+      ]);
+      controlsEl.appendChild(row);
+
+      dec.addEventListener("click", () => onChange(nt.id, -1));
+      inc.addEventListener("click", () => onChange(nt.id, +1));
+    }
+  }
+
+  function refreshBuilderControlState(controlsEl, state, cfg) {
+    const totalNodes = cfg.node_types.reduce((s, nt) => s + (state[nt.id] || 0), 0);
+    const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+    const hardCap = Math.min(cfg.max_total_nodes || usable, usable);
+    for (const nt of cfg.node_types) {
+      const n = state[nt.id] || 0;
+      const dec = controlsEl.querySelector(`[data-id="dec-${nt.id}"]`);
+      const inc = controlsEl.querySelector(`[data-id="inc-${nt.id}"]`);
+      const count = controlsEl.querySelector(`[data-id="count-${nt.id}"]`);
+      if (count) count.textContent = String(n);
+      if (dec) dec.disabled = n <= 0;
+      if (inc) inc.disabled = n >= (nt.max_count || hardCap) || totalNodes >= hardCap;
+    }
+  }
+
+  function renderBuilderTiles(tilesEl, metrics) {
+    tilesEl.replaceChildren();
+    // Total rack capacity tile.
+    const totalTile = el("article", { class: "sc-tile sc-accent" }, [
+      el("span", { class: "sc-tile-label", text: "Rack total" }),
+      el("span", { class: "sc-tile-value", text: `${fmtInt.format(metrics.totalNodes)} nodes` }),
+      el("span", {
+        class: "sc-tile-sub",
+        text: `${fmtInt.format(metrics.totalVcpu)} vCPU · ${fmtInt.format(metrics.totalMem)} GB across the rack.`,
+      }),
+    ]);
+    tilesEl.appendChild(totalTile);
+
+    // Per-workload tiles.
+    for (const t of metrics.perType) {
+      const w = t.workload;
+      const wlLabel = w ? w.label : "n/a";
+      const densityText = t.density != null ? `${fmtInt.format(t.density)} agents` : "n/a";
+      const throughputText =
+        t.throughput != null ? `${fmtFloat1.format(t.throughput)} / min` : "n/a";
+      const tile = el("article", { class: "sc-tile" }, [
+        el("span", {
+          class: "sc-tile-label",
+          text: `${t.nodeType.short_label || t.nodeType.label} · ${wlLabel}`,
+        }),
+        el("span", { class: "sc-tile-value", text: densityText }),
+        el("span", {
+          class: "sc-tile-sub",
+          text:
+            t.count > 0
+              ? `${t.count}× ${t.nodeType.label} → ${throughputText} at sweet spot.`
+              : `0× ${t.nodeType.label} — workload not running on this rack.`,
+        }),
+      ]);
+      tilesEl.appendChild(tile);
+    }
+
+    // Combined economics tile.
+    const econ = el("article", { class: "sc-tile sc-accent-good" }, [
+      el("span", { class: "sc-tile-label", text: "API cost avoided / day" }),
+      el("span", {
+        class: "sc-tile-value",
+        text: `${fmtUSD0.format(metrics.totalApiCostPerDay)} / day`,
+      }),
+      el("span", {
+        class: "sc-tile-sub",
+        text: `${fmtBigCount(metrics.totalTasksPerDay)} tasks / day projected onto frontier-API rates. On owned hardware: $0 marginal cost.`,
+      }),
+    ]);
+    tilesEl.appendChild(econ);
+  }
+
+  function renderBuilderSummary(summaryEl, metrics, cfg) {
+    const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+    const parts = metrics.perType.map(
+      (t) => `<strong>${t.count}× ${t.nodeType.short_label || t.nodeType.label}</strong>`
+    );
+    summaryEl.innerHTML =
+      `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.`;
+  }
+
+  function renderRackBuilder(data, lookups) {
+    const cfg = data.rack_builder;
+    if (!cfg) return; // Builder is optional — don't crash older JSON files.
+
+    const rackEl = document.getElementById("sc-builder-rack");
+    const controlsEl = document.getElementById("sc-builder-controls");
+    const tilesEl = document.getElementById("sc-builder-tiles");
+    const summaryEl = document.getElementById("sc-builder-summary");
+    if (!rackEl || !controlsEl || !tilesEl) return;
+
+    const scenariosById = Object.fromEntries((data.scenarios || []).map((s) => [s.id, s]));
+    const state = Object.fromEntries(
+      cfg.node_types.map((nt) => [nt.id, nt.default_count || 0])
+    );
+
+    function rerender() {
+      const metrics = computeBuilderMetrics(state, cfg, lookups, scenariosById);
+      renderBuilderRack(rackEl, state, cfg);
+      refreshBuilderControlState(controlsEl, state, cfg);
+      renderBuilderTiles(tilesEl, metrics);
+      if (summaryEl) renderBuilderSummary(summaryEl, metrics, cfg);
+    }
+
+    function onChange(typeId, delta) {
+      const nt = cfg.node_types.find((x) => x.id === typeId);
+      if (!nt) return;
+      const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+      const hardCap = Math.min(cfg.max_total_nodes || usable, usable);
+      const next = (state[typeId] || 0) + delta;
+      const totalAfter =
+        cfg.node_types.reduce((s, x) => s + (state[x.id] || 0), 0) + delta;
+      if (next < 0) return;
+      if (next > (nt.max_count || hardCap)) return;
+      if (totalAfter > hardCap) return;
+      state[typeId] = next;
+      rerender();
+    }
+
+    renderBuilderControls(controlsEl, state, cfg, onChange);
+    rerender();
+  }
+
   // ---------- main ----------
 
   function buildLookups(data) {
@@ -739,6 +1027,7 @@
     };
     renderTabs(tabsEl, data.scenarios, activeId, onSelect);
     renderScenario(data, lookups, activeId);
+    renderRackBuilder(data, lookups);
   }
 
   if (document.readyState === "loading") {
