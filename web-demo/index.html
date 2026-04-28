@@ -268,6 +268,36 @@
           <p class="panel-note" id="services-empty" hidden>No optional services reachable. Start them with <code>docker compose --profile authoring up</code> (Flowise / OpenWebUI), or open MinIO directly at <code>:9001</code>.</p>
         </section>
 
+        <section class="panel flowise-chat-panel" id="flowise-chat-panel" hidden>
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title">Flowise chat</div>
+              <div class="section-subtitle">Talk to a Flowise-authored flow against the same LiteLLM gateway</div>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost small" id="flowise-chat-reset" type="button" title="Forget the saved chatflow id and re-prompt">Change flow</button>
+            </div>
+          </div>
+          <p class="panel-note" id="flowise-chat-help">
+            Build the flow once via <code>config/flowise/flows/terminal-agent.md</code>, mark it
+            <strong>Make Chatflow Public</strong> in the chatflow settings, then paste its id below
+            (URL form: <code>http://localhost:3000/canvas/&lt;chatflow-id&gt;</code>). The id persists in
+            localStorage; append <code>?chatflowId=&lt;id&gt;</code> to the demo URL to override.
+          </p>
+          <form id="flowise-chat-config-form" class="agent-command-form" autocomplete="off">
+            <input
+              id="flowise-chat-id-input"
+              class="agent-command-input"
+              type="text"
+              placeholder="Flowise chatflow id, e.g. 5b1f1e7c-…"
+              aria-label="Flowise chatflow id"
+            />
+            <button type="submit" class="primary">Load chat</button>
+          </form>
+          <div id="flowise-chat-status" class="agent-command-status" role="status" aria-live="polite"></div>
+          <div id="flowise-chat-mount" class="flowise-chat-mount" aria-label="Flowise chatbot"></div>
+        </section>
+
         <section class="agent-console panel">
           <div class="panel-head">
             <div>

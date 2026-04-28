@@ -99,6 +99,16 @@ services:
       # Endpoints that flow nodes can call for offload / artifact retrieval.
       CONTROL_PLANE_BASE_URL: http://control-plane:8080
 
+      # Allow the static web-demo origin to call /api/v1/prediction/<id> from
+      # the embedded chatbot widget (web-demo/index.html → flowise-embed).
+      # The widget runs in the user's browser, so requests are cross-origin
+      # against this Flowise container. Override FLOWISE_CORS_ORIGINS in .env
+      # if you serve the demo on a different host/port.
+      CORS_ORIGINS: ${FLOWISE_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      # Same envelope for iframe embedding (Behind-the-scenes view links to
+      # the canvas). Flowise sets X-Frame-Options based on IFRAME_ORIGINS.
+      IFRAME_ORIGINS: ${FLOWISE_IFRAME_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+
       # Disable telemetry and debug noise by default.
       DISABLE_FLOWISE_TELEMETRY: "true"
       DEBUG: "false"
