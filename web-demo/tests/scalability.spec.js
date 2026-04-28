@@ -10,9 +10,9 @@ test('scalability page renders all 8 tiles + chart for default scenario', async 
   await page.goto(BASE + '/scalability.html');
   await expect(page.locator('h2')).toContainText(/many agents/i);
 
-  // Tabs render with 2 scenarios
+  // Tabs render with all scenarios (2 single-node + 3 rack-scale).
   const tabs = page.locator('#sc-tabs .sc-tab');
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(5);
   await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
 
   // Instance card populated
@@ -64,6 +64,43 @@ test('switching to GNR scenario re-renders tiles + chart', async ({ page }) => {
   await expect(page.locator('#sc-tiles')).toContainText(/64 agents/);
   await expect(page.locator('#sc-tiles')).toContainText(/96,048 tasks/);
   await expect(page.locator('#sc-tiles')).toContainText(/\$2,305/);
+});
+
+test('rack-scale CWF scenario reports 32-node rack capacity and rack-scale volume', async ({ page }) => {
+  await page.goto(BASE + '/scalability.html');
+  const tabs = page.locator('#sc-tabs .sc-tab');
+  // Tab order: 0 xeon-small-density, 1 gnr-research-volume,
+  // 2 xeon-cwf-rack-density, 3 gnr-rack-research, 4 mixed-rack-blend.
+  await tabs.nth(2).click();
+  await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+
+  // Rack scenarios show 8 tiles (rack_capacity replaces marginal_cost).
+  const tiles = page.locator('#sc-tiles .sc-tile');
+  await expect(tiles).toHaveCount(8);
+
+  // Rack-capacity tile highlights the overall rack size.
+  await expect(page.locator('#sc-tiles')).toContainText(/32 nodes/);
+  await expect(page.locator('#sc-tiles')).toContainText(/18,432 vCPU/);
+  // Density at the rack: floor(min(18432/1, 49152/2)) = 18,432 agents.
+  await expect(page.locator('#sc-tiles')).toContainText(/18,432 agents/);
+  // Sweet-spot throughput = 110,400/min → 158,976,000 tasks/day,
+  // displacing $699,494/day on the small-comparator API.
+  await expect(page.locator('#sc-tiles')).toContainText(/158,976,000 tasks/);
+  await expect(page.locator('#sc-tiles')).toContainText(/\$699,494/);
+});
+
+test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ page }) => {
+  await page.goto(BASE + '/scalability.html');
+  const tabs = page.locator('#sc-tabs .sc-tab');
+  await tabs.nth(4).click();
+  await expect(tabs.nth(4)).toHaveAttribute('aria-selected', 'true');
+
+  // The rack-capacity tile should call out the mixed composition.
+  await expect(page.locator('#sc-tiles')).toContainText(/16× Intel Xeon CWF/);
+  await expect(page.locator('#sc-tiles')).toContainText(/16× Intel GNR/);
+  // Density tile reflects only the 16-node CWF agent half:
+  //   floor(min(9216/1, 24576/2)) = 9,216 agents.
+  await expect(page.locator('#sc-tiles')).toContainText(/9,216 agents/);
 });
 
 test('homepage hero has the Scalability story link', async ({ page }) => {

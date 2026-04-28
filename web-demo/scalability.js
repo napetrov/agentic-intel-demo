@@ -136,6 +136,31 @@
 
   // ---------- tile renderers ----------
 
+  /**
+   * Sum total vCPU / memory across an instance.composition[] entry list.
+   * Falls back to the flat instance.vcpu / memory_gb when composition is
+   * missing, so single-node rows render the same way they always did.
+   */
+  function rackTotals(instance) {
+    const comp = Array.isArray(instance.composition) ? instance.composition : [];
+    if (!comp.length) {
+      return {
+        nodes: instance.nodes_per_rack || 1,
+        vcpu: instance.vcpu || 0,
+        memory_gb: instance.memory_gb || 0,
+        composition: [],
+      };
+    }
+    let nodes = 0, vcpu = 0, memory_gb = 0;
+    for (const c of comp) {
+      const n = c.count || 0;
+      nodes += n;
+      vcpu += n * (c.vcpu_per_node || 0);
+      memory_gb += n * (c.memory_gb_per_node || 0);
+    }
+    return { nodes, vcpu, memory_gb, composition: comp };
+  }
+
   const TILE_RENDERERS = {
     density: (ctx) => {
       const { instance, workload, derived } = ctx;
@@ -260,6 +285,33 @@
       sub: "Owned hardware — no per-call API spend. Power and CapEx amortization are out of scope for this page.",
       accent: "accent-good",
     }),
+
+    rack_capacity: (ctx) => {
+      const { instance } = ctx;
+      const totals = rackTotals(instance);
+      // Single-node rows: report "1 node" so the tile is still meaningful
+      // when the user lands on a non-rack scenario, but lean the framing
+      // on per-node vCPU / memory rather than rack totals.
+      if (totals.nodes <= 1) {
+        return {
+          label: "Rack capacity",
+          value: "1 node",
+          sub: `${fmtInt.format(totals.vcpu)} vCPU · ${fmtInt.format(totals.memory_gb)} GB on a single chassis. Scale-out story is in the rack-scale scenarios above.`,
+          accent: "default",
+        };
+      }
+      const breakdown = totals.composition.length
+        ? totals.composition
+            .map((c) => `${c.count}× ${c.model || "node"}`)
+            .join(" + ")
+        : `${totals.nodes} nodes`;
+      return {
+        label: "Rack capacity",
+        value: `${fmtInt.format(totals.nodes)} nodes`,
+        sub: `${breakdown} · ${fmtInt.format(totals.vcpu)} vCPU · ${fmtInt.format(totals.memory_gb)} GB total in the rack.`,
+        accent: "accent",
+      };
+    },
 
     human_equivalent: (ctx) => {
       const { workload, derived } = ctx;
