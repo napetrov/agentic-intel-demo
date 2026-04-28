@@ -26,6 +26,17 @@ spec:
     - name: TELEGRAM_ALLOWED_FROM
       value: "293894843"
   envFromSecrets:
+    # Every key in this Secret becomes an env var on the operator-managed
+    # gateway pod and (via the session-pod template) on each session pod.
+    # That includes the optional `GH_TOKEN` key — the OpenClaw runtime
+    # picks it up internally as GH_TOKEN/GITHUB_TOKEN and exposes it to
+    # tools (`git`, `gh`, container pulls) without ever surfacing it on
+    # the gateway API or in `openclaw.json`. To wire it, populate
+    # `GH_TOKEN` in `intel-demo-operator-secrets` (see
+    # `scripts/create-operator-secrets.sh` and
+    # `k8s/shared/intel-demo-operator-secrets.yaml.template`); to omit
+    # GitHub access, leave the key absent and agents will run without a
+    # credential.
     - name: intel-demo-operator-secrets
   services:
     gateway:

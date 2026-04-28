@@ -69,6 +69,30 @@ data:
                 secretKeyRef:
                   name: telegram-bot
                   key: TELEGRAM_BOT_TOKEN
+            # GitHub credential plumbed through to the session pod for
+            # internal use only — `git`, `gh`, and private GHCR pulls
+            # invoked by tools running inside the agent. Mirrored from
+            # `intel-demo-operator-secrets.GH_TOKEN` into the
+            # `github-token` Secret in the `agents` namespace by
+            # scripts/create-operator-secrets.sh, because secretKeyRef
+            # cannot cross namespaces. Marked optional so the pod still
+            # boots when the operator owner has not provisioned a token;
+            # in that case `gh auth status` fails loudly inside the pod,
+            # which is the intended "no GitHub access wired" signal.
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: GH_TOKEN
+                  optional: true
+            # Also expose the token under the canonical GITHUB_TOKEN name
+            # so libraries/tools that look for either env var find it.
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: GH_TOKEN
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /config

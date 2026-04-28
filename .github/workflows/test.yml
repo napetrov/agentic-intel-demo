@@ -130,9 +130,13 @@ jobs:
         run: pytest -v
 
   dev-web-proxy:
-    # Unit-tests scripts/dev_web_proxy.py (the no-Docker stand-in for
-    # nginx) with httpx.MockTransport. No real backend required; this
-    # closes a coverage gap on a script the demo entry path now relies on.
+    # Runs the full scripts/tests/ pytest suite. Originally introduced
+    # to unit-test scripts/dev_web_proxy.py (the no-Docker stand-in for
+    # nginx) with httpx.MockTransport; now also covers the
+    # operator-secrets pipeline (create-operator-secrets.sh,
+    # verify-operator-secrets.sh, session-pod-template.yaml shapes) so
+    # GH_TOKEN passthrough wiring can't regress silently. No real
+    # backend or cluster required.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,11 +144,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: install proxy deps + pytest
+        # PyYAML is consumed by scripts/tests/test_operator_secrets.py
+        # to assert on the session-pod template + OpenClawInstance
+        # shapes; keep it pinned so a runner update can't quietly
+        # change behavior.
         run: |
           pip install \
             fastapi==0.115.12 \
             'uvicorn[standard]==0.34.2' \
             httpx==0.28.1 \
+            pyyaml==6.0.2 \
             pytest==8.3.5
       - name: pytest
         run: pytest -v scripts/tests
@@ -327,10 +336,23 @@ jobs:
           k3d version
       - name: create k3d cluster with NodePort 30900 / 30800 published
         run: |
+          # Disable k3s's bundled Traefik + ServiceLB. Both ship by
+          # default and the ServiceLB controller (klipper-lb)
+          # provisions a DaemonSet-backed Service for any
+          # LoadBalancer Service it sees (e.g. the Traefik LB), with a
+          # NodePort randomly drawn from 30000-32767. When the random
+          # draw lands on 30800 or 30900 — the static NodePorts this
+          # smoke test claims for offload-worker / minio — `kubectl
+          # apply` fails with "provided port is already allocated"
+          # and the whole job tips over. Neither component is used by
+          # the smoke (we drive the cluster purely via NodePort), so
+          # the cleanest fix is to not install them.
           k3d cluster create demo \
             --agents 0 \
             -p "30900:30900@server:0" \
             -p "30800:30800@server:0" \
+            --k3s-arg "--disable=traefik@server:*" \
+            --k3s-arg "--disable=servicelb@server:*" \
             --wait --timeout 180s
           kubectl cluster-info
       - name: build + load offload-worker image into k3d

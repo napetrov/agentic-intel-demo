@@ -27,6 +27,15 @@
 #                            SAMBANOVA_API_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 #   SCOPE=system-b:          MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 #
+# Optional env vars (system-a only):
+#   GH_TOKEN — GitHub PAT plumbed into intel-demo-operator-secrets and the
+#              session-pod `github-token` Secret in namespace `agents`. The
+#              OpenClaw instance loads it via envFromSecrets and exposes it
+#              as GH_TOKEN/GITHUB_TOKEN inside the session pod so agents
+#              can drive `git`, `gh`, and private GHCR pulls. Unset to skip
+#              wiring (the session pod will not get a token; `gh auth
+#              status` will fail loudly, which is the intended signal).
+#
 # Usage:
 #   APPLY=1 \
 #   TELEGRAM_BOT_TOKEN=... \
@@ -34,6 +43,7 @@
 #   SAMBANOVA_API_KEY=... \
 #   MINIO_ACCESS_KEY=... \
 #   MINIO_SECRET_KEY=... \
+#   GH_TOKEN=ghp_...          # optional, see above \
 #     ./scripts/create-operator-secrets.sh
 #
 #   ./scripts/create-operator-secrets.sh         # dry-run, prints rendered manifests
@@ -56,6 +66,8 @@ TELEGRAM_SECRET_NAME="${TELEGRAM_SECRET_NAME:-telegram-bot}"
 TELEGRAM_SECRET_NAMESPACE="${TELEGRAM_SECRET_NAMESPACE:-agents}"
 BEDROCK_SECRET_NAME="${BEDROCK_SECRET_NAME:-bedrock-creds}"
 BEDROCK_SECRET_NAMESPACE="${BEDROCK_SECRET_NAMESPACE:-agents}"
+GITHUB_SECRET_NAME="${GITHUB_SECRET_NAME:-github-token}"
+GITHUB_SECRET_NAMESPACE="${GITHUB_SECRET_NAMESPACE:-agents}"
 MINIO_SECRET_NAME="${MINIO_SECRET_NAME:-minio-creds}"
 MINIO_SECRET_NAMESPACE="${MINIO_SECRET_NAMESPACE:-system-b}"
 SCOPE="${SCOPE:-all}"
@@ -161,14 +173,40 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   ensure_namespace "$SECRET_NAMESPACE"
   ensure_namespace "$LITELLM_SECRET_NAMESPACE"
   ensure_namespace "$SESSION_POD_SECRET_NAMESPACE"
+  # The github-token mirror lives in $GITHUB_SECRET_NAMESPACE (default
+  # `agents`, same as the session pod). If a caller overrides it to a
+  # different ns, the apply/delete below would otherwise fail with
+  # `namespaces "..." not found` on a fresh cluster.
+  if [ "$GITHUB_SECRET_NAMESPACE" != "$SESSION_POD_SECRET_NAMESPACE" ]; then
+    ensure_namespace "$GITHUB_SECRET_NAMESPACE"
+  fi
+
+  # GH_TOKEN is optional. When set (the wire path), it lands in BOTH the
+  # operator instance Secret in $SECRET_NAMESPACE (so envFromSecrets
+  # exposes it inside the gateway pod) AND the `github-token` Secret in
+  # $GITHUB_SECRET_NAMESPACE / `agents` (so secretKeyRef can mount it as
+  # GH_TOKEN/GITHUB_TOKEN inside the session pod).
+  #
+  # When unset (the revoke path), GH_TOKEN is omitted from the operator
+  # instance Secret payload AND, in apply mode, the agents/github-token
+  # mirror is actively deleted — re-running the script with GH_TOKEN
+  # un-exported is the canonical "revoke agent GitHub access" gesture.
+  # In dry-run mode the unset path prints a "would delete" notice so
+  # operators can preview the effect without touching the cluster.
+  operator_instance_keys=(
+    "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN"
+    "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
+    "SAMBANOVA_API_KEY=$SAMBANOVA_API_KEY"
+    "MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY"
+    "MINIO_SECRET_KEY=$MINIO_SECRET_KEY"
+  )
+  if [ -n "${GH_TOKEN:-}" ]; then
+    operator_instance_keys+=("GH_TOKEN=$GH_TOKEN")
+  fi
 
   emit "operator instance secrets" \
     "$SECRET_NAME" "$SECRET_NAMESPACE" \
-    "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
-    "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK" \
-    "SAMBANOVA_API_KEY=$SAMBANOVA_API_KEY" \
-    "MINIO_ACCESS_KEY=$MINIO_ACCESS_KEY" \
-    "MINIO_SECRET_KEY=$MINIO_SECRET_KEY"
+    "${operator_instance_keys[@]}"
 
   emit "litellm secrets" \
     "$LITELLM_SECRET_NAME" "$LITELLM_SECRET_NAMESPACE" \
@@ -187,6 +225,39 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   emit "bedrock bearer token (session pod)" \
     "$BEDROCK_SECRET_NAME" "$BEDROCK_SECRET_NAMESPACE" \
     "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
+
+  # Mirror GH_TOKEN into the agents namespace for the session pod. The
+  # operator instance Secret lives in the operator's namespace and
+  # secretKeyRef can't cross namespaces, so this copy is what
+  # session-pod-template.yaml's `secretKeyRef` actually points at.
+  #
+  # Critically, if GH_TOKEN is now unset but the Secret already exists
+  # from a prior run, we must DELETE it. Otherwise restarted session
+  # pods would silently keep injecting the stale PAT via secretKeyRef,
+  # even though the log line below says "agents will run without
+  # GitHub credentials". This is the revoke-by-omission contract:
+  # un-exporting GH_TOKEN and re-running the script is the canonical
+  # way to remove agent GitHub access.
+  if [ -n "${GH_TOKEN:-}" ]; then
+    emit "github token (session pod)" \
+      "$GITHUB_SECRET_NAME" "$GITHUB_SECRET_NAMESPACE" \
+      "GH_TOKEN=$GH_TOKEN"
+  else
+    if [ "$APPLY" = "1" ]; then
+      if "${KUBECTL_CMD[@]}" -n "$GITHUB_SECRET_NAMESPACE" \
+            get secret "$GITHUB_SECRET_NAME" >/dev/null 2>&1; then
+        "${KUBECTL_CMD[@]}" -n "$GITHUB_SECRET_NAMESPACE" \
+          delete secret "$GITHUB_SECRET_NAME" >/dev/null
+        echo "[create-operator-secrets] GH_TOKEN unset — removed stale secret/$GITHUB_SECRET_NAME in ns/$GITHUB_SECRET_NAMESPACE."
+        echo "  Restart session pods (kubectl delete pods -n $GITHUB_SECRET_NAMESPACE -l role=session-pod) to drop the cached credential."
+      else
+        echo "[create-operator-secrets] GH_TOKEN unset — secret/$GITHUB_SECRET_NAME not present in ns/$GITHUB_SECRET_NAMESPACE; nothing to remove."
+      fi
+    else
+      echo "# GH_TOKEN unset — would delete secret/$GITHUB_SECRET_NAME in ns/$GITHUB_SECRET_NAMESPACE if present (revoke-by-omission)."
+    fi
+    echo "[create-operator-secrets] Re-run with GH_TOKEN=ghp_... to (re-)wire GitHub credentials for git/gh/private GHCR pulls."
+  fi
 fi
 
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-b" ]; then
