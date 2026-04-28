@@ -2,35 +2,25 @@
  * Scalability story page renderer.
  *
  * Pure client-side: loads scalability-data.json, builds derived numbers
- * (max parallel slots, sweet spot, knee, daily volume, displaced API
- * spend) on the client, and renders tiles + an SVG latency chart. No
- * backend, no demo runs — the JSON is the source of truth and any
- * number can be edited there to reshape the page automatically.
+ * (max parallel slots, sweet spot, knee, daily volume, tokens / day) on
+ * the client, and renders tiles + an SVG latency chart. No backend, no
+ * demo runs — the JSON is the source of truth and any number can be
+ * edited there to reshape the page automatically.
  *
- * Framing: instances are owned hardware, so there is no $/hr on our
- * side. Economics are expressed as "API cost avoided per day" against
- * a Frontier-API comparator, with marginal cost on owned hardware = $0.
+ * The page is intentionally about compute: density, throughput, daily
+ * volume, tokens. It does NOT compare against a frontier-API $/task
+ * rate — cost framing belongs on a separate, dedicated page.
  *
  * Tile renderer registry: each entry takes a `ctx` ({ scenario, instance,
- * workload, comparator, derived }) and returns { label, value, sub,
- * accent? }. The set of tiles shown for a scenario is controlled by
- * scenario.tiles[] in the JSON.
+ * workload, derived }) and returns { label, value, sub, accent? }. The
+ * set of tiles shown for a scenario is controlled by scenario.tiles[]
+ * in the JSON.
  */
 (function () {
   "use strict";
 
   const DATA_URL = "./scalability-data.json";
 
-  const fmtUSD2 = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-  const fmtUSD0 = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
   const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const fmtFloat1 = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 1,
@@ -98,7 +88,7 @@
     return Math.max(0, Math.min(byVcpu, byMem));
   }
 
-  function buildDerived(scenario, instance, workload, comparator) {
+  function buildDerived(scenario, instance, workload) {
     const dps = scenario.scaling.datapoints;
     const sweet = findSweetSpot(dps);
     const knee = findKnee(dps);
@@ -114,13 +104,6 @@
     const tasksPerDay = haveThroughput ? throughputAtSweet * 60 * 24 : null;
     const tokensPerDay =
       tasksPerDay != null ? tasksPerDay * workload.tokens_per_task : null;
-    // API cost avoided / day = what running the same daily volume on
-    // the comparator API would cost. On owned hardware the marginal
-    // cost is $0; this tile expresses the *displaced* spend.
-    const apiCostPerDay =
-      tasksPerDay != null && comparator
-        ? (tasksPerDay / 1000) * comparator.cost_per_1k_tasks_usd
-        : null;
     return {
       maxParallelSlots: maxParallelSlots(instance, workload),
       sweetSpot: sweet,
@@ -129,8 +112,6 @@
       sweetThroughput: haveThroughput ? throughputAtSweet : null,
       tasksPerDay: tasksPerDay,
       tokensPerDay: tokensPerDay,
-      comparator: comparator || null,
-      apiCostPerDay: apiCostPerDay,
     };
   }
 
@@ -251,40 +232,6 @@
         accent: "default",
       };
     },
-
-    api_cost_avoided: (ctx) => {
-      const { derived } = ctx;
-      if (!derived.comparator) {
-        return {
-          label: "API cost avoided",
-          value: "n/a",
-          sub: "no comparator configured",
-          accent: "default",
-        };
-      }
-      if (derived.apiCostPerDay == null) {
-        return {
-          label: "API cost avoided",
-          value: "n/a",
-          sub: "throughput unavailable — cannot project API spend",
-          accent: "default",
-        };
-      }
-      const cmp = derived.comparator;
-      return {
-        label: "API cost avoided",
-        value: `${fmtUSD0.format(derived.apiCostPerDay)} / day`,
-        sub: `Same volume on ${cmp.label} @ ${fmtUSD2.format(cmp.cost_per_1k_tasks_usd)} / 1 000 tasks. On owned hardware: $0 marginal cost.`,
-        accent: "accent-good",
-      };
-    },
-
-    marginal_cost: () => ({
-      label: "Marginal cost / task",
-      value: "$0",
-      sub: "Owned hardware — no per-call API spend. Power and CapEx amortization are out of scope for this page.",
-      accent: "accent-good",
-    }),
 
     rack_capacity: (ctx) => {
       const { instance } = ctx;
@@ -651,15 +598,12 @@
       )}s (~${fmtFloat1.format(last.p95_s / scenario.scaling.datapoints[0].p95_s)}× baseline).`;
   }
 
-  function renderNotes(container, instance, workload, comparator) {
+  function renderNotes(container, instance, workload) {
     container.replaceChildren();
     const items = [
       { label: instance.label, text: instance.notes },
       { label: workload.label, text: workload.notes },
     ];
-    if (comparator) {
-      items.push({ label: comparator.label, text: comparator.notes });
-    }
     for (const it of items) {
       if (!it.text) continue;
       const li = el("li", {}, [
@@ -699,7 +643,6 @@
     let totalNodes = 0,
       totalVcpu = 0,
       totalMem = 0,
-      totalApiCostPerDay = 0,
       totalTasksPerDay = 0;
 
     for (const nt of cfg.node_types) {
@@ -711,12 +654,10 @@
       const baseline = baselineFromScenario(scenariosById[nt.baseline_scenario_id]);
       const baseScenario = scenariosById[nt.baseline_scenario_id];
       const workload = baseScenario ? lookups.workloads[baseScenario.workload_id] : null;
-      const comparator = lookups.comparators[nt.comparator_id];
 
       let density = null,
         throughput = null,
-        tasksPerDay = null,
-        apiCostPerDay = null;
+        tasksPerDay = null;
       if (workload) {
         const byVcpu = Math.floor((n * nt.vcpu_per_node) / workload.vcpu_per_agent);
         const byMem = Math.floor((n * nt.memory_gb_per_node) / workload.memory_gb_per_agent);
@@ -725,17 +666,11 @@
       if (baseline && n > 0) {
         throughput = baseline.sweet_throughput_per_min * n;
         tasksPerDay = throughput * 60 * 24;
-        if (comparator) {
-          apiCostPerDay = (tasksPerDay / 1000) * comparator.cost_per_1k_tasks_usd;
-          totalApiCostPerDay += apiCostPerDay;
-          totalTasksPerDay += tasksPerDay;
-        }
+        totalTasksPerDay += tasksPerDay;
       } else if (n === 0) {
-        // Zero nodes of this type: preserve null throughput/tasks so the
-        // tile reads "0 / min" honestly, and skip the comparator math.
+        // Zero nodes of this type: render "0 / min" honestly rather than n/a.
         throughput = 0;
         tasksPerDay = 0;
-        apiCostPerDay = comparator ? 0 : null;
       }
 
       perType.push({
@@ -743,11 +678,9 @@
         count: n,
         baseline,
         workload,
-        comparator,
         density,
         throughput,
         tasksPerDay,
-        apiCostPerDay,
       });
     }
 
@@ -756,7 +689,6 @@
       totalNodes,
       totalVcpu,
       totalMem,
-      totalApiCostPerDay,
       totalTasksPerDay,
     };
   }
@@ -892,19 +824,20 @@
       tilesEl.appendChild(tile);
     }
 
-    // Combined economics tile.
-    const econ = el("article", { class: "sc-tile sc-accent-good" }, [
-      el("span", { class: "sc-tile-label", text: "API cost avoided / day" }),
+    // Combined throughput tile — total daily volume across all
+    // configured node types, expressed in tasks/day.
+    const combined = el("article", { class: "sc-tile sc-accent" }, [
+      el("span", { class: "sc-tile-label", text: "Combined daily volume" }),
       el("span", {
         class: "sc-tile-value",
-        text: `${fmtUSD0.format(metrics.totalApiCostPerDay)} / day`,
+        text: `${fmtBigCount(metrics.totalTasksPerDay)} tasks`,
       }),
       el("span", {
         class: "sc-tile-sub",
-        text: `${fmtBigCount(metrics.totalTasksPerDay)} tasks / day projected onto frontier-API rates. On owned hardware: $0 marginal cost.`,
+        text: "Sum of sweet-spot throughput across all node types over 24 h.",
       }),
     ]);
-    tilesEl.appendChild(econ);
+    tilesEl.appendChild(combined);
   }
 
   function renderBuilderSummary(summaryEl, metrics, cfg) {
@@ -965,7 +898,6 @@
     return {
       instances: byId(data.instances),
       workloads: byId(data.workloads),
-      comparators: byId(data.comparators),
     };
   }
 
@@ -974,23 +906,20 @@
     if (!scenario) return;
     const instance = lookups.instances[scenario.instance_id];
     const workload = lookups.workloads[scenario.workload_id];
-    const comparator = scenario.economics
-      ? lookups.comparators[scenario.economics.comparator_id]
-      : null;
     if (!instance || !workload) {
       showError(
         `Scenario "${scenario.id}" references missing instance/workload (instance_id=${scenario.instance_id}, workload_id=${scenario.workload_id}).`
       );
       return;
     }
-    const derived = buildDerived(scenario, instance, workload, comparator);
-    const ctx = { scenario, instance, workload, comparator, derived };
+    const derived = buildDerived(scenario, instance, workload);
+    const ctx = { scenario, instance, workload, derived };
 
     renderInstanceCard(document.getElementById("sc-instance"), instance, workload, scenario);
     renderTiles(document.getElementById("sc-tiles"), scenario, ctx);
     renderChart(document.getElementById("sc-chart"), scenario, derived);
     renderChartNote(document.getElementById("sc-chart-note"), scenario, derived);
-    renderNotes(document.getElementById("sc-notes"), instance, workload, comparator);
+    renderNotes(document.getElementById("sc-notes"), instance, workload);
   }
 
   function showError(msg) {

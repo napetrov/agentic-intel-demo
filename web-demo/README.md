@@ -177,14 +177,16 @@ The bottom panel renders the most recent scenario run:
 - `service-views.html` — "Behind the scenes" view: per-service
   status, log tails, and config snapshots.
 - `scalability.html` — "Scalability story": density, throughput, and
-  the frontier-API spend displaced per day on synthetic data. Includes
-  per-node scenarios (CWF, GNR) and rack-scale scenarios (32-node CWF
-  rack, 32-node GNR rack, and a mixed CWF-agent + GNR-offload rack)
-  that fan the per-node curve out across a full 42U rack. An
-  interactive **rack builder** at the bottom of the page lets you
-  add / remove CWF and GNR nodes from a 42U chassis and re-projects
-  every tile (rack capacity, density, throughput, displaced API
-  spend) live as the composition changes.
+  daily task / token volume on synthetic data. Includes per-node
+  scenarios (CWF, GNR) and rack-scale scenarios (32-node CWF rack,
+  32-node GNR rack, and a mixed CWF-agent + GNR-offload rack) that
+  fan the per-node curve out across a full 42U rack. An interactive
+  **rack builder** at the bottom of the page lets you add / remove
+  CWF and GNR nodes from a 42U chassis and re-projects every tile
+  (rack capacity, density, throughput, combined daily volume) live
+  as the composition changes. The page is intentionally about
+  compute — it does not compare against a cloud / frontier-API
+  $/task rate.
 
 ## Backend env vars that affect the UI
 
