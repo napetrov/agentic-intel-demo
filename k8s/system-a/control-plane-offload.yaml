@@ -31,6 +31,21 @@
 #                           System B's minio-creds secret. Kubernetes does
 #                           not allow cross-namespace secretRefs, so the
 #                           secret is declared locally in this manifest.
+#
+# Optional substitutions:
+#   AGENT_DISCOVERY — set to "kube" only when this control-plane can reach
+#                           every discovery target in config/agents.yaml
+#                           (single-cluster install), or when supplying a
+#                           cross-cluster kubeconfig via the optional secret
+#                           below. Leave empty for the two-cluster Tier 2
+#                           topology so /agents falls back to seed-only
+#                           instead of probing System B with an in-cluster
+#                           System A token.
+#   AGENT_DISCOVERY_KUBECONFIG — optional kubeconfig path for discovery.
+#                           When using cross-cluster discovery, create a
+#                           secret named control-plane-agent-discovery-kubeconfig
+#                           in namespace platform with key kubeconfig and set
+#                           this to /var/run/agent-discovery/kubeconfig.
 ---
 apiVersion: v1
 kind: Namespace
@@ -50,10 +65,10 @@ metadata:
 rules:
   - apiGroups: ["openclaw.rocks"]
     resources: ["openclawinstances"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -126,7 +141,9 @@ spec:
             - name: OPENCLAW_PROBE_PATH
               value: "/health"
             - name: AGENT_DISCOVERY
-              value: "kube"
+              value: "${AGENT_DISCOVERY}"
+            - name: AGENT_DISCOVERY_KUBECONFIG
+              value: "${AGENT_DISCOVERY_KUBECONFIG}"
             - name: MINIO_ENDPOINT
               value: ${SYSTEM_B_MINIO_ENDPOINT}
             - name: MINIO_BUCKET
@@ -169,9 +186,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: agent-discovery-kubeconfig
+              mountPath: /var/run/agent-discovery
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: agent-discovery-kubeconfig
+          secret:
+            secretName: control-plane-agent-discovery-kubeconfig
+            optional: true
 ---
 apiVersion: v1
 kind: Service

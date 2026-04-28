@@ -255,6 +255,19 @@ def test_shell_forwards_taskflow_api_url_only_when_configured(monkeypatch, tmp_p
     assert "MINIO_SECRET_KEY=missing" in out
     assert "should-not-leak" not in out
 
+    monkeypatch.delenv("TASKFLOW_API_URL", raising=False)
+    r2 = client.post(
+        "/run",
+        json={"task_type": "shell", "payload": {"scenario": "env-scenario"}},
+    )
+
+    body2 = r2.json()
+    assert body2["status"] == "ok", body2
+    out2 = body2["result"]["stdout"]
+    assert "TASKFLOW_API_URL=missing" in out2
+    assert "MINIO_SECRET_KEY=missing" in out2
+    assert "should-not-leak" not in out2
+
 
 # ---- agent_invoke task type --------------------------------------------
 
