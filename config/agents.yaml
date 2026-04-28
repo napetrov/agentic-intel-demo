@@ -30,7 +30,7 @@ agents:
     capabilities: [shell, read_file, list_files, summarize]
     discovery:
       # Name of the OpenClawInstance CR the kube backend should look up.
-      openclaw_instance: openclaw-intel-demo
+      openclaw_instance: intel-demo-operator
       namespace: openclaw
 
   - id: openclaw-a-2
@@ -39,7 +39,7 @@ agents:
     system: system_a
     capabilities: [shell, read_file, list_files, summarize]
     discovery:
-      openclaw_instance: openclaw-intel-demo-2
+      openclaw_instance: intel-demo-operator
       namespace: openclaw
 
   - id: openclaw-a-3
@@ -48,7 +48,7 @@ agents:
     system: system_a
     capabilities: [shell, read_file, list_files, summarize]
     discovery:
-      openclaw_instance: openclaw-intel-demo-3
+      openclaw_instance: intel-demo-operator
       namespace: openclaw
     # This pod is the demo's confidential-computing slot. When a session
     # targets agent_id=openclaw-a-3, the control plane renders the
@@ -81,8 +81,8 @@ agents:
     system: system_b
     capabilities: [shell, summarize]
     discovery:
-      # Today System B's stand-in is the agent-stub Deployment in Tier 1
-      # and a System B-pinned OpenClawInstance in Tier 2. Either way the
-      # control plane only reads status.
-      openclaw_instance: openclaw-system-b
-      namespace: openclaw
+      # Today System B's stand-in is the agent-stub Deployment. The
+      # control plane only reads deployment readiness; it does not create
+      # or mutate the runtime.
+      deployment: agent-stub
+      namespace: system-b

@@ -257,8 +257,11 @@ def _make_discovery_with_fakes(monkeypatch, custom_api=None, apps_api=None):
 
 
 def test_overlay_openclaw_ready(monkeypatch):
+    seen = {}
+
     class FakeCustom:
         def get_namespaced_custom_object(self, **kw):
+            seen.update(kw)
             return {"status": {"phase": "Ready"}}
 
     d = _make_discovery_with_fakes(monkeypatch, custom_api=FakeCustom())
@@ -269,6 +272,7 @@ def test_overlay_openclaw_ready(monkeypatch):
     out = d.overlay(rec)
     assert out.status == ar.STATUS_READY
     assert out.source == "cluster"
+    assert seen["group"] == "openclaw.rocks"
 
 
 def test_overlay_openclaw_missing_cr(monkeypatch):
@@ -294,6 +298,26 @@ def test_overlay_openclaw_missing_cr(monkeypatch):
     # source=missing so the UI can hint at the operator step.
     assert out.status == ar.STATUS_STOPPED
     assert out.source == "missing"
+
+
+def test_overlay_openclaw_deployment_fallback_ready(monkeypatch):
+    class FakeApps:
+        def read_namespaced_deployment(self, **kw):
+            assert kw == {"name": "agent-stub", "namespace": "system-b"}
+            return SimpleNamespace(
+                status=SimpleNamespace(ready_replicas=1, replicas=1),
+            )
+
+    d = _make_discovery_with_fakes(monkeypatch, apps_api=FakeApps())
+    rec = _record(
+        "openclaw",
+        system="system_b",
+        discovery={"deployment": "agent-stub", "namespace": "system-b"},
+    )
+    out = d.overlay(rec)
+    assert out.status == ar.STATUS_READY
+    assert out.source == "cluster"
+    assert out.message == "1/1 replicas ready"
 
 
 def test_overlay_flowise_ready_without_chatflow(monkeypatch):
