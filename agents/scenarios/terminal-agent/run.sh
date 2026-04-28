@@ -47,8 +47,15 @@ find "$SCENARIOS_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
 echo "+ python3 build inventory $INVENTORY"
 python3 - "$SCENARIOS_ROOT" "$INVENTORY" <<'PY'
 import hashlib
+import re
 import sys
 from pathlib import Path
+
+# Match an actual source statement (`.` or `source` at line start with
+# optional whitespace) referencing _lib.sh — not the `# shellcheck
+# source=../_lib.sh` directive that every scenario already carries as a
+# comment, which would otherwise make a substring check tautological.
+SOURCE_RE = re.compile(r"^\s*(?:\.|source)\s+\S*_lib\.sh", re.MULTILINE)
 
 root = Path(sys.argv[1])
 out = Path(sys.argv[2])
@@ -62,7 +69,7 @@ for entry in sorted(root.iterdir()):
         continue
     text = run_sh.read_text()
     line_count = text.count("\n")
-    sources_lib = "yes" if "_lib.sh" in text else "no"
+    sources_lib = "yes" if SOURCE_RE.search(text) else "no"
     emits_json = "yes" if f'"scenario":"{entry.name}"' in text else "no"
     digest = hashlib.md5(text.encode()).hexdigest()[:12]
     file_count = sum(1 for _ in entry.rglob("*") if _.is_file())
@@ -110,6 +117,26 @@ for s in parsed:
     if s["emits_json"] != "yes":
         problems.append(f"{s['name']}: run.sh does not emit a structured JSON result")
 
+# Probe paths the reference task asks about. The worker only mounts the
+# scenarios tree, so these will normally not be reachable — record that
+# fact instead of fabricating a walk.
+def probe(label, candidates):
+    for c in candidates:
+        if c.exists():
+            files = sorted(p.name for p in c.iterdir())
+            return label, str(c), files
+    return label, None, None
+
+repo_root = root.parent.parent
+task_label, task_root, task_files = probe(
+    "task families",
+    [root.parent / "tasks", repo_root / "agents" / "tasks"],
+)
+config_label, config_root, config_files = probe(
+    "config",
+    [repo_root / "config", Path("/config")],
+)
+
 verdict = "PASS" if not problems else "FAIL"
 
 doc = ["# Scenario audit — repo-structure-audit-and-fixup", ""]
@@ -122,6 +149,20 @@ for s in parsed:
         f"- {s['name']}: files={s['files']} run.sh_lines={s['run_sh_lines']} "
         f"lib={s['sources_lib']} json={s['emits_json']} md5={s['run_sh_md5']}"
     )
+doc.append("")
+doc.append("Reusable task families found")
+if task_root:
+    for f in task_files:
+        doc.append(f"- {f} (under {task_root})")
+else:
+    doc.append("- not in scope at this mount: agents/tasks not reachable from worker")
+doc.append("")
+doc.append("Config files found")
+if config_root:
+    for f in config_files:
+        doc.append(f"- {f} (under {config_root})")
+else:
+    doc.append("- not in scope at this mount: config/ not reachable from worker")
 doc.append("")
 doc.append("Mismatches or missing references")
 if problems:

@@ -67,20 +67,29 @@ out = Path(sys.argv[2])
 
 df = pd.read_csv(src, sep="\t")
 # Penalize the data-sensitivity signal: high values flag risk, not opportunity.
-df["adjusted"] = np.where(
+df["score_signed"] = np.where(
     df["signal"] == "data sensitivity",
-    (10 - df["score"]) * df["weight"],
-    df["score"] * df["weight"],
+    10 - df["score"],
+    df["score"],
 )
+df["weighted_contribution"] = df["score_signed"] * df["weight"]
 
-ranking = (
+# True weighted mean: sum(score_signed * weight) / sum(weight). The previous
+# version divided by row count, which biased segments with more rows even
+# when their per-signal weights were lower.
+agg = (
     df.groupby("segment")
       .agg(
-          weighted_mean=("adjusted", "mean"),
-          evidence_points=("score", "size"),
+          weighted_sum=("weighted_contribution", "sum"),
           total_weight=("weight", "sum"),
+          evidence_points=("score", "size"),
       )
       .reset_index()
+)
+agg["weighted_mean"] = agg["weighted_sum"] / agg["total_weight"]
+
+ranking = (
+    agg[["segment", "weighted_mean", "evidence_points", "total_weight"]]
       .sort_values("weighted_mean", ascending=False, kind="mergesort")
       .reset_index(drop=True)
 )
