@@ -2288,3 +2288,166 @@ if (resetBtn) {
 
 renderServiceLaunchers();
 setInterval(renderServiceLaunchers, 30_000);
+
+// ---------- Flowise chat embed ----------
+//
+// Wires the Flowise chatbot widget (flowise-embed) into the demo page so the
+// presenter can chat against a flow without leaving the demo. Two layers of
+// "off":
+//   1. compose `profiles: [authoring]` — Flowise is not started; probe
+//      fails and the panel stays hidden.
+//   2. user has not configured a chatflow id yet — the panel is visible
+//      with the input form but no chatbot rendered.
+//
+// Chatflow id sources (first hit wins):
+//   - URL param `?chatflowId=<id>` (per-session override)
+//   - localStorage key `flowiseChatflowId` (persistent)
+//   - manual paste via the input in the panel
+//
+// The flow must be marked "Make Chatflow Public" in Flowise so that
+// /api/v1/prediction/<id> answers without an API key. CORS on the Flowise
+// container must include this page's origin (set CORS_ORIGINS in
+// docker-compose.flowise.yaml).
+const FLOWISE_CHAT_BASE_URL = 'http://127.0.0.1:3000';
+const FLOWISE_CHAT_EMBED_URL =
+  'https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js';
+const FLOWISE_CHAT_ID_KEY = 'flowiseChatflowId';
+
+let flowiseChatRendered = false;
+let flowiseEmbedModulePromise = null;
+
+function getFlowiseChatflowId() {
+  const fromUrl = new URLSearchParams(window.location.search).get('chatflowId');
+  if (fromUrl) return fromUrl.trim();
+  try {
+    return (localStorage.getItem(FLOWISE_CHAT_ID_KEY) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function setFlowiseChatStatus(message, kind) {
+  const el = document.getElementById('flowise-chat-status');
+  if (!el) return;
+  el.textContent = message || '';
+  if (kind) el.dataset.kind = kind;
+  else delete el.dataset.kind;
+}
+
+async function loadFlowiseEmbedModule() {
+  if (!flowiseEmbedModulePromise) {
+    flowiseEmbedModulePromise = import(/* @vite-ignore */ FLOWISE_CHAT_EMBED_URL).catch((err) => {
+      flowiseEmbedModulePromise = null;
+      throw err;
+    });
+  }
+  return flowiseEmbedModulePromise;
+}
+
+async function mountFlowiseChat(chatflowId) {
+  const mount = document.getElementById('flowise-chat-mount');
+  if (!mount) return;
+  mount.innerHTML = '';
+  flowiseChatRendered = false;
+
+  setFlowiseChatStatus('Loading chat widget…', 'pending');
+  let mod;
+  try {
+    mod = await loadFlowiseEmbedModule();
+  } catch (_) {
+    setFlowiseChatStatus(
+      'Could not load flowise-embed from CDN. Check network or self-host the bundle.',
+      'error'
+    );
+    return;
+  }
+
+  const Chatbot = mod && (mod.default || mod.Chatbot);
+  if (!Chatbot || typeof Chatbot.initFull !== 'function') {
+    setFlowiseChatStatus('flowise-embed module did not expose initFull().', 'error');
+    return;
+  }
+
+  // initFull renders the chat into the host element rather than as a
+  // floating bubble. Theme keeps the widget legible against the dark panel.
+  try {
+    Chatbot.initFull({
+      chatflowid: chatflowId,
+      apiHost: FLOWISE_CHAT_BASE_URL,
+      hostElement: mount,
+      theme: {
+        chatWindow: {
+          backgroundColor: 'transparent',
+          height: 520,
+          fontSize: 14,
+          welcomeMessage: 'Ask the Flowise-authored agent something.',
+          textInput: { placeholder: 'Type a message and hit Enter' }
+        }
+      }
+    });
+    flowiseChatRendered = true;
+    setFlowiseChatStatus(`Chatflow ${chatflowId.slice(0, 8)}… loaded.`, 'ok');
+  } catch (err) {
+    setFlowiseChatStatus(`Failed to init chat widget: ${err && err.message ? err.message : err}`, 'error');
+  }
+}
+
+async function renderFlowiseChat() {
+  const panel = document.getElementById('flowise-chat-panel');
+  const input = document.getElementById('flowise-chat-id-input');
+  const form = document.getElementById('flowise-chat-config-form');
+  const resetBtn = document.getElementById('flowise-chat-reset');
+  const mount = document.getElementById('flowise-chat-mount');
+  if (!panel || !form || !input || !mount) return;
+
+  const reachable = await probeService(`${FLOWISE_CHAT_BASE_URL}/api/v1/ping`);
+  if (!reachable) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+
+  if (!form.dataset.bound) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = input.value.trim();
+      if (!id) {
+        setFlowiseChatStatus('Paste a chatflow id first.', 'warn');
+        return;
+      }
+      try { localStorage.setItem(FLOWISE_CHAT_ID_KEY, id); } catch (_) {}
+      mountFlowiseChat(id);
+    });
+    form.dataset.bound = '1';
+  }
+
+  if (resetBtn && !resetBtn.dataset.bound) {
+    resetBtn.addEventListener('click', () => {
+      try { localStorage.removeItem(FLOWISE_CHAT_ID_KEY); } catch (_) {}
+      input.value = '';
+      mount.innerHTML = '';
+      flowiseChatRendered = false;
+      flowiseEmbedModulePromise = null;
+      setFlowiseChatStatus('Cleared. Paste a new chatflow id to reload.', 'warn');
+    });
+    resetBtn.dataset.bound = '1';
+  }
+
+  const chatflowId = getFlowiseChatflowId();
+  if (chatflowId) {
+    if (!input.value) input.value = chatflowId;
+    if (!flowiseChatRendered) mountFlowiseChat(chatflowId);
+  } else if (!flowiseChatRendered) {
+    setFlowiseChatStatus(
+      'No chatflow id saved yet — paste one to load the chat.',
+      'warn'
+    );
+  }
+}
+
+renderFlowiseChat();
+// Re-probe alongside the services panel so the chat appears once Flowise
+// finishes booting without requiring a hard reload.
+setInterval(() => {
+  if (!flowiseChatRendered) renderFlowiseChat();
+}, 30_000);

@@ -694,6 +694,33 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   background: rgba(255,255,255,.03);
 }
 
+/* ---- Flowise chat panel ---- */
+.flowise-chat-panel { padding: 18px 20px; margin-bottom: 20px; }
+.flowise-chat-panel .panel-note { margin: -4px 0 12px; }
+.flowise-chat-panel .panel-note code {
+  background: rgba(165, 197, 255, 0.1);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+.flowise-chat-mount {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,.02);
+  min-height: 420px;
+  max-height: 560px;
+  overflow: hidden;
+  position: relative;
+}
+.flowise-chat-mount:empty::before {
+  content: "Save a chatflow id to load the chat.";
+  display: block;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* ---- Multi-agent fan-out panel ---- */
 .multi-session-actions {
   display: flex;
