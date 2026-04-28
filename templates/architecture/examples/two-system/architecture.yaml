@@ -76,3 +76,18 @@ spec:
     - local_standard
     - local_large
     - offload_system_b
+
+  # Optional: which confidential-computing runtimes the operator has
+  # installed on this cluster. Today the demo wires one TDX runtime on
+  # System A so a single agent (config/agents.yaml: openclaw-a-3) can be
+  # scheduled into a TEE; agents without `confidential: ...` keep
+  # running on regular nodes. Spec-only, like the rest of this file —
+  # the actual RuntimeClass resource is installed by Kata-TDX or the
+  # Confidential Containers operator out-of-band.
+  confidential_runtimes:
+    - name: tdx-kata
+      kind: tdx
+      location: system-a
+      runtime_class: kata-qemu-tdx
+      node_selector:
+        intel.feature.node.kubernetes.io/tdx: "true"

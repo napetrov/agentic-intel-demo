@@ -83,3 +83,18 @@ spec:
   supported_execution_modes:               # subset of: local_standard, local_large, offload_system_b
     - <execution-mode>
     # repeat
+
+  confidential_runtimes:                   # optional; declare the TEE runtime classes the
+                                           # operator has installed on a cluster. Spec-only,
+                                           # like the rest of this template — the actual
+                                           # RuntimeClass resource is installed by the Kata-TDX
+                                           # / Confidential Containers operator on the host.
+                                           # When set, agents in config/agents.yaml may
+                                           # reference one of these `kind` values via
+                                           # `confidential: <kind>`.
+    # - name: <runtime-name>               # human-readable id (e.g. tdx-kata)
+    #   kind: tdx                          # one of: tdx
+    #   location: <cluster-name>           # must match a cluster in spec.topology.clusters[]
+    #   runtime_class: <k8s-runtime-class> # k8s RuntimeClass the operator registered (e.g. kata-qemu-tdx)
+    #   node_selector:                     # NFD / operator-applied labels that gate scheduling
+    #     <label-key>: <label-value>       # e.g. intel.feature.node.kubernetes.io/tdx: "true"

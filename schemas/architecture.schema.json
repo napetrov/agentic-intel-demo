@@ -35,6 +35,12 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/execution_mode" },
           "uniqueItems": true
+        },
+        "confidential_runtimes": {
+          "type": "array",
+          "description": "Optional list of confidential-computing runtime classes installed on this cluster. Spec-only: the actual k8s RuntimeClass + node labels are landed by the Kata-TDX or Confidential Containers operator out-of-band. Agents in config/agents.yaml may reference one of the declared `kind` values via `confidential: <kind>`.",
+          "items": { "$ref": "#/$defs/confidential_runtime" },
+          "uniqueItems": true
         }
       }
     }
@@ -177,6 +183,23 @@
         "fast": { "type": "string", "minLength": 1 },
         "reasoning": { "type": "string", "minLength": 1 },
         "code": { "type": "string", "minLength": 1 }
+      }
+    },
+    "confidential_runtime": {
+      "type": "object",
+      "required": ["name", "kind", "location", "runtime_class", "node_selector"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "kind": { "type": "string", "enum": ["tdx"] },
+        "location": { "type": "string", "minLength": 1 },
+        "runtime_class": { "type": "string", "minLength": 1 },
+        "node_selector": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "type": "string", "minLength": 1 },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
       }
     }
   }

@@ -35,7 +35,12 @@
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },
-        "discovery": { "$ref": "#/$defs/discovery" }
+        "discovery": { "$ref": "#/$defs/discovery" },
+        "confidential": {
+          "description": "Optional confidential-computing runtime requirement. When set, the control plane renders the session Pod with the matching runtimeClassName + nodeSelector so the workload is admitted only on a TEE-capable node. Today only `tdx` (Intel Trust Domain Extensions) is wired; the value is an enum so future TEEs (e.g. SGX, SEV-SNP) can be added without an apiVersion bump.",
+          "type": "string",
+          "enum": ["tdx"]
+        }
       }
     },
     "discovery": {

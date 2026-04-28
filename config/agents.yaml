@@ -43,13 +43,24 @@ agents:
       namespace: openclaw
 
   - id: openclaw-a-3
-    name: "OpenClaw 3"
+    name: "OpenClaw 3 (TDX)"
     kind: openclaw
     system: system_a
     capabilities: [shell, read_file, list_files, summarize]
     discovery:
       openclaw_instance: openclaw-intel-demo-3
       namespace: openclaw
+    # This pod is the demo's confidential-computing slot. When a session
+    # targets agent_id=openclaw-a-3, the control plane renders the
+    # session Job with runtimeClassName=kata-qemu-tdx (or whatever
+    # TDX_RUNTIME_CLASS resolves to) and a nodeSelector that pins the
+    # Pod to a TDX-enabled node. See docs/tdx-confidential.md for the
+    # one-time cluster setup (TDX BIOS, Kata-TDX or Confidential
+    # Containers operator, NFD label) the operator has to land before
+    # this scheduling actually succeeds — without it, the Pod stays
+    # Pending with an "untolerated taint" / "no nodes match" event,
+    # which is the intended fail-loud behavior.
+    confidential: tdx
 
   - id: flowise-a-1
     name: "Flowise terminal-agent flow"
