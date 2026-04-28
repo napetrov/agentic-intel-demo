@@ -263,3 +263,58 @@ def test_script_handles_gh_token_branch_explicitly(script_exists: None) -> None:
     assert "delete secret \"$GITHUB_SECRET_NAME\"" in body, (
         "apply-mode delete missing — stale PATs would survive un-exporting GH_TOKEN"
     )
+
+
+def test_overridden_github_namespace_is_ensured(script_exists: None) -> None:
+    """When `GITHUB_SECRET_NAMESPACE` is set to a value different from
+    `SESSION_POD_SECRET_NAMESPACE` (default `agents`), the script must
+    pre-create that namespace. Otherwise the apply/delete on
+    `github-token` would fail on a fresh cluster with
+    `namespaces "..." not found` and hide the real failure mode behind
+    a confusing kubectl error.
+    """
+    proc = _run_script(
+        {
+            "GH_TOKEN": "ghp_test",
+            "GITHUB_SECRET_NAMESPACE": "ghns-override",
+        }
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout
+    # Either applied (`ensured namespace ghns-override`) or dry-run
+    # (`# would ensure namespace ghns-override`) — the test runs in
+    # dry-run mode, so the "would ensure" form is what we expect.
+    assert "would ensure namespace ghns-override" in out, (
+        "GITHUB_SECRET_NAMESPACE override was not pre-ensured — fresh-cluster apply will 404"
+    )
+    # And the github-token Secret block must target that ns.
+    assert (
+        "kubectl create secret generic github-token --namespace=ghns-override"
+        in out
+    )
+
+
+def test_default_github_namespace_does_not_double_ensure(
+    script_exists: None,
+) -> None:
+    """Conversely, when `GITHUB_SECRET_NAMESPACE` matches
+    `SESSION_POD_SECRET_NAMESPACE` (the default — both `agents`), the
+    extra `ensure_namespace` MUST NOT fire. `ensure_namespace` is
+    idempotent so a duplicate wouldn't be a correctness bug, but it
+    would clutter dry-run output and (on noisy clusters) waste an
+    apply round-trip per script invocation. Locking this in keeps the
+    output stable.
+    """
+    proc = _run_script({"GH_TOKEN": "ghp_test"})
+    assert proc.returncode == 0, proc.stderr
+    # Count the dry-run ensure lines for `agents`. Should be exactly
+    # one (from SESSION_POD_SECRET_NAMESPACE), not two.
+    agents_ensures = [
+        line
+        for line in proc.stdout.splitlines()
+        if line.strip() == "# would ensure namespace agents"
+    ]
+    assert len(agents_ensures) == 1, (
+        f"expected exactly one `ensure_namespace agents`, got {len(agents_ensures)}: "
+        f"{agents_ensures}"
+    )

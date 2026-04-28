@@ -173,13 +173,26 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "system-a" ]; then
   ensure_namespace "$SECRET_NAMESPACE"
   ensure_namespace "$LITELLM_SECRET_NAMESPACE"
   ensure_namespace "$SESSION_POD_SECRET_NAMESPACE"
+  # The github-token mirror lives in $GITHUB_SECRET_NAMESPACE (default
+  # `agents`, same as the session pod). If a caller overrides it to a
+  # different ns, the apply/delete below would otherwise fail with
+  # `namespaces "..." not found` on a fresh cluster.
+  if [ "$GITHUB_SECRET_NAMESPACE" != "$SESSION_POD_SECRET_NAMESPACE" ]; then
+    ensure_namespace "$GITHUB_SECRET_NAMESPACE"
+  fi
 
-  # GH_TOKEN is optional. When set, it lands in both the operator instance
-  # Secret (so envFromSecrets exposes it inside the gateway pod) and the
-  # `github-token` Secret in the `agents` namespace (so secretKeyRef can
-  # mount it as GH_TOKEN/GITHUB_TOKEN inside the session pod). When unset,
-  # neither Secret is touched — agents will simply have no GitHub
-  # credential at runtime.
+  # GH_TOKEN is optional. When set (the wire path), it lands in BOTH the
+  # operator instance Secret in $SECRET_NAMESPACE (so envFromSecrets
+  # exposes it inside the gateway pod) AND the `github-token` Secret in
+  # $GITHUB_SECRET_NAMESPACE / `agents` (so secretKeyRef can mount it as
+  # GH_TOKEN/GITHUB_TOKEN inside the session pod).
+  #
+  # When unset (the revoke path), GH_TOKEN is omitted from the operator
+  # instance Secret payload AND, in apply mode, the agents/github-token
+  # mirror is actively deleted — re-running the script with GH_TOKEN
+  # un-exported is the canonical "revoke agent GitHub access" gesture.
+  # In dry-run mode the unset path prints a "would delete" notice so
+  # operators can preview the effect without touching the cluster.
   operator_instance_keys=(
     "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN"
     "AWS_BEARER_TOKEN_BEDROCK=$AWS_BEARER_TOKEN_BEDROCK"
