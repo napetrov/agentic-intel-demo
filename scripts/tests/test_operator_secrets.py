@@ -247,22 +247,42 @@ def test_openclawinstance_documents_envfromsecrets_passthrough(
 # -----------------------------------------------------------------------
 
 
+def _executable_lines(body: str) -> list[str]:
+    """Return script lines that are NOT pure shell comments.
+
+    The branch-presence assertions below match against this list so a
+    future comment that happens to mention "GH_TOKEN=$GH_TOKEN" or
+    "delete secret …" can't silently satisfy a contract the actual
+    code no longer keeps.
+    """
+    out: list[str] = []
+    for raw in body.splitlines():
+        stripped = raw.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        out.append(raw)
+    return out
+
+
 def test_script_handles_gh_token_branch_explicitly(script_exists: None) -> None:
     """Defense-in-depth: the script must contain both the wire-on-set
     branch and the revoke-on-unset branch. If either disappears, this
     test catches the regression even before the dry-run tests run.
     """
-    body = SCRIPT.read_text()
-    assert 'GH_TOKEN=$GH_TOKEN' in body, "wire-on-set branch missing"
-    # The "would delete" string only exists in the dry-run revoke path.
-    assert "would delete secret/$GITHUB_SECRET_NAME" in body, (
-        "dry-run revoke notice missing — the unset branch is incomplete"
+    exec_lines = _executable_lines(SCRIPT.read_text())
+
+    assert any("GH_TOKEN=$GH_TOKEN" in line for line in exec_lines), (
+        "wire-on-set branch missing — `GH_TOKEN=$GH_TOKEN` no longer appears in any executable line"
     )
+    # The "would delete" string only exists in the dry-run revoke path.
+    assert any(
+        "would delete secret/$GITHUB_SECRET_NAME" in line for line in exec_lines
+    ), "dry-run revoke notice missing — the unset branch is incomplete"
     # The apply-mode delete must also be present, otherwise APPLY=1
     # operators wouldn't actually revoke.
-    assert "delete secret \"$GITHUB_SECRET_NAME\"" in body, (
-        "apply-mode delete missing — stale PATs would survive un-exporting GH_TOKEN"
-    )
+    assert any(
+        'delete secret "$GITHUB_SECRET_NAME"' in line for line in exec_lines
+    ), "apply-mode delete missing — stale PATs would survive un-exporting GH_TOKEN"
 
 
 def test_overridden_github_namespace_is_ensured(script_exists: None) -> None:
