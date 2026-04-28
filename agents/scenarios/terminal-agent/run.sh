@@ -37,8 +37,8 @@ sed -n '20,28p' "$TASK_BRIEF"
 
 narrate_blank
 narrate "[step 3/5] walk the mounted scenario tree"
-echo "+ ls -1 $SCENARIOS_ROOT | grep -v '^_'"
-ls -1 "$SCENARIOS_ROOT" | grep -v '^_'
+echo "+ find $SCENARIOS_ROOT -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort"
+find "$SCENARIOS_ROOT" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
 
 # Derive a per-scenario inventory: name, file count, run.sh line count,
 # whether _lib.sh is sourced, whether a JSON result fragment is emitted, and
