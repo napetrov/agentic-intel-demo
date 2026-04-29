@@ -57,7 +57,7 @@
          content so the selector and details stay in the same viewport. */
       .sc-overview {
         display: grid;
-        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-columns: 220px minmax(0, 1fr);
         gap: 24px;
         padding: 22px;
         margin-bottom: 22px;
@@ -67,7 +67,13 @@
         top: 16px;
         align-self: start;
       }
-      .sc-rail .section-title { margin-bottom: 10px; }
+      .sc-rail .section-title { margin-bottom: 4px; }
+      .sc-rail-help {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
       .sc-rail .sc-tabs {
         flex-direction: column;
         flex-wrap: nowrap;
@@ -77,7 +83,7 @@
       .sc-rail .sc-tab {
         min-width: 0;
         width: 100%;
-        padding: 9px 12px;
+        padding: 8px 10px;
       }
       /* Tab sub-story is repeated in the instance card to the right —
          hide it in the rail so the picker stays a single-glance list. */
@@ -120,7 +126,20 @@
       .sc-tab-label {
         display: block;
         font-weight: 700;
-        font-size: 14px;
+        font-size: 13px;
+        line-height: 1.25;
+      }
+      .sc-tab-kind {
+        display: inline-block;
+        margin-top: 5px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid rgba(69, 226, 213, 0.22);
+        color: var(--cyan);
+        background: rgba(69, 226, 213, 0.07);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
       }
       .sc-tab-sub {
         display: block;
@@ -437,9 +456,25 @@
         </div>
       </section>
 
+      <section class="panel sc-builder-panel" aria-labelledby="sc-builder-title">
+        <div class="sc-chart-head">
+          <div>
+            <div class="section-title" id="sc-builder-title">Rack builder (interactive)</div>
+            <div class="section-subtitle">Compose a custom rack — add CWF nodes for the agent half, GNR nodes for the SLM/offload half. Every tile below recomputes live as the rack composition changes.</div>
+          </div>
+        </div>
+        <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
+        <div class="sc-builder-grid">
+          <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
+          <div class="sc-builder-controls" id="sc-builder-controls"></div>
+        </div>
+        <div class="sc-tiles sc-builder-tiles" id="sc-builder-tiles" aria-live="polite"></div>
+      </section>
+
       <section class="panel sc-overview" aria-label="Scenario overview">
         <aside class="sc-rail" aria-label="Scenario picker">
-          <div class="section-title">Scenario</div>
+          <div class="section-title">Demo scenarios</div>
+          <p class="sc-rail-help">Prebuilt benchmark views. Pick one; the workload, headline numbers, and latency curve update on the right.</p>
           <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
         </aside>
         <div class="sc-overview-main">
@@ -473,21 +508,6 @@
             <div class="sc-chart-note" id="sc-chart-note"></div>
           </div>
         </div>
-      </section>
-
-      <section class="panel sc-builder-panel" aria-labelledby="sc-builder-title">
-        <div class="sc-chart-head">
-          <div>
-            <div class="section-title" id="sc-builder-title">Rack builder (interactive)</div>
-            <div class="section-subtitle">Compose a custom rack — add CWF nodes for the agent half, GNR nodes for the SLM/offload half. Every tile below recomputes live as the rack composition changes.</div>
-          </div>
-        </div>
-        <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
-        <div class="sc-builder-grid">
-          <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
-          <div class="sc-builder-controls" id="sc-builder-controls"></div>
-        </div>
-        <div class="sc-tiles sc-builder-tiles" id="sc-builder-tiles" aria-live="polite"></div>
       </section>
 
       <section class="panel sc-notes-panel" aria-labelledby="sc-notes-title">
