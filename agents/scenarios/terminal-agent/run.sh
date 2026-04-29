@@ -15,10 +15,7 @@ TASK_BRIEF="$SCENARIO_DIR/terminal-bench-reference.md"
 ARTIFACT="/tmp/terminal-agent-scenario-audit.md"
 INVENTORY="/tmp/terminal-agent-inventory.tsv"
 
-narrate "[scenario] terminal-agent"
-narrate "Starting isolated engineering demo"
-narrate "Flow: 1. prepare workspace 2. inspect task brief 3. walk scenario tree 4. derive audit artifact 5. validate"
-narrate "Scenario contract: route=local_standard; system owner=System A; actual terminal execution required"
+narrate_header "terminal-agent" "Starting isolated engineering demo" "local_standard"
 
 narrate_blank
 narrate "[step 1/5] prepare isolated engineering workspace"
@@ -189,6 +186,7 @@ echo "+ tail -n 12 $ARTIFACT"
 tail -n 12 "$ARTIFACT"
 
 SCENARIO_COUNT=$(grep -c '^- .*: files=' "$ARTIFACT" || echo 0)
+narrate_footer "terminal-agent: PASS · ${SCENARIO_COUNT} scenarios audited · artifact=$ARTIFACT"
 cat <<JSON
 {"scenario":"terminal-agent","route":"local_standard","system_owner":"System A","status":"ok","scenarios_audited":$SCENARIO_COUNT,"artifact":"$ARTIFACT","inventory":"$INVENTORY"}
 JSON

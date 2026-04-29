@@ -21,10 +21,7 @@ MODEL_PATH="/tmp/large-build-demo-model.pkl"
 rm -rf "$PROJECT_DIR"
 mkdir -p "$PROJECT_DIR/pipeline" "$PROJECT_DIR/tests"
 
-narrate "[scenario] large-build-test"
-narrate "Starting large build/test demo"
-narrate "Flow: 1. inspect target repo/task 2. select large execution profile 3. run environment checks 4. materialize project 5. build and test 6. summarize outcome"
-narrate "Scenario contract: route=local_large; System A large-profile framing; no System B offload unless policy changes"
+narrate_header "large-build-test" "Starting large build/test demo" "local_large"
 
 narrate_blank
 narrate "[step 1/6] inspect target repo/task"
@@ -246,6 +243,7 @@ echo "unittest verdict: $VERDICT (tests_run=$TESTS_RUN)"
 echo "build/test status: PASS"
 echo "log: $LOG"
 TESTS_RUN=${TESTS_RUN:-0}
+narrate_footer "large-build-test: PASS · tests=$TESTS_RUN · verdict=$VERDICT · model_bytes=$MODEL_BYTES"
 cat <<JSON
 {"scenario":"large-build-test","route":"local_large","system_owner":"System A","profile":"large","status":"ok","tests_run":$TESTS_RUN,"verdict":"$VERDICT","holdout_accuracy":${HOLDOUT:-null},"model_bytes":$MODEL_BYTES,"log":"$LOG"}
 JSON

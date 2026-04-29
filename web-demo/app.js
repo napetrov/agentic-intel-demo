@@ -1,11 +1,11 @@
 const SYSTEM_A_TOTAL_VCPU = 512;
 const SYSTEM_B_TOTAL_VCPU = 100;
 
-// Shown by the Agent command panel when the local stack isn't reachable.
+// Shown by the Direct tool call panel when the local stack isn't reachable.
 // Both call sites (form-submit guard + runAgentCommand defensive guard) use
 // the same copy so the wording can't drift as docs evolve.
 const BACKEND_REQUIRED_MSG =
-  'Control plane not reachable — agent commands are disabled.';
+  'Control plane not reachable — direct tool calls are disabled.';
 
 const scenarios = {
   'terminal-agent': {
@@ -325,12 +325,7 @@ const idleConsole = {
   mode: 'demo portal',
   'openclaw version': '2026.4.15',
   orchestrator: 'OpenClaw',
-  'orchestration alt': 'Flowise (optional)',
-  'litellm gateway': 'litellm/sambanova primary',
-  'litellm endpoint': 'port 4000 /v1',
-  'sambanova model': 'DeepSeek-V3.1',
-  'enterprise inference': 'available as alternate route',
-  'model route': 'LiteLLM → SambaNova / Ent. Inference',
+  'model route': 'resolved per scenario',
   'session scope': 'isolated per user',
   'placement': 'System A pool idle (0/512)',
   'artifact view': 'summary only'
@@ -353,6 +348,8 @@ const sysBBarFillEl = document.getElementById('sys-b-bar-fill');
 const sysBOffloadEl = document.getElementById('sys-b-offload');
 const crossArrowEl = document.getElementById('cross-system-arrow');
 const orchestrationNodes = document.querySelectorAll('.orchestration-band [data-node]');
+const archNarrationEl = document.getElementById('arch-narration');
+const archNarrationLabelEl = document.getElementById('arch-narration-label');
 const serviceRows = document.querySelectorAll('.service-row[data-service]');
 const capacityBarContainer = sysABarFillEl.parentElement;
 const capacityBarBContainer = sysBBarFillEl.parentElement;
@@ -453,6 +450,152 @@ function setServiceState(services) {
   });
 }
 
+// ---- T3: lockstep architecture animation ------------------------------
+// Predicted phase tracks per scenario. The live walkthrough is
+// synchronous on the wire (control-plane forwards the entire stdout in
+// one block), so we can't drive these from real events. Instead we run
+// a predicted timeline that matches the scenario's typical wall-clock
+// shape — the architecture moves while the run is in flight, the
+// narration strip tells the viewer where they are, and the final
+// "done"/"error" state is set when the actual response lands.
+const SCENARIO_PHASE_TRACKS = {
+  'terminal-agent': [
+    { label: 'Receiving request &mdash; OpenClaw accepts the scenario.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'Routing the model call through LiteLLM.', pulse: ['litellm'], system: 'a', cross: false },
+    { label: 'Inference: SambaNova answers the planning prompt.', pulse: ['sambanova'], system: 'a', cross: false },
+    { label: 'Running the bounded shell task on System A.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'Validating the artifact and assembling the result.', pulse: ['openclaw'], system: 'a', cross: false },
+  ],
+  'market-research': [
+    { label: 'OpenClaw frames the question on System A.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'LiteLLM routes to SambaNova for synthesis.', pulse: ['litellm', 'sambanova'], system: 'a', cross: false },
+    { label: 'Dispatching the pandas subagent &mdash; A &rarr; B.', pulse: ['openclaw'], system: 'both', cross: true, services: { erag: true } },
+    { label: 'System B aggregates with pandas (groupby + weighted mean).', pulse: [], system: 'both', cross: true, services: { erag: true } },
+    { label: 'Synthesizing the analyst note back on System A.', pulse: ['sambanova'], system: 'a', cross: false },
+  ],
+  'large-build-test': [
+    { label: 'Reserving a 16 vCPU large slot on System A.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'LiteLLM splits inference across SambaNova and the SLM route.', pulse: ['litellm', 'sambanova', 'ent-inference-route'], system: 'a', cross: false, services: { 'ent-inference': true } },
+    { label: 'Compiling the project (compileall) on System A.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'Running unittest discover &mdash; 8 tests across 2 modules.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'sklearn fit + holdout validation; assembling the summary.', pulse: ['openclaw'], system: 'a', cross: false },
+  ],
+  'taskflow-pull': [
+    { label: 'Resolving TaskFlow source (live API or shipped fixture).', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'Fetching open tasks; selecting one by business rules.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'LiteLLM routes the planning call to SambaNova.', pulse: ['litellm', 'sambanova'], system: 'a', cross: false },
+    { label: 'Rendering the bounded action artifact on System A.', pulse: ['openclaw'], system: 'a', cross: false },
+    { label: 'Validating the artifact and emitting the JSON verdict.', pulse: ['openclaw'], system: 'a', cross: false },
+  ],
+};
+
+// Approximate wall-clock per scenario. Driven from the scenario stats
+// shown on the cards in index.html — keep these two in rough sync. Used
+// to space phase advancement so the strip doesn't run out before the
+// live response arrives.
+const SCENARIO_DURATION_MS = {
+  'terminal-agent':   25_000,
+  'market-research':  40_000,
+  'large-build-test': 60_000,
+  'taskflow-pull':    30_000,
+};
+
+let scenarioPhaseTimers = [];
+function clearScenarioPhaseTimers() {
+  scenarioPhaseTimers.forEach((t) => clearTimeout(t));
+  scenarioPhaseTimers = [];
+}
+
+function setArchNarration(state, label) {
+  if (!archNarrationEl || !archNarrationLabelEl) return;
+  archNarrationEl.dataset.state = state || 'idle';
+  // Phase labels are static strings we author; using innerHTML so the
+  // HTML entities (&rarr;, &mdash;) render rather than appearing as text.
+  archNarrationLabelEl.innerHTML = label || '';
+}
+
+function setNodePulsing(nodeIds) {
+  const set = new Set(nodeIds || []);
+  document.querySelectorAll('.arch-node[data-node]').forEach((el) => {
+    el.classList.toggle('pulsing', set.has(el.dataset.node));
+  });
+}
+
+function playScenarioPhases(scenarioKey) {
+  clearScenarioPhaseTimers();
+  const track = SCENARIO_PHASE_TRACKS[scenarioKey];
+  if (!track || !track.length) return;
+  const total = SCENARIO_DURATION_MS[scenarioKey] || 30_000;
+  // Spread phases evenly; the last phase parks at ~85% of duration so
+  // the "running" state still has signal until the actual response
+  // arrives. If the response comes earlier we cancel the rest.
+  const step = Math.floor((total * 0.85) / track.length);
+  track.forEach((phase, idx) => {
+    const t = setTimeout(() => {
+      setArchNarration('running', phase.label);
+      setNodePulsing(phase.pulse || []);
+      if (typeof phase.cross === 'boolean') setCrossArrow(phase.cross);
+      if (phase.services) setServiceState(phase.services);
+    }, idx * step);
+    scenarioPhaseTimers.push(t);
+  });
+}
+
+function stopScenarioPhases(finalState, finalLabel) {
+  clearScenarioPhaseTimers();
+  setNodePulsing([]);
+  if (finalState && finalLabel !== undefined) {
+    setArchNarration(finalState, finalLabel);
+  }
+}
+
+// ---- T5: result tiles (artifact link only) ----------------------------
+// The earlier version of this also rendered a $/task vs frontier-API
+// economics tile; that was dropped to align with the scalability-page
+// decision (schema v3) to keep the demo purely about compute and not
+// ship an apples-to-oranges $ comparison against owned hardware.
+function renderResultTiles(scenarioKey, jobId) {
+  const tilesEl = document.getElementById('result-tiles');
+  const artifactEl = document.getElementById('result-tile-artifact');
+  const artifactValueEl = document.getElementById('result-tile-artifact-value');
+  const artifactHintEl = document.getElementById('result-tile-artifact-hint');
+  if (!tilesEl) return;
+
+  // Artifact link — only market-research has a real MinIO bucket on the
+  // shipped path. The other scenarios write artifacts under /tmp inside
+  // the offload-worker pod and don't surface them externally; showing a
+  // dead link there would be worse than no tile. Also gate on the
+  // viewer being on localhost — a port-forwarded / remote demo would
+  // hit a dead 127.0.0.1:9001 from the browser host.
+  const isLocalHost =
+    location.hostname === '127.0.0.1' ||
+    location.hostname === 'localhost' ||
+    location.hostname === '';
+  let artifactShown = false;
+  if (artifactEl) {
+    if (scenarioKey === 'market-research' && jobId && isLocalHost) {
+      const minioUrl = `http://127.0.0.1:9001/browser/demo-artifacts/${encodeURIComponent(jobId)}/`;
+      artifactEl.href = minioUrl;
+      artifactValueEl.textContent = `demo-artifacts/${jobId}/`;
+      artifactHintEl.textContent = 'Open in MinIO console (Tier 1 dev: :9001)';
+      artifactEl.hidden = false;
+      artifactShown = true;
+    } else {
+      artifactEl.hidden = true;
+    }
+  }
+
+  // Hide the whole tiles row when nothing's worth showing — avoids an
+  // empty 1px container under the result text on scenarios that don't
+  // surface an artifact.
+  tilesEl.hidden = !artifactShown;
+}
+
+function clearResultTiles() {
+  const tilesEl = document.getElementById('result-tiles');
+  if (tilesEl) tilesEl.hidden = true;
+}
+
 function renderCapacity(usedVcpu) {
   const used = Math.max(0, Math.min(SYSTEM_A_TOTAL_VCPU, usedVcpu || 0));
   const pct = (used / SYSTEM_A_TOTAL_VCPU) * 100;
@@ -530,9 +673,17 @@ function longLivedAgentRowHtml(agent) {
   const state = LONG_LIVED_STATE_BY_STATUS[agent.status] || 'planned';
   const status = (agent.status || 'unknown').toLowerCase();
   const kind = agent.kind ? ` · ${escapeHtml(agent.kind)}` : '';
+  // Confidential-compute slots (e.g. agents marked `confidential: tdx`
+  // in config/agents.yaml) get a visible padlock + "TDX" pill in the
+  // architecture so the audience sees the differentiator without
+  // hovering. The /api/agents read forwards the field as `confidential`.
+  const isTdx = agent.confidential === 'tdx';
+  const tdxBadge = isTdx
+    ? '<span class="agent-row-badge tdx-badge" title="Confidential session pod (Intel TDX, kata-qemu-tdx runtime)">&#x1F512; TDX</span>'
+    : '';
   return `
-    <div class="agent-row ${state} persistent" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status || 'Unknown')}">
-      <span class="agent-name">${escapeHtml(agent.name || agent.id)}<span class="agent-row-badge">long-lived${kind}</span></span>
+    <div class="agent-row ${state} persistent${isTdx ? ' tdx' : ''}" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status || 'Unknown')}">
+      <span class="agent-name">${escapeHtml(agent.name || agent.id)}${tdxBadge}<span class="agent-row-badge">long-lived${kind}</span></span>
       <span class="agent-cpu">persistent</span>
       <span class="agent-status">${escapeHtml(status)}</span>
     </div>
@@ -750,10 +901,15 @@ function applyIdle() {
   renderSystemA(null, 'idle');
   renderOffload(null, 'idle', false);
   setCrossArrow(false);
+  stopScenarioPhases('idle', 'Pick a scenario above &mdash; the diagram will animate as the run progresses.');
+  clearResultTiles();
   renderToolActivity([{ empty: true, label: 'Select a scenario to see the tool calls, API calls, and subagents it will use.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
   renderMetrics({ Model: '—', Route: '—', Tools: '—', Artifacts: '—' });
-  result.textContent = 'Waiting for scenario selection.';
+  // innerHTML so the placeholder copy can use <strong> for the CTA. Same
+  // string lives in index.html so first-load and reset look identical.
+  result.innerHTML =
+    'Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.';
   result.className = 'result empty-state';
   renderConsole(idleConsole);
 }
@@ -816,6 +972,41 @@ document.querySelectorAll('[data-scenario]').forEach((el) => {
 document.querySelector('[data-action="reset"]').addEventListener('click', () => {
   applyIdle();
 });
+
+// The Density card is a virtual scenario: it doesn't have an entry in
+// `scenarios` and doesn't go through `runLiveWalkthrough` (the offload-worker
+// allow-list would reject it). Instead it drives the existing multi-session
+// spawn pool with a small/system_a/20× preset and scrolls the viewer to the
+// architecture so the capacity bars are visible while sessions appear.
+document.querySelectorAll('[data-action="density"]').forEach((el) => {
+  el.addEventListener('click', () => {
+    runDensityPreset();
+  });
+});
+
+function runDensityPreset() {
+  // Open the multi-session details so the spawn table is on screen
+  // before we kick the batch off; the form is folded by default so the
+  // viewer doesn't see the configurator.
+  const details = document.querySelector('details.multi-session-details');
+  if (details) details.open = true;
+
+  // Pre-fill the form so the operator can see what's about to be spawned;
+  // also re-uses the existing validation and status-message paths.
+  if (multiSessionScenario) multiSessionScenario.value = 'terminal-agent';
+  if (multiSessionProfile) multiSessionProfile.value = 'small';
+  if (multiSessionTarget) multiSessionTarget.value = 'system_a';
+  if (multiSessionAgent) multiSessionAgent.value = '';
+  if (multiSessionCount) multiSessionCount.value = '20';
+
+  // Scroll the architecture into view first — that's where the visible
+  // capacity-fill happens. The session table is below; viewer naturally
+  // sees the whole story by scrolling down once.
+  const arch = document.getElementById('architecture');
+  if (arch) arch.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  spawnSessionBatch('terminal-agent', 'small', 20, 'system_a', '');
+}
 
 const scenarioCardsEl = document.getElementById('scenario-cards');
 const cardsNavButtons = document.querySelectorAll('[data-cards-scroll]');
@@ -891,6 +1082,7 @@ function runSimulatedWalkthrough(scenarioKey) {
   const scenario = scenarios[scenarioKey];
   if (!scenario) return;
   applyRunning(scenarioKey, { includeSubagentNow: false });
+  playScenarioPhases(scenarioKey);
   const phases = buildWalkthroughPhases(scenario);
   const phaseDurationMs = 1800;
   const route = scenario.metrics.Route || scenario.console.placement || '—';
@@ -930,6 +1122,8 @@ function runSimulatedWalkthrough(scenarioKey) {
     result.textContent = scenario.result;
     result.className = 'result';
     renderToolActivity(buildScenarioToolActivity(scenario, 'done'));
+    stopScenarioPhases('done', 'Run complete (simulated) &mdash; result rendered below.');
+    renderResultTiles(scenarioKey, null);
     restoreRunButton();
   }, totalDuration));
 }
@@ -945,6 +1139,7 @@ async function runLiveWalkthrough(scenarioKey) {
   const liveInput = `${liveScenario.task_type}:${(liveScenario.payload && liveScenario.payload.scenario) || scenarioKey}`;
 
   renderLiveAgentArchitecture(scenarioKey, 'running');
+  playScenarioPhases(scenarioKey);
 
   // Run the real demo scenario scripts described in k8s/system-b/offload-worker.yaml.
   // These are server-side allow-listed scripts (`task_type=shell` with a scenario
@@ -981,6 +1176,11 @@ async function runLiveWalkthrough(scenarioKey) {
   const finalizeLive = (state) => {
     if (!stillCurrent()) return;
     renderLiveAgentArchitecture(scenarioKey, state);
+    if (state === 'error') {
+      stopScenarioPhases('error', 'Live run failed &mdash; see log below.');
+    } else {
+      stopScenarioPhases('done', 'Run complete &mdash; result rendered below.');
+    }
     finish();
   };
   const appendLog = (line) => {
@@ -1110,6 +1310,17 @@ async function runLiveWalkthrough(scenarioKey) {
     'Job ID': submit.job_id
   });
   renderLiveAgentArchitecture(scenarioKey, succeeded ? 'done' : 'error');
+  if (succeeded) {
+    renderResultTiles(scenarioKey, submit.job_id);
+  } else {
+    clearResultTiles();
+  }
+  stopScenarioPhases(
+    succeeded ? 'done' : 'error',
+    succeeded
+      ? 'Run complete &mdash; result rendered below.'
+      : 'Run finished with errors &mdash; see stderr below.'
+  );
   result.textContent = renderLiveArtifact({
     scenarioKey,
     jobId: submit.job_id,
@@ -1698,7 +1909,7 @@ async function probeBackend() {
   runDemoBtn.title = liveBackendAvailable
     ? 'Live backend detected — runs the selected allow-listed scenario through /api/offload on System B.'
     : (cpHealthy && workerReady && !openclawOk
-        ? 'OpenClaw gateway unreachable — scenario runner is healthy, but agent commands are disabled.'
+        ? 'OpenClaw gateway unreachable — scenario runner is healthy, but direct tool calls are disabled.'
         : 'Backend not detected — runs scripted walkthrough only.');
 }
 

@@ -15,10 +15,7 @@ INPUT_TSV="/tmp/market-notes.tsv"
 RANKING_JSON="/tmp/market-ranking.json"
 REPORT="/tmp/market-research-analyst-note.md"
 
-narrate "[scenario] market-research"
-narrate "Starting market research demo"
-narrate "Flow: 1. frame the question 2. prepare structured analysis inputs 3. offload analysis to System B 4. collect findings 5. return a concise report"
-narrate "Scenario contract: route=offload_system_b; System A owns interaction/routing/result delivery; System B owns analytics execution"
+narrate_header "market-research" "Starting market research demo" "offload_system_b"
 
 narrate_blank
 narrate "[step 1/5] frame the question"
@@ -179,6 +176,7 @@ echo "+ test -s $REPORT"
 test -s "$REPORT"
 echo "+ grep -q 'Synthesized conclusion' $REPORT"
 grep -q 'Synthesized conclusion' "$REPORT"
+narrate_footer "market-research: PASS · top=$TOP_SEGMENT · segments_ranked=$SEGMENT_COUNT · report=$REPORT"
 cat <<JSON
 {"scenario":"market-research","route":"offload_system_b","system_a":"routing+delivery","system_b":"analytics aggregation","status":"ok","segments_ranked":$SEGMENT_COUNT,"top_segment":"$TOP_SEGMENT","report":"$REPORT","ranking":"$RANKING_JSON"}
 JSON

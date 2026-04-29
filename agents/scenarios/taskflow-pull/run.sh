@@ -13,14 +13,10 @@ TMP_SOURCE="$(mktemp -t taskflow-source.XXXXXX.json)"
 TMP_PICKED="$(mktemp -t taskflow-picked.XXXXXX.json)"
 trap 'rm -f "$TMP_SOURCE" "$TMP_PICKED"' EXIT
 
-narrate "[scenario] taskflow-pull"
-narrate "Starting TaskFlow scenario pull"
-narrate "Flow: 1. resolve source 2. fetch tasks 3. select by rules 4. execute action 5. validate 6. summarize"
-narrate "Scenario contract: route=local_standard; system owner=System A; pull-only"
-sleep 0.7
+narrate_header "taskflow-pull" "Starting TaskFlow scenario pull" "local_standard"
 
 narrate_blank
-narrate "[step 1/6] resolve TaskFlow source"
+narrate "[step 1/5] resolve TaskFlow source"
 SOURCE_KIND="fixture"
 SOURCE_REF="$FIXTURE"
 if [ -n "${TASKFLOW_API_URL:-}" ]; then
@@ -37,10 +33,9 @@ if [ "$SOURCE_KIND" = "fixture" ]; then
 fi
 echo "source_kind: $SOURCE_KIND"
 echo "source_ref:  $SOURCE_REF"
-sleep 0.7
 
 narrate_blank
-narrate "[step 2/6] inspect bounded task brief and fetch tasks"
+narrate "[step 2/5] inspect bounded task brief and fetch tasks"
 echo "+ sed -n '1,12p' task-brief.md"
 sed -n '1,12p' "$TASK_BRIEF"
 echo "+ python3 count tasks"
@@ -52,10 +47,9 @@ if not isinstance(tasks, list):
     raise SystemExit("source did not contain a tasks list")
 print(f"task_count: {len(tasks)}")
 PY
-sleep 0.7
 
 narrate_blank
-narrate "[step 3/6] apply selection rules and pick a task"
+narrate "[step 3/5] apply selection rules and pick a task"
 python3 - "$TMP_SOURCE" "$TMP_PICKED" <<'PY'
 import json, sys
 from datetime import date
@@ -88,10 +82,9 @@ print("picked: {id} | {priority} | {status} | {due} | {title}".format(
 PY
 PICKED_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$TMP_PICKED")"
 PICKED_ACTION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("demo_action","audit"))' "$TMP_PICKED")"
-sleep 0.7
 
 narrate_blank
-narrate "[step 4/6] render and execute the bounded action"
+narrate "[step 4/5] render and execute the bounded action"
 ARTIFACT="/tmp/taskflow-${PICKED_ID}.md"
 echo "action: $PICKED_ACTION"
 echo "artifact: $ARTIFACT"
@@ -146,20 +139,17 @@ else:
 out.write_text("\n".join(header + body) + "\n")
 print(f"wrote {out}")
 PY
-sleep 0.7
 
 narrate_blank
-narrate "[step 5/6] validate artifact"
+narrate "[step 5/5] validate artifact"
 echo "+ test -s $ARTIFACT"
 test -s "$ARTIFACT"
 echo "+ grep -Fq \"task ${PICKED_ID}\" $ARTIFACT"
 grep -Fq -- "task ${PICKED_ID}" "$ARTIFACT"
 echo "+ tail -n 20 $ARTIFACT"
 tail -n 20 "$ARTIFACT"
-sleep 0.7
 
-narrate_blank
-narrate "[step 6/6] summarize evidence"
+narrate_footer "taskflow-pull: PASS · task=$PICKED_ID · action=$PICKED_ACTION · source=$SOURCE_KIND"
 cat <<JSON
 {"scenario":"taskflow-pull","route":"local_standard","system_owner":"System A","source_kind":"$SOURCE_KIND","source_ref":"$SOURCE_REF","task_id":"$PICKED_ID","action":"$PICKED_ACTION","status":"ok","artifact":"$ARTIFACT"}
 JSON

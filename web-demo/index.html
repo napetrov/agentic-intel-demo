@@ -10,13 +10,15 @@
     <div class="shell">
       <aside class="rail">
         <div>
-          <div class="eyebrow">Xeon + OpenClaw + SambaNova</div>
-          <h1>Agentic Intelligence Demo</h1>
-          <p class="lede">A web demo that shows OpenClaw orchestration, LiteLLM model routing, SambaNova inference, and execution across System A and System B.</p>
+          <div class="eyebrow">Live demo</div>
+          <h1>Agentic Intel</h1>
+          <p class="lede">Run real agents on Intel CPUs. Pick a scenario on the right &mdash; watch a real shell run, a real artifact, real density.</p>
         </div>
-        <section class="status-card" aria-labelledby="platform-health-title">
-          <div class="section-title" id="platform-health-title">Platform health</div>
-          <p class="status-note">Component reachability. Run counts and route details live in the architecture panel.</p>
+        <details class="status-card status-card-details" aria-labelledby="platform-health-title">
+          <summary>
+            <span class="section-title" id="platform-health-title">Platform health</span>
+            <span class="status-note">Component reachability &mdash; click to expand.</span>
+          </summary>
           <div class="status-list" role="list">
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="openclaw"></span>OpenClaw orchestrator</div>
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="litellm"></span>LiteLLM gateway</div>
@@ -24,20 +26,43 @@
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemA"></span>System A (CWF / control-plane)</div>
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemB"></span>System B (GNR / offload-worker)</div>
           </div>
-        </section>
+        </details>
       </aside>
       <main class="main">
         <section class="hero">
-          <div>
+          <div class="hero-text">
             <div class="eyebrow">OpenClaw-powered demo portal</div>
-            <h2>Pick a scenario to watch the stack work</h2>
-            <p>Choose one of the scenarios below. OpenClaw coordinates the run, LiteLLM routes the model call, SambaNova performs inference, and the task executes on System A or System B — the walkthrough lights up each step.</p>
+            <h2 class="hero-thesis">Real agents on Intel CPUs &mdash; dense, model-routed, offloadable, no GPU.</h2>
+            <ul class="hero-bullets">
+              <li>
+                <a href="#architecture">
+                  <span class="bullet-num">1</span>
+                  <span class="bullet-text"><strong>Operator-managed lifecycle.</strong> System A owns control + state, System B is execution-only.</span>
+                </a>
+              </li>
+              <li>
+                <a href="#result-panel">
+                  <span class="bullet-num">2</span>
+                  <span class="bullet-text"><strong>Real artifacts, real offload.</strong> A &rarr; B runs pandas / sklearn and lands artifacts in MinIO.</span>
+                </a>
+              </li>
+              <li>
+                <a href="#density">
+                  <span class="bullet-num">3</span>
+                  <span class="bullet-text"><strong>Density at scale.</strong> Pack one CWF node with hundreds of agents; same curve scales to a 32-node rack.</span>
+                </a>
+              </li>
+            </ul>
           </div>
           <div class="hero-actions">
             <button class="primary" id="run-demo">Run demo</button>
             <button class="ghost" data-action="reset">Reset demo</button>
-            <a class="ghost" href="./service-views.html" role="button">Behind the scenes</a>
-            <a class="ghost" href="./scalability.html" role="button" title="One node to a full 32-node rack — density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
+            <span class="hero-deeplinks">
+              Deep dives:
+              <a href="./service-views.html">Behind the scenes</a>
+              <span aria-hidden="true">&middot;</span>
+              <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
+            </span>
           </div>
         </section>
 
@@ -45,30 +70,69 @@
           <button class="cards-nav cards-nav-prev" type="button" aria-label="Show previous scenarios" data-cards-scroll="prev">‹</button>
           <div class="cards" id="scenario-cards">
             <button class="scenario-card" data-scenario="terminal-agent">
-              <span class="tag">Demo scenario</span>
-              <span class="scenario-title">Terminal Agent</span>
-              <span class="scenario-desc">Live engineering task with OpenClaw orchestration on the primary CWF path.</span>
+              <span class="tag">1 &middot; Local task</span>
+              <span class="scenario-title">Terminal agent on System A</span>
+              <span class="scenario-desc">A real shell agent runs on a System A pod. ~25s, ~1 vCPU, real artifact.</span>
+              <span class="scenario-stats">
+                <span><strong>~25s</strong> wall</span>
+                <span><strong>1</strong> vCPU</span>
+                <span>System A</span>
+              </span>
             </button>
             <button class="scenario-card" data-scenario="market-research">
-              <span class="tag">Demo scenario</span>
-              <span class="scenario-title">Market Research</span>
-              <span class="scenario-desc">Research workflow with SambaNova-backed inference and GNR offload visibility.</span>
+              <span class="tag">2 &middot; Cross-system offload</span>
+              <span class="scenario-title">Market research, A&rarr;B</span>
+              <span class="scenario-desc">System A frames the question, System B runs pandas. Watch the cross-system arrow light up.</span>
+              <span class="scenario-stats">
+                <span><strong>~40s</strong> wall</span>
+                <span><strong>4+4</strong> vCPU</span>
+                <span>A &rarr; B</span>
+              </span>
             </button>
-            <button class="scenario-card" data-scenario="large-build-test">
-              <span class="tag">Demo scenario</span>
-              <span class="scenario-title">Large Build/Test</span>
-              <span class="scenario-desc">Heavy execution flow with routing, queueing, and handoff visibility across the stack.</span>
-            </button>
-            <button class="scenario-card" data-scenario="taskflow-pull">
-              <span class="tag">Demo scenario</span>
-              <span class="scenario-title">TaskFlow Pull</span>
-              <span class="scenario-desc">External-source extension: pull one task from the TaskFlow API (or shipped fixture), select by business rules, and run it bounded on System A.</span>
+            <button class="scenario-card scenario-card-density" data-action="density" type="button">
+              <span class="tag">3 &middot; Density</span>
+              <span class="scenario-title">Pack one CWF node</span>
+              <span class="scenario-desc">Spawn 20 small agents on a single System A node. Watch capacity fill, p95 hold.</span>
+              <span class="scenario-stats">
+                <span><strong>20</strong> agents</span>
+                <span><strong>~8s</strong> each</span>
+                <span>System A</span>
+              </span>
             </button>
           </div>
           <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
         </section>
 
-        <section class="architecture panel">
+        <details class="extensions-tray">
+          <summary>
+            <span class="ext-summary-title">More scenarios</span>
+            <span class="ext-summary-hint">Heavier and external-source variants &mdash; same machinery, different shape.</span>
+          </summary>
+          <div class="cards extensions-cards">
+            <button class="scenario-card scenario-card-ext" data-scenario="large-build-test">
+              <span class="tag tag-ext">Heavier profile</span>
+              <span class="scenario-title">Large build/test</span>
+              <span class="scenario-desc">compileall + unittest + sklearn train on a 16 vCPU System A pod. Same contract as Local task, larger profile.</span>
+              <span class="scenario-stats">
+                <span><strong>~60s</strong> wall</span>
+                <span><strong>16</strong> vCPU</span>
+                <span>System A</span>
+              </span>
+            </button>
+            <button class="scenario-card scenario-card-ext" data-scenario="taskflow-pull">
+              <span class="tag tag-ext">External source</span>
+              <span class="scenario-title">TaskFlow pull</span>
+              <span class="scenario-desc">Pull one task from the TaskFlow API (or shipped fixture), select by business rules, run bounded on System A.</span>
+              <span class="scenario-stats">
+                <span><strong>~30s</strong> wall</span>
+                <span><strong>1</strong> vCPU</span>
+                <span>System A</span>
+              </span>
+            </button>
+          </div>
+        </details>
+
+        <section class="architecture panel" id="architecture">
           <div class="panel-head panel-head-wrap">
             <div>
               <div class="section-title">Architecture</div>
@@ -79,6 +143,11 @@
             </div>
           </div>
 
+          <div class="arch-narration-strip" id="arch-narration" data-state="idle" aria-live="polite">
+            <span class="arch-narration-dot" aria-hidden="true"></span>
+            <span class="arch-narration-label" id="arch-narration-label">Pick a scenario above &mdash; the diagram will animate as the run progresses.</span>
+          </div>
+
           <div class="arch-band orchestration-band" aria-label="Orchestration and routing (shared)">
             <div class="band-title">Orchestration + Routing (shared)</div>
             <div class="band-row">
@@ -87,9 +156,9 @@
                   <span class="arch-label">OpenClaw</span>
                   <span class="arch-sub">primary orchestration</span>
                 </div>
-                <div class="arch-node arch-node-alt" data-node="flowise">
-                  <span class="arch-label">Flowise</span>
-                  <span class="arch-sub">optional alt orchestrator</span>
+                <div class="arch-node arch-node-alt" data-node="flowise" title="Flowise is supported as an opt-in authoring surface (docker compose --profile authoring up). Not on the default runtime path.">
+                  <span class="arch-label">Flowise <span class="arch-node-badge">opt-in</span></span>
+                  <span class="arch-sub">authoring only &mdash; not on runtime</span>
                 </div>
               </div>
               <div class="arch-arrow">→</div>
@@ -179,10 +248,11 @@
         </section>
 
         <section class="panel multi-session-panel" id="multi-session-panel" aria-labelledby="multi-session-title">
+          <a id="density" class="anchor-offset" aria-hidden="true"></a>
           <div class="panel-head panel-head-wrap">
             <div>
-              <div class="section-title" id="multi-session-title">Tasks (short-lived) — multi-agent fan-out</div>
-              <div class="section-subtitle">Spawn N concurrent tasks to load the system. In k8s each task is a Job; locally each is simulated. Tasks render in the architecture above and consume vCPU on the system where they start. Optionally pin each task to a long-lived agent (also shown in the architecture).</div>
+              <div class="section-title" id="multi-session-title">Density &mdash; pack a single CWF node</div>
+              <div class="section-subtitle">Spawn N concurrent tasks to load one Intel node. Each task renders in the architecture above and consumes vCPU on its assigned system. Click the <em>Density</em> scenario card to pre-fill the form with a 20&times; small / System&nbsp;A preset, or open <em>Configure spawn</em> below to customize. The table beneath updates every second while tasks are pending or running.</div>
             </div>
             <div class="panel-actions multi-session-actions">
               <span class="multi-session-backend" id="multi-session-backend" title="Backend reported by /api/sessions">backend: probing…</span>
@@ -191,6 +261,11 @@
               <button class="ghost small" id="multi-session-clear" type="button" title="Delete all sessions tracked here (local list only — does not affect other clients)">Clear list</button>
             </div>
           </div>
+          <details class="multi-session-details">
+            <summary>
+              <span class="ms-summary-title">Configure spawn</span>
+              <span class="ms-summary-hint">Scenario, profile, target system, agent, count &mdash; defaults match the Density card.</span>
+            </summary>
           <form id="multi-session-form" class="multi-session-form" autocomplete="off">
             <label for="multi-session-scenario" class="multi-session-label">Scenario</label>
             <select id="multi-session-scenario" class="multi-session-select">
@@ -228,6 +303,7 @@
             />
             <button type="submit" id="multi-session-spawn" class="primary">Spawn sessions</button>
           </form>
+          </details>
           <div id="multi-session-status" class="multi-session-status" role="status" aria-live="polite">
             Waiting for spawn. The session table updates every second while sessions are pending or running.
           </div>
@@ -301,20 +377,20 @@
         <section class="agent-console panel">
           <div class="panel-head">
             <div>
-              <div class="section-title">Agent command</div>
-              <div class="section-subtitle">Runs on System B through the agent-stub gateway</div>
+              <div class="section-title">Direct tool call</div>
+              <div class="section-subtitle">One-shot invocation through the System B agent-stub &mdash; not the scenario flow above</div>
             </div>
           </div>
-          <div class="panel-note">Path: web demo → System A control plane → System B offload-worker → System B agent-stub. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, or <code>read AGENTS.md</code>.</div>
+          <div class="panel-note">A single tool call (no agent loop, no scenario). Path: web demo &rarr; System A control plane &rarr; System B offload-worker &rarr; System B agent-stub. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, or <code>read AGENTS.md</code>.</div>
           <form id="agent-command-form" class="agent-command-form" autocomplete="off">
             <input
               id="agent-command-input"
               class="agent-command-input"
               type="text"
               placeholder="e.g. whoami   |   list .   |   read AGENTS.md"
-              aria-label="Agent command"
+              aria-label="Direct tool call command"
             />
-            <button type="submit" id="agent-command-submit" class="primary">Run agent command</button>
+            <button type="submit" id="agent-command-submit" class="primary">Run command</button>
           </form>
           <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
           <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the selected tool and result appear here.</pre>
@@ -328,7 +404,7 @@
                 <div class="section-subtitle">Watch the live backend result from System B</div>
               </div>
             </div>
-            <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Agent command panel.</div>
+            <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Direct tool call panel above.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -361,14 +437,21 @@
               </div>
             </div>
 
-            <div class="panel result-panel">
+            <div class="panel result-panel" id="result-panel">
               <div class="panel-head">
                 <div>
                   <div class="section-title">Result</div>
                   <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state" role="status" aria-live="polite">Waiting for scenario selection.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
+              <div class="result-tiles" id="result-tiles" hidden>
+                <a class="result-tile result-tile-artifact" id="result-tile-artifact" hidden href="#" target="_blank" rel="noopener">
+                  <div class="result-tile-label">Artifact</div>
+                  <div class="result-tile-value" id="result-tile-artifact-value">&mdash;</div>
+                  <div class="result-tile-hint" id="result-tile-artifact-hint">Open in MinIO console</div>
+                </a>
+              </div>
             </div>
 
             <div class="panel console-panel">
@@ -382,8 +465,7 @@
                 <div class="console-line"><span class="console-key">mode</span><span class="console-val">demo portal</span></div>
                 <div class="console-line"><span class="console-key">openclaw version</span><span class="console-val">2026.4.15</span></div>
                 <div class="console-line"><span class="console-key">orchestrator</span><span class="console-val">OpenClaw</span></div>
-                <div class="console-line"><span class="console-key">sambanova model</span><span class="console-val">DeepSeek-V3.1</span></div>
-                <div class="console-line"><span class="console-key">model route</span><span class="console-val">LiteLLM → SambaNova</span></div>
+                <div class="console-line"><span class="console-key">model route</span><span class="console-val">resolved per scenario</span></div>
                 <div class="console-line"><span class="console-key">session scope</span><span class="console-val">isolated per user</span></div>
                 <div class="console-line"><span class="console-key">current path</span><span class="console-val">waiting for scenario</span></div>
                 <div class="console-line"><span class="console-key">artifact view</span><span class="console-val">summary only</span></div>
