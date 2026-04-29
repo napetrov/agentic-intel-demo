@@ -1,11 +1,11 @@
 const SYSTEM_A_TOTAL_VCPU = 512;
 const SYSTEM_B_TOTAL_VCPU = 100;
 
-// Shown by the Agent command panel when the local stack isn't reachable.
+// Shown by the Direct tool call panel when the local stack isn't reachable.
 // Both call sites (form-submit guard + runAgentCommand defensive guard) use
 // the same copy so the wording can't drift as docs evolve.
 const BACKEND_REQUIRED_MSG =
-  'Control plane not reachable — agent commands are disabled.';
+  'Control plane not reachable — direct tool calls are disabled.';
 
 const scenarios = {
   'terminal-agent': {
@@ -937,7 +937,10 @@ function applyIdle() {
   renderToolActivity([{ empty: true, label: 'Select a scenario to see the tool calls, API calls, and subagents it will use.' }]);
   commandLogEl.textContent = 'Waiting for scenario selection.';
   renderMetrics({ Model: '—', Route: '—', Tools: '—', Artifacts: '—' });
-  result.textContent = 'Waiting for scenario selection.';
+  // innerHTML so the placeholder copy can use <strong> for the CTA. Same
+  // string lives in index.html so first-load and reset look identical.
+  result.innerHTML =
+    'Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus a reference economics tile and (for cross-system runs) a live MinIO console link to the produced artifact.';
   result.className = 'result empty-state';
   renderConsole(idleConsole);
 }
@@ -1937,7 +1940,7 @@ async function probeBackend() {
   runDemoBtn.title = liveBackendAvailable
     ? 'Live backend detected — runs the selected allow-listed scenario through /api/offload on System B.'
     : (cpHealthy && workerReady && !openclawOk
-        ? 'OpenClaw gateway unreachable — scenario runner is healthy, but agent commands are disabled.'
+        ? 'OpenClaw gateway unreachable — scenario runner is healthy, but direct tool calls are disabled.'
         : 'Backend not detected — runs scripted walkthrough only.');
 }
 

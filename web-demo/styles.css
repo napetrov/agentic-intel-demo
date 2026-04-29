@@ -44,6 +44,32 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .status-card { padding: 18px; }
 .status-note { margin: -4px 0 14px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.status-card-details {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+  padding: 12px 16px;
+}
+.status-card-details > summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+}
+.status-card-details > summary::-webkit-details-marker { display: none; }
+.status-card-details > summary .section-title {
+  margin-bottom: 0;
+}
+.status-card-details > summary::after {
+  content: "\25B8";
+  position: absolute;
+  right: 16px;
+  color: var(--cyan);
+}
+.status-card-details { position: relative; }
+.status-card-details[open] > summary::after { content: "\25BE"; }
+.status-card-details[open] .status-list { margin-top: 12px; }
+.status-card-details > summary .status-note { margin: 0; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--cyan); margin-bottom: 12px; }
 .status-list { display: grid; gap: 10px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; margin-right: 10px; background: #555; }
@@ -193,8 +219,22 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   background: rgba(255,255,255,.03);
 }
 .arch-node-alt {
-  opacity: .7;
+  opacity: .55;
   border-style: dashed;
+}
+.arch-node-alt:hover { opacity: .85; }
+.arch-node-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  background: rgba(255,193,92,.16);
+  color: #ffd28a;
+  vertical-align: middle;
 }
 .arch-label { display: block; font-weight: 700; }
 .arch-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }

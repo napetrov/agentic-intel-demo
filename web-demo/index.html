@@ -14,9 +14,11 @@
           <h1>Agentic Intel</h1>
           <p class="lede">Run real agents on Intel CPUs. Pick a scenario on the right &mdash; watch a real shell run, a real artifact, real density.</p>
         </div>
-        <section class="status-card" aria-labelledby="platform-health-title">
-          <div class="section-title" id="platform-health-title">Platform health</div>
-          <p class="status-note">Component reachability. Run counts and route details live in the architecture panel.</p>
+        <details class="status-card status-card-details" aria-labelledby="platform-health-title">
+          <summary>
+            <span class="section-title" id="platform-health-title">Platform health</span>
+            <span class="status-note">Component reachability &mdash; click to expand.</span>
+          </summary>
           <div class="status-list" role="list">
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="openclaw"></span>OpenClaw orchestrator</div>
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="litellm"></span>LiteLLM gateway</div>
@@ -24,7 +26,7 @@
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemA"></span>System A (CWF / control-plane)</div>
             <div role="listitem"><span class="dot warn" role="img" aria-label="probing" data-health="systemB"></span>System B (GNR / offload-worker)</div>
           </div>
-        </section>
+        </details>
       </aside>
       <main class="main">
         <section class="hero">
@@ -154,9 +156,9 @@
                   <span class="arch-label">OpenClaw</span>
                   <span class="arch-sub">primary orchestration</span>
                 </div>
-                <div class="arch-node arch-node-alt" data-node="flowise">
-                  <span class="arch-label">Flowise</span>
-                  <span class="arch-sub">optional alt orchestrator</span>
+                <div class="arch-node arch-node-alt" data-node="flowise" title="Flowise is supported as an opt-in authoring surface (docker compose --profile authoring up). Not on the default runtime path.">
+                  <span class="arch-label">Flowise <span class="arch-node-badge">opt-in</span></span>
+                  <span class="arch-sub">authoring only &mdash; not on runtime</span>
                 </div>
               </div>
               <div class="arch-arrow">→</div>
@@ -250,7 +252,7 @@
           <div class="panel-head panel-head-wrap">
             <div>
               <div class="section-title" id="multi-session-title">Density &mdash; pack a single CWF node</div>
-              <div class="section-subtitle">Spawn N concurrent tasks to load the system. Each task renders in the architecture above and consumes vCPU on its assigned system. The Density scenario card pre-fills this with a 20&times; small / System&nbsp;A preset.</div>
+              <div class="section-subtitle">Spawn N concurrent tasks to load one Intel node. Each task renders in the architecture above and consumes vCPU on its assigned system. Click the <em>Density</em> scenario card to pre-fill the form with a 20&times; small / System&nbsp;A preset, or open <em>Configure spawn</em> below to customize. The table beneath updates every second while tasks are pending or running.</div>
             </div>
             <div class="panel-actions multi-session-actions">
               <span class="multi-session-backend" id="multi-session-backend" title="Backend reported by /api/sessions">backend: probing…</span>
@@ -345,20 +347,20 @@
         <section class="agent-console panel">
           <div class="panel-head">
             <div>
-              <div class="section-title">Agent command</div>
-              <div class="section-subtitle">Runs on System B through the agent-stub gateway</div>
+              <div class="section-title">Direct tool call</div>
+              <div class="section-subtitle">One-shot invocation through the System B agent-stub &mdash; not the scenario flow above</div>
             </div>
           </div>
-          <div class="panel-note">Path: web demo → System A control plane → System B offload-worker → System B agent-stub. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, or <code>read AGENTS.md</code>.</div>
+          <div class="panel-note">A single tool call (no agent loop, no scenario). Path: web demo &rarr; System A control plane &rarr; System B offload-worker &rarr; System B agent-stub. Try <code>whoami</code>, <code>uname -a</code>, <code>list .</code>, or <code>read AGENTS.md</code>.</div>
           <form id="agent-command-form" class="agent-command-form" autocomplete="off">
             <input
               id="agent-command-input"
               class="agent-command-input"
               type="text"
               placeholder="e.g. whoami   |   list .   |   read AGENTS.md"
-              aria-label="Agent command"
+              aria-label="Direct tool call command"
             />
-            <button type="submit" id="agent-command-submit" class="primary">Run agent command</button>
+            <button type="submit" id="agent-command-submit" class="primary">Run command</button>
           </form>
           <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
           <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the selected tool and result appear here.</pre>
@@ -372,7 +374,7 @@
                 <div class="section-subtitle">Watch the live backend result from System B</div>
               </div>
             </div>
-            <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Agent command panel.</div>
+            <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Direct tool call panel above.</div>
             <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
           </div>
 
@@ -412,7 +414,7 @@
                   <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state" role="status" aria-live="polite">Waiting for scenario selection.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus a reference economics tile and (for cross-system runs) a live MinIO console link to the produced artifact.</div>
               <div class="result-tiles" id="result-tiles" hidden>
                 <a class="result-tile result-tile-artifact" id="result-tile-artifact" hidden href="#" target="_blank" rel="noopener">
                   <div class="result-tile-label">Artifact</div>
@@ -420,7 +422,7 @@
                   <div class="result-tile-hint" id="result-tile-artifact-hint">Open in MinIO console</div>
                 </a>
                 <div class="result-tile result-tile-economics" id="result-tile-economics" hidden>
-                  <div class="result-tile-label">Economics (synthetic)</div>
+                  <div class="result-tile-label">Economics (reference)</div>
                   <div class="result-tile-value" id="result-tile-economics-value">&mdash;</div>
                   <div class="result-tile-hint">
                     <a href="./scalability.html" id="result-tile-economics-link">See full model &rarr;</a>
