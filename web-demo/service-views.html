@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Service Views — Agentic Intel Demo (Mock)</title>
+    <title>Service Views — Agentic Intel Demo</title>
     <link rel="stylesheet" href="./styles.css" />
     <style>
       /* Page-local layout: stacked browser-window mocks. Kept inline so
@@ -268,9 +268,9 @@
       <a class="sv-back" href="./index.html">&larr; back to demo portal</a>
 
       <section class="sv-hero panel">
-        <div class="eyebrow">Behind the scenes (mock)</div>
-        <h2>Service interfaces beyond Telegram &amp; the portal</h2>
-        <p>Each card is a static mock of a real service we already run (or could opt-in). The point: when we tell the audience "the artifact landed in MinIO" or "LiteLLM routed this to vLLM", we can show the actual UI instead of describing it. None of the panels below are live — wire-up notes per section.</p>
+        <div class="eyebrow">Behind the scenes &mdash; deep dive on proof bullet #2</div>
+        <h2>Service interfaces beyond the portal</h2>
+        <p>This page expands the &ldquo;real artifacts, real offload&rdquo; bullet from the demo portal. Each card is a static reference of a service we run (MinIO, LiteLLM) or can opt into (Flowise, OpenWebUI). MinIO at <code>:9001</code> is live in Tier&nbsp;1 dev — open it during the Cross-system run to see the artifact appear. The other panels below are reference views to anchor what the audience would see if those services were exposed.</p>
       </section>
 
       <div class="sv-grid">
@@ -490,10 +490,13 @@
       </div>
 
       <p class="sv-section-blurb" style="margin-top:24px;">
-        These are static mocks. To make 1 &amp; 3 real, the only work is exposing the
-        existing endpoints and adding a small "open service" launcher button on
-        the portal. Flowise (2) and OpenWebUI (4) need new compose services
-        gated behind an opt-in profile.
+        Cards 1 &amp; 3 are reference views of services that already run; exposing
+        their UIs only requires opening the existing endpoints and adding a small
+        &ldquo;open service&rdquo; launcher on the portal. Flowise (2) and OpenWebUI (4)
+        require new compose services gated behind an opt-in profile.
+      </p>
+      <p class="sv-section-blurb" style="text-align:center;">
+        <a href="./index.html" class="sv-back" style="margin: 0;">&larr; back to demo portal</a>
       </p>
     </main>
   </body>

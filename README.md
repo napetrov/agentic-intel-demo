@@ -107,6 +107,6 @@ Full env vars, persistence, multi-agent fan-out, overlay setup, and the service-
 - Demo first, not platform first.
 - Start with the shortest end-to-end path; prefer explicit flows over hidden automation.
 - System A owns session state, routing policy, and user-visible status. System B is an execution backend, not a second control plane.
-- Guided Telegram UX is the default; freeform chat is explicit.
+- Guided web portal is the default audience-facing surface; Telegram remains a supported operator-driven alternative.
 - Keep inference, routing, and execution policies declarative.
 - Reuse OpenClaw, Kubernetes, LiteLLM, Terminal Bench, and an OpenAI-compatible local SLM where possible.
