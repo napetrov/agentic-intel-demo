@@ -2008,6 +2008,11 @@ const TERMINAL_STATUSES = new Set(['Completed', 'Failed']);
 // only cares about what's still in flight; the fold toggle lets them peek
 // at the history without scrolling past it on every refresh.
 let completedRowsCollapsed = true;
+// Active density runs can briefly produce dozens of Pending/Running rows.
+// Keep the panel usable by rendering a bounded preview by default, with
+// an explicit expand control when an operator needs the full table.
+const MAX_VISIBLE_ACTIVE_ROWS = 12;
+let activeRowsCollapsed = true;
 // Cached snapshot of whatever was last passed to renderMultiSessionRows.
 // Used by the fold toggle so flipping the collapse state can re-render
 // from cache without making a /api/sessions round-trip. Distinct from
@@ -2096,7 +2101,33 @@ function renderMultiSessionRows(records) {
     if (TERMINAL_STATUSES.has(rec.status)) terminalRecs.push(rec);
     else activeRecs.push(rec);
   }
-  const parts = activeRecs.map((rec) => renderSessionRowHtml(rec, now));
+  const visibleActiveRecs = activeRowsCollapsed && activeRecs.length > MAX_VISIBLE_ACTIVE_ROWS
+    ? activeRecs.slice(0, MAX_VISIBLE_ACTIVE_ROWS)
+    : activeRecs;
+  const parts = visibleActiveRecs.map((rec) => renderSessionRowHtml(rec, now));
+
+  if (activeRecs.length > MAX_VISIBLE_ACTIVE_ROWS) {
+    const collapsed = activeRowsCollapsed;
+    const hiddenCount = activeRecs.length - MAX_VISIBLE_ACTIVE_ROWS;
+    const toggleLabel = collapsed
+      ? `Showing ${MAX_VISIBLE_ACTIVE_ROWS} of ${activeRecs.length} active — show all`
+      : `Showing all ${activeRecs.length} active — collapse preview`;
+    const hint = collapsed
+      ? `${hiddenCount} more running/pending rows hidden to keep the interface compact`
+      : 'collapse to keep the density panel compact';
+    const caret = collapsed ? '▸' : '▾';
+    parts.push(`
+      <tr class="multi-session-fold-row" data-fold-toggle="active" aria-expanded="${collapsed ? 'false' : 'true'}">
+        <td colspan="9">
+          <button type="button" class="multi-session-fold-btn" data-fold-toggle="active" aria-expanded="${collapsed ? 'false' : 'true'}">
+            <span class="multi-session-fold-caret">${caret}</span>
+            ${escapeHtml(toggleLabel)}
+          </button>
+          <span class="multi-session-fold-hint">${escapeHtml(hint)}</span>
+        </td>
+      </tr>
+    `);
+  }
 
   if (terminalRecs.length) {
     const collapsed = completedRowsCollapsed;
@@ -2312,10 +2343,16 @@ if (multiSessionRows) {
     const target = ev.target;
     if (!(target instanceof HTMLElement)) return;
 
-    // Fold toggle for the "Completed" group. Flip the local flag and
+    // Fold toggles for active/completed groups. Flip the local flag and
     // re-render from the cached snapshot — no backend round-trip needed.
-    const foldEl = target.closest('[data-fold-toggle="completed"]');
-    if (foldEl) {
+    const foldEl = target.closest('[data-fold-toggle]');
+    const foldKind = foldEl ? foldEl.getAttribute('data-fold-toggle') : '';
+    if (foldKind === 'active') {
+      activeRowsCollapsed = !activeRowsCollapsed;
+      renderMultiSessionRows(lastRenderedRecords);
+      return;
+    }
+    if (foldKind === 'completed') {
       completedRowsCollapsed = !completedRowsCollapsed;
       renderMultiSessionRows(lastRenderedRecords);
       return;

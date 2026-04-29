@@ -44,6 +44,42 @@ test('each scenario card populates tool activity with at least 3 rows', async ({
   }
 });
 
+test('density session table renders a bounded active preview', async ({ page }) => {
+  const now = Math.floor(Date.now() / 1000);
+  await page.route('**/api/sessions', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      backend: 'test',
+      sessions: Array.from({ length: 30 }, (_, i) => ({
+        session_id: `density-${String(i + 1).padStart(2, '0')}`,
+        scenario: 'terminal-agent',
+        profile: 'small',
+        target_system: 'system_a',
+        agent_id: null,
+        status: 'Running',
+        pod_name: `density-pod-${i + 1}`,
+        created_at: now - i,
+      })),
+    }),
+  }));
+  await page.route('**/api/agents', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ agents: [] }),
+  }));
+
+  await page.goto(BASE_URL + '/');
+  await expect(page.locator('#multi-session-summary')).toContainText(/Tracked: 30/);
+  await expect(page.locator('#multi-session-rows tr').filter({ has: page.locator('td code') })).toHaveCount(12);
+  await expect(page.locator('button[data-fold-toggle="active"]')).toContainText(/Showing 12 of 30 active/i);
+  await expect(page.locator('#multi-session-rows')).not.toContainText(/density-30/);
+
+  await page.locator('button[data-fold-toggle="active"]').click();
+  await expect(page.locator('#multi-session-rows tr').filter({ has: page.locator('td code') })).toHaveCount(30);
+  await expect(page.locator('#multi-session-rows')).toContainText(/density-30/);
+});
+
 test('run walkthrough replays the selected scenario', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   await page.locator('[data-scenario="market-research"]').click();
