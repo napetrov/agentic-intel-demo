@@ -49,7 +49,7 @@
               <li>
                 <a href="#density">
                   <span class="bullet-num">3</span>
-                  <span class="bullet-text"><strong>Density that displaces API spend.</strong> Pack one CWF node with hundreds of agents.</span>
+                  <span class="bullet-text"><strong>Density at scale.</strong> Pack one CWF node with hundreds of agents; same curve scales to a 32-node rack.</span>
                 </a>
               </li>
             </ul>
@@ -61,7 +61,7 @@
               Deep dives:
               <a href="./service-views.html">Behind the scenes</a>
               <span aria-hidden="true">&middot;</span>
-              <a href="./scalability.html" title="One instance, many agents — density, throughput, and API spend displaced on synthetic data.">Scalability story</a>
+              <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
             </span>
           </div>
         </section>
@@ -344,6 +344,36 @@
           <p class="panel-note" id="services-empty" hidden>No optional services reachable. Start them with <code>docker compose --profile authoring up</code> (Flowise / OpenWebUI), or open MinIO directly at <code>:9001</code>.</p>
         </section>
 
+        <section class="panel flowise-chat-panel" id="flowise-chat-panel" hidden>
+          <div class="panel-head panel-head-wrap">
+            <div>
+              <div class="section-title">Flowise chat</div>
+              <div class="section-subtitle">Talk to a Flowise-authored flow against the same LiteLLM gateway</div>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost small" id="flowise-chat-reset" type="button" title="Forget the saved chatflow id and re-prompt">Change flow</button>
+            </div>
+          </div>
+          <p class="panel-note" id="flowise-chat-help">
+            Build the flow once via <code>config/flowise/flows/terminal-agent.md</code>, mark it
+            <strong>Make Chatflow Public</strong> in the chatflow settings, then paste its id below
+            (URL form: <code>http://localhost:3000/canvas/&lt;chatflow-id&gt;</code>). The id persists in
+            localStorage; append <code>?chatflowId=&lt;id&gt;</code> to the demo URL to override.
+          </p>
+          <form id="flowise-chat-config-form" class="agent-command-form" autocomplete="off">
+            <input
+              id="flowise-chat-id-input"
+              class="agent-command-input"
+              type="text"
+              placeholder="Flowise chatflow id, e.g. 5b1f1e7c-…"
+              aria-label="Flowise chatflow id"
+            />
+            <button type="submit" class="primary">Load chat</button>
+          </form>
+          <div id="flowise-chat-status" class="agent-command-status" role="status" aria-live="polite"></div>
+          <div id="flowise-chat-mount" class="flowise-chat-mount" aria-label="Flowise chatbot"></div>
+        </section>
+
         <section class="agent-console panel">
           <div class="panel-head">
             <div>
@@ -414,20 +444,13 @@
                   <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus a reference economics tile and (for cross-system runs) a live MinIO console link to the produced artifact.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
               <div class="result-tiles" id="result-tiles" hidden>
                 <a class="result-tile result-tile-artifact" id="result-tile-artifact" hidden href="#" target="_blank" rel="noopener">
                   <div class="result-tile-label">Artifact</div>
                   <div class="result-tile-value" id="result-tile-artifact-value">&mdash;</div>
                   <div class="result-tile-hint" id="result-tile-artifact-hint">Open in MinIO console</div>
                 </a>
-                <div class="result-tile result-tile-economics" id="result-tile-economics" hidden>
-                  <div class="result-tile-label">Economics (reference)</div>
-                  <div class="result-tile-value" id="result-tile-economics-value">&mdash;</div>
-                  <div class="result-tile-hint">
-                    <a href="./scalability.html" id="result-tile-economics-link">See full model &rarr;</a>
-                  </div>
-                </div>
               </div>
             </div>
 

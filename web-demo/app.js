@@ -549,53 +549,17 @@ function stopScenarioPhases(finalState, finalLabel) {
   }
 }
 
-// ---- T5: result tiles (artifact link + economics) ---------------------
-// Synthetic comparators sourced from web-demo/scalability-data.json. Kept
-// inline so the result panel doesn't have to fetch the JSON on every
-// run; if the numbers there change, this map should track them.
-const SCENARIO_ECONOMICS = {
-  'terminal-agent':   { tokens: 2300,  comparator: 'small',    label: 'Frontier API (Haiku-class)' },
-  'market-research':  { tokens: 15000, comparator: 'research', label: 'Frontier API (research-class)' },
-  'large-build-test': { tokens: 4960,  comparator: 'research', label: 'Frontier API (research-class)' },
-  'taskflow-pull':    { tokens: 1840,  comparator: 'small',    label: 'Frontier API (Haiku-class)' },
-};
-const COMPARATOR_USD_PER_1K = {
-  small:    4.40,   // frontier-api-small
-  research: 24.00,  // frontier-api-research
-};
-const TASKS_PER_DAY_BENCHMARK = 1000;
-
+// ---- T5: result tiles (artifact link only) ----------------------------
+// The earlier version of this also rendered a $/task vs frontier-API
+// economics tile; that was dropped to align with the scalability-page
+// decision (schema v3) to keep the demo purely about compute and not
+// ship an apples-to-oranges $ comparison against owned hardware.
 function renderResultTiles(scenarioKey, jobId) {
   const tilesEl = document.getElementById('result-tiles');
   const artifactEl = document.getElementById('result-tile-artifact');
   const artifactValueEl = document.getElementById('result-tile-artifact-value');
   const artifactHintEl = document.getElementById('result-tile-artifact-hint');
-  const economicsEl = document.getElementById('result-tile-economics');
-  const economicsValueEl = document.getElementById('result-tile-economics-value');
-  const economicsLinkEl = document.getElementById('result-tile-economics-link');
   if (!tilesEl) return;
-
-  // Economics — every scenario gets a tile.
-  const econ = SCENARIO_ECONOMICS[scenarioKey];
-  if (econ && economicsEl) {
-    const usdPer1k = COMPARATOR_USD_PER_1K[econ.comparator] || 0;
-    const dailyUsd = (TASKS_PER_DAY_BENCHMARK / 1000) * usdPer1k;
-    const perTaskCents = (usdPer1k / 1000) * 100;
-    economicsValueEl.innerHTML =
-      `1 task &asymp; <strong>${econ.tokens.toLocaleString('en-US')}</strong> tokens, ` +
-      `~&cent;${perTaskCents.toFixed(2)} on ${econ.label}.<br>` +
-      `${TASKS_PER_DAY_BENCHMARK.toLocaleString('en-US')} runs/day &rarr; ` +
-      `<strong>$${dailyUsd.toFixed(2)}</strong> displaced.`;
-    if (economicsLinkEl) {
-      economicsLinkEl.href =
-        econ.comparator === 'research'
-          ? './scalability.html#gnr-research-volume'
-          : './scalability.html#xeon-small-density';
-    }
-    economicsEl.hidden = false;
-  } else if (economicsEl) {
-    economicsEl.hidden = true;
-  }
 
   // Artifact link — only market-research has a real MinIO bucket on the
   // shipped path. The other scenarios write artifacts under /tmp inside
@@ -607,6 +571,7 @@ function renderResultTiles(scenarioKey, jobId) {
     location.hostname === '127.0.0.1' ||
     location.hostname === 'localhost' ||
     location.hostname === '';
+  let artifactShown = false;
   if (artifactEl) {
     if (scenarioKey === 'market-research' && jobId && isLocalHost) {
       const minioUrl = `http://127.0.0.1:9001/browser/demo-artifacts/${encodeURIComponent(jobId)}/`;
@@ -614,12 +579,16 @@ function renderResultTiles(scenarioKey, jobId) {
       artifactValueEl.textContent = `demo-artifacts/${jobId}/`;
       artifactHintEl.textContent = 'Open in MinIO console (Tier 1 dev: :9001)';
       artifactEl.hidden = false;
+      artifactShown = true;
     } else {
       artifactEl.hidden = true;
     }
   }
 
-  tilesEl.hidden = false;
+  // Hide the whole tiles row when nothing's worth showing — avoids an
+  // empty 1px container under the result text on scenarios that don't
+  // surface an artifact.
+  tilesEl.hidden = !artifactShown;
 }
 
 function clearResultTiles() {
@@ -940,7 +909,7 @@ function applyIdle() {
   // innerHTML so the placeholder copy can use <strong> for the CTA. Same
   // string lives in index.html so first-load and reset look identical.
   result.innerHTML =
-    'Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus a reference economics tile and (for cross-system runs) a live MinIO console link to the produced artifact.';
+    'Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.';
   result.className = 'result empty-state';
   renderConsole(idleConsole);
 }
@@ -2530,3 +2499,166 @@ if (resetBtn) {
 
 renderServiceLaunchers();
 setInterval(renderServiceLaunchers, 30_000);
+
+// ---------- Flowise chat embed ----------
+//
+// Wires the Flowise chatbot widget (flowise-embed) into the demo page so the
+// presenter can chat against a flow without leaving the demo. Two layers of
+// "off":
+//   1. compose `profiles: [authoring]` — Flowise is not started; probe
+//      fails and the panel stays hidden.
+//   2. user has not configured a chatflow id yet — the panel is visible
+//      with the input form but no chatbot rendered.
+//
+// Chatflow id sources (first hit wins):
+//   - URL param `?chatflowId=<id>` (per-session override)
+//   - localStorage key `flowiseChatflowId` (persistent)
+//   - manual paste via the input in the panel
+//
+// The flow must be marked "Make Chatflow Public" in Flowise so that
+// /api/v1/prediction/<id> answers without an API key. CORS on the Flowise
+// container must include this page's origin (set CORS_ORIGINS in
+// docker-compose.flowise.yaml).
+const FLOWISE_CHAT_BASE_URL = 'http://127.0.0.1:3000';
+const FLOWISE_CHAT_EMBED_URL =
+  'https://cdn.jsdelivr.net/npm/flowise-embed/dist/web.js';
+const FLOWISE_CHAT_ID_KEY = 'flowiseChatflowId';
+
+let flowiseChatRendered = false;
+let flowiseEmbedModulePromise = null;
+
+function getFlowiseChatflowId() {
+  const fromUrl = new URLSearchParams(window.location.search).get('chatflowId');
+  if (fromUrl) return fromUrl.trim();
+  try {
+    return (localStorage.getItem(FLOWISE_CHAT_ID_KEY) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function setFlowiseChatStatus(message, kind) {
+  const el = document.getElementById('flowise-chat-status');
+  if (!el) return;
+  el.textContent = message || '';
+  if (kind) el.dataset.kind = kind;
+  else delete el.dataset.kind;
+}
+
+async function loadFlowiseEmbedModule() {
+  if (!flowiseEmbedModulePromise) {
+    flowiseEmbedModulePromise = import(/* @vite-ignore */ FLOWISE_CHAT_EMBED_URL).catch((err) => {
+      flowiseEmbedModulePromise = null;
+      throw err;
+    });
+  }
+  return flowiseEmbedModulePromise;
+}
+
+async function mountFlowiseChat(chatflowId) {
+  const mount = document.getElementById('flowise-chat-mount');
+  if (!mount) return;
+  mount.innerHTML = '';
+  flowiseChatRendered = false;
+
+  setFlowiseChatStatus('Loading chat widget…', 'pending');
+  let mod;
+  try {
+    mod = await loadFlowiseEmbedModule();
+  } catch (_) {
+    setFlowiseChatStatus(
+      'Could not load flowise-embed from CDN. Check network or self-host the bundle.',
+      'error'
+    );
+    return;
+  }
+
+  const Chatbot = mod && (mod.default || mod.Chatbot);
+  if (!Chatbot || typeof Chatbot.initFull !== 'function') {
+    setFlowiseChatStatus('flowise-embed module did not expose initFull().', 'error');
+    return;
+  }
+
+  // initFull renders the chat into the host element rather than as a
+  // floating bubble. Theme keeps the widget legible against the dark panel.
+  try {
+    Chatbot.initFull({
+      chatflowid: chatflowId,
+      apiHost: FLOWISE_CHAT_BASE_URL,
+      hostElement: mount,
+      theme: {
+        chatWindow: {
+          backgroundColor: 'transparent',
+          height: 520,
+          fontSize: 14,
+          welcomeMessage: 'Ask the Flowise-authored agent something.',
+          textInput: { placeholder: 'Type a message and hit Enter' }
+        }
+      }
+    });
+    flowiseChatRendered = true;
+    setFlowiseChatStatus(`Chatflow ${chatflowId.slice(0, 8)}… loaded.`, 'ok');
+  } catch (err) {
+    setFlowiseChatStatus(`Failed to init chat widget: ${err && err.message ? err.message : err}`, 'error');
+  }
+}
+
+async function renderFlowiseChat() {
+  const panel = document.getElementById('flowise-chat-panel');
+  const input = document.getElementById('flowise-chat-id-input');
+  const form = document.getElementById('flowise-chat-config-form');
+  const resetBtn = document.getElementById('flowise-chat-reset');
+  const mount = document.getElementById('flowise-chat-mount');
+  if (!panel || !form || !input || !mount) return;
+
+  const reachable = await probeService(`${FLOWISE_CHAT_BASE_URL}/api/v1/ping`);
+  if (!reachable) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+
+  if (!form.dataset.bound) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = input.value.trim();
+      if (!id) {
+        setFlowiseChatStatus('Paste a chatflow id first.', 'warn');
+        return;
+      }
+      try { localStorage.setItem(FLOWISE_CHAT_ID_KEY, id); } catch (_) {}
+      mountFlowiseChat(id);
+    });
+    form.dataset.bound = '1';
+  }
+
+  if (resetBtn && !resetBtn.dataset.bound) {
+    resetBtn.addEventListener('click', () => {
+      try { localStorage.removeItem(FLOWISE_CHAT_ID_KEY); } catch (_) {}
+      input.value = '';
+      mount.innerHTML = '';
+      flowiseChatRendered = false;
+      flowiseEmbedModulePromise = null;
+      setFlowiseChatStatus('Cleared. Paste a new chatflow id to reload.', 'warn');
+    });
+    resetBtn.dataset.bound = '1';
+  }
+
+  const chatflowId = getFlowiseChatflowId();
+  if (chatflowId) {
+    if (!input.value) input.value = chatflowId;
+    if (!flowiseChatRendered) mountFlowiseChat(chatflowId);
+  } else if (!flowiseChatRendered) {
+    setFlowiseChatStatus(
+      'No chatflow id saved yet — paste one to load the chat.',
+      'warn'
+    );
+  }
+}
+
+renderFlowiseChat();
+// Re-probe alongside the services panel so the chat appears once Flowise
+// finishes booting without requiring a hard reload.
+setInterval(() => {
+  if (!flowiseChatRendered) renderFlowiseChat();
+}, 30_000);

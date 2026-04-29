@@ -1,36 +1,67 @@
 {
-  "schema_version": "2",
-  "_about": "Mock numbers for the 'Scalability story' page (web-demo/scalability.html). All values are synthetic and editable in one place: changing a number here rewrites every tile and re-shapes the chart on the page automatically. See web-demo/scalability.js for derived-value formulas. Schema v2: on-prem framing — instances no longer carry an hourly $ rate; economics are expressed as 'API cost avoided per day' against a Frontier-API comparator.",
-  "comparators": [
-    {
-      "id": "frontier-api-small",
-      "label": "Frontier LLM API (per-call)",
-      "cost_per_1k_tasks_usd": 4.40,
-      "notes": "Synthetic: 1500 input + 800 output tokens at a typical $1 / $3 per 1M token rate (~Haiku-class pricing). Does not include orchestration, retries, or egress."
-    },
-    {
-      "id": "frontier-api-research",
-      "label": "Frontier LLM API (research-class)",
-      "cost_per_1k_tasks_usd": 24.00,
-      "notes": "Synthetic: ~12k input + 3k output tokens per research task at premium model pricing. Excludes vector store and retrieval costs."
-    }
-  ],
+  "schema_version": "3",
+  "_about": "Mock numbers for the 'Scalability story' page (web-demo/scalability.html). All values are synthetic and editable in one place: changing a number here rewrites every tile and re-shapes the chart on the page automatically. See web-demo/scalability.js for derived-value formulas. Schema v3: drop the cloud-cost comparator framing — the page is purely about compute (density, throughput, daily volume, tokens) and intentionally does not compare against a frontier-API $/task rate.",
   "instances": [
     {
       "id": "xeon-cwf-dual",
       "label": "Intel Xeon CWF",
-      "subtitle": "576 vCPU · 1536 GB",
+      "subtitle": "1 node · 576 vCPU · 1536 GB",
       "vcpu": 576,
       "memory_gb": 1536,
-      "notes": "Dual-socket Clearwater Forest reference: 288 E-cores per socket, ~3 GB / core. Owned hardware — no cloud hourly rate; capital and power costs are out of scope for this page."
+      "nodes_per_rack": 1,
+      "composition": [
+        { "count": 1, "model": "Intel Xeon CWF (dual-socket)", "vcpu_per_node": 576, "memory_gb_per_node": 1536 }
+      ],
+      "notes": "Dual-socket Clearwater Forest reference: 288 E-cores per socket, ~3 GB / core."
     },
     {
       "id": "gnr-dual",
       "label": "Intel GNR",
-      "subtitle": "256 vCPU · 1024 GB",
+      "subtitle": "1 node · 256 vCPU · 1024 GB",
       "vcpu": 256,
       "memory_gb": 1024,
-      "notes": "Dual-socket Granite Rapids reference: 128 P-cores per socket, ~4 GB / core. AMX accelerates the SLM offload path. Owned hardware — no cloud hourly rate."
+      "nodes_per_rack": 1,
+      "composition": [
+        { "count": 1, "model": "Intel GNR (dual-socket)", "vcpu_per_node": 256, "memory_gb_per_node": 1024 }
+      ],
+      "notes": "Dual-socket Granite Rapids reference: 128 P-cores per socket, ~4 GB / core. AMX accelerates the SLM offload path."
+    },
+    {
+      "id": "xeon-cwf-rack-32",
+      "label": "Intel Xeon CWF rack",
+      "subtitle": "32 nodes · 18,432 vCPU · 49,152 GB",
+      "vcpu": 18432,
+      "memory_gb": 49152,
+      "nodes_per_rack": 32,
+      "composition": [
+        { "count": 32, "model": "Intel Xeon CWF (dual-socket)", "vcpu_per_node": 576, "memory_gb_per_node": 1536 }
+      ],
+      "notes": "42U rack populated with 32× 1U dual-socket Clearwater Forest nodes (remaining U is leaf switches and PDUs). Per-node sizing identical to the single-node row. Linear scale-out assumes the front-door router fans agent sessions across nodes; cross-node coordination cost is folded into the queueing curve."
+    },
+    {
+      "id": "gnr-rack-32",
+      "label": "Intel GNR rack",
+      "subtitle": "32 nodes · 8,192 vCPU · 32,768 GB",
+      "vcpu": 8192,
+      "memory_gb": 32768,
+      "nodes_per_rack": 32,
+      "composition": [
+        { "count": 32, "model": "Intel GNR (dual-socket)", "vcpu_per_node": 256, "memory_gb_per_node": 1024 }
+      ],
+      "notes": "42U rack populated with 32× 1U dual-socket Granite Rapids nodes. AMX accelerates per-node SLM throughput; vLLM is sharded by node, not across nodes. Same per-node curve as the single-node GNR row, fanned across 32 nodes by the LiteLLM/router layer."
+    },
+    {
+      "id": "mixed-rack-cwf-half",
+      "label": "Mixed rack — agent half (CWF)",
+      "subtitle": "16× CWF agent half · 16× GNR offload half",
+      "vcpu": 9216,
+      "memory_gb": 24576,
+      "nodes_per_rack": 32,
+      "composition": [
+        { "count": 16, "model": "Intel Xeon CWF (dual-socket) — agent host", "vcpu_per_node": 576, "memory_gb_per_node": 1536 },
+        { "count": 16, "model": "Intel GNR (dual-socket) — SLM + offload", "vcpu_per_node": 256, "memory_gb_per_node": 1024 }
+      ],
+      "notes": "Mixed-SKU rack: CWF half hosts agent session pods (high core count, low per-core memory); GNR half hosts vLLM and the analytics offload workers (AMX-accelerated). The density tile reflects only the CWF agent half — the 16 GNR nodes do not host agents, they absorb the offloaded inference and analytics load. Total rack capacity (CWF + GNR) is shown by the rack-capacity tile."
     }
   ],
   "workloads": [
@@ -60,8 +91,8 @@
   "scenarios": [
     {
       "id": "xeon-small-density",
-      "label": "Xeon CWF · small agents",
-      "story": "How dense a single dual-socket CWF node gets when packed with light terminal agents — and how much frontier-API spend that displaces.",
+      "label": "Xeon CWF · 1 node · small agents",
+      "story": "How dense a single dual-socket CWF node gets when packed with light terminal agents.",
       "instance_id": "xeon-cwf-dual",
       "workload_id": "small-terminal-agent",
       "scaling": {
@@ -74,24 +105,19 @@
           { "concurrency": 900, "p50_s": 20.0, "p95_s": 38.0, "throughput_per_min": 4320, "utilization_pct": 100 }
         ]
       },
-      "economics": {
-        "comparator_id": "frontier-api-small"
-      },
       "tiles": [
         "density",
         "throughput",
         "sweet_spot",
         "daily_volume",
         "tokens_per_day",
-        "api_cost_avoided",
-        "marginal_cost",
         "human_equivalent"
       ]
     },
     {
       "id": "gnr-research-volume",
-      "label": "GNR · research workload",
-      "story": "Heavier research agents on a GNR node with multi-call inference and offload — same density story, different price-point.",
+      "label": "GNR · 1 node · research workload",
+      "story": "Heavier research agents on a GNR node with multi-call inference and offload — same density story, different per-task profile.",
       "instance_id": "gnr-dual",
       "workload_id": "medium-research",
       "scaling": {
@@ -104,19 +130,128 @@
           { "concurrency": 100, "p50_s": 85.0, "p95_s": 160.0, "throughput_per_min": 85.3, "utilization_pct": 100 }
         ]
       },
-      "economics": {
-        "comparator_id": "frontier-api-research"
-      },
       "tiles": [
         "density",
         "throughput",
         "sweet_spot",
         "daily_volume",
         "tokens_per_day",
-        "api_cost_avoided",
-        "marginal_cost",
+        "human_equivalent"
+      ]
+    },
+    {
+      "id": "xeon-cwf-rack-density",
+      "label": "Xeon CWF rack · 32 nodes · small agents",
+      "story": "Linear scale-out of the per-node story. A full 42U rack of dual-socket CWF nodes packs ~18k concurrent terminal agents and shifts the daily volume / tokens tiles by the same node multiplier.",
+      "instance_id": "xeon-cwf-rack-32",
+      "workload_id": "small-terminal-agent",
+      "scaling": {
+        "model": "queueing",
+        "datapoints": [
+          { "concurrency":  3200, "p50_s":  8.0, "p95_s": 10.0, "throughput_per_min":  24000, "utilization_pct":  17 },
+          { "concurrency":  9600, "p50_s":  8.0, "p95_s": 12.0, "throughput_per_min":  72000, "utilization_pct":  52 },
+          { "concurrency": 14720, "p50_s":  8.5, "p95_s": 14.0, "throughput_per_min": 110400, "utilization_pct":  80 },
+          { "concurrency": 18432, "p50_s": 11.0, "p95_s": 22.0, "throughput_per_min": 138240, "utilization_pct": 100 },
+          { "concurrency": 28800, "p50_s": 20.0, "p95_s": 38.0, "throughput_per_min": 138240, "utilization_pct": 100 }
+        ]
+      },
+      "tiles": [
+        "rack_capacity",
+        "density",
+        "throughput",
+        "sweet_spot",
+        "daily_volume",
+        "tokens_per_day",
+        "human_equivalent"
+      ]
+    },
+    {
+      "id": "gnr-rack-research",
+      "label": "GNR rack · 32 nodes · research workload",
+      "story": "Same research workload as the single-node row, fanned across a full GNR rack. Each node serves its own vLLM + offload stack; LiteLLM / the front-door router handles routing.",
+      "instance_id": "gnr-rack-32",
+      "workload_id": "medium-research",
+      "scaling": {
+        "model": "queueing",
+        "datapoints": [
+          { "concurrency":  320, "p50_s": 45.0, "p95_s":  52.0, "throughput_per_min":  425.6, "utilization_pct":  16 },
+          { "concurrency":  960, "p50_s": 46.0, "p95_s":  60.0, "throughput_per_min": 1280.0, "utilization_pct":  47 },
+          { "concurrency": 1600, "p50_s": 48.0, "p95_s":  78.0, "throughput_per_min": 2134.4, "utilization_pct":  78 },
+          { "concurrency": 2048, "p50_s": 58.0, "p95_s": 115.0, "throughput_per_min": 2729.6, "utilization_pct": 100 },
+          { "concurrency": 3200, "p50_s": 85.0, "p95_s": 160.0, "throughput_per_min": 2729.6, "utilization_pct": 100 }
+        ]
+      },
+      "tiles": [
+        "rack_capacity",
+        "density",
+        "throughput",
+        "sweet_spot",
+        "daily_volume",
+        "tokens_per_day",
+        "human_equivalent"
+      ]
+    },
+    {
+      "id": "mixed-rack-blend",
+      "label": "Mixed rack · 16× CWF agent + 16× GNR offload",
+      "story": "Half of the rack runs agent session pods on CWF (high core count); the other half runs the SLM and analytics offload on GNR (AMX-accelerated). The density numbers below are for the CWF agent half — see the rack-capacity tile for the full 32-node footprint.",
+      "instance_id": "mixed-rack-cwf-half",
+      "workload_id": "small-terminal-agent",
+      "scaling": {
+        "model": "queueing",
+        "datapoints": [
+          { "concurrency":  1600, "p50_s":  8.0, "p95_s": 10.0, "throughput_per_min": 12000, "utilization_pct":  17 },
+          { "concurrency":  4800, "p50_s":  8.0, "p95_s": 12.0, "throughput_per_min": 36000, "utilization_pct":  52 },
+          { "concurrency":  7360, "p50_s":  8.5, "p95_s": 14.0, "throughput_per_min": 55200, "utilization_pct":  80 },
+          { "concurrency":  9216, "p50_s": 11.0, "p95_s": 22.0, "throughput_per_min": 69120, "utilization_pct": 100 },
+          { "concurrency": 14400, "p50_s": 20.0, "p95_s": 38.0, "throughput_per_min": 69120, "utilization_pct": 100 }
+        ]
+      },
+      "tiles": [
+        "rack_capacity",
+        "density",
+        "throughput",
+        "sweet_spot",
+        "daily_volume",
+        "tokens_per_day",
         "human_equivalent"
       ]
     }
-  ]
+  ],
+  "rack_builder": {
+    "_about": "Interactive rack composer. Each node_type carries a baseline_scenario_id pointing at one of the per-node scenarios above; the builder reads sweet-spot concurrency / throughput from that baseline and multiplies by node count to project rack-scale numbers live as the user adds or removes nodes. Keeping the baseline in scenarios[] (instead of duplicating numbers here) means edits to a single-node curve automatically reshape the builder.",
+    "rack_units_total": 42,
+    "rack_units_fixture": 4,
+    "rack_units_fixture_top": 2,
+    "max_total_nodes": 38,
+    "default_total_summary": "16× CWF + 16× GNR — the shipped 'mixed rack' baseline.",
+    "node_types": [
+      {
+        "id": "cwf",
+        "label": "Intel Xeon CWF",
+        "short_label": "CWF",
+        "subtitle": "agent host (1U)",
+        "vcpu_per_node": 576,
+        "memory_gb_per_node": 1536,
+        "default_count": 16,
+        "max_count": 32,
+        "baseline_scenario_id": "xeon-small-density",
+        "swatch_class": "sc-rack-u-cwf",
+        "notes": "Hosts agent session pods. Scales out by 1 vCPU / 2 GB per agent."
+      },
+      {
+        "id": "gnr",
+        "label": "Intel GNR",
+        "short_label": "GNR",
+        "subtitle": "SLM + offload (1U)",
+        "vcpu_per_node": 256,
+        "memory_gb_per_node": 1024,
+        "default_count": 16,
+        "max_count": 32,
+        "baseline_scenario_id": "gnr-research-volume",
+        "swatch_class": "sc-rack-u-gnr",
+        "notes": "Hosts vLLM and the research / analytics offload workers. AMX-accelerated."
+      }
+    ]
+  }
 }

@@ -138,7 +138,6 @@
       }
       .sc-tile.sc-accent .sc-tile-value { color: var(--cyan); }
       .sc-tile.sc-accent-warm .sc-tile-value { color: var(--yellow); }
-      .sc-tile.sc-accent-good .sc-tile-value { color: var(--green); }
 
       .sc-chart-panel {
         padding: 22px;
@@ -230,6 +229,128 @@
         border-radius: 16px;
       }
 
+      /* Rack builder — interactive composer. Two side-by-side panes:
+         the rack visualization (left) and the controls (right). Tiles
+         live in the existing .sc-tiles grid below for visual symmetry
+         with the per-scenario tile row. */
+      .sc-builder-panel { padding: 22px; margin-bottom: 22px; }
+      .sc-builder-grid {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 24px;
+        margin-top: 14px;
+        margin-bottom: 18px;
+        align-items: stretch;
+      }
+      .sc-builder-rack {
+        display: grid;
+        grid-template-rows: repeat(42, 1fr);
+        gap: 1px;
+        height: 480px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 4px;
+        background: rgba(14, 31, 55, 0.5);
+        position: relative;
+      }
+      .sc-rack-u {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 2px;
+        font-size: 9px;
+        line-height: 1;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        letter-spacing: 0.04em;
+      }
+      .sc-rack-u-fixture {
+        background: rgba(165, 197, 255, 0.06);
+        color: #6f86a7;
+      }
+      .sc-rack-u-cwf {
+        background: rgba(69, 226, 213, 0.45);
+        color: #0e1f37;
+        font-weight: 700;
+      }
+      .sc-rack-u-gnr {
+        background: rgba(255, 142, 93, 0.45);
+        color: #0e1f37;
+        font-weight: 700;
+      }
+      .sc-builder-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .sc-builder-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .sc-builder-row-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sc-builder-row-label {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .sc-builder-row-sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .sc-builder-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        font-family: inherit;
+      }
+      .sc-builder-btn:hover:not(:disabled) {
+        background: rgba(69, 226, 213, 0.1);
+        border-color: rgba(69, 226, 213, 0.45);
+      }
+      .sc-builder-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .sc-builder-count {
+        min-width: 36px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: 16px;
+      }
+      .sc-builder-summary {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+      .sc-builder-summary strong { color: var(--text); }
+      .sc-builder-tiles {
+        margin-top: 6px;
+      }
+
+      @media (max-width: 720px) {
+        .sc-builder-grid {
+          grid-template-columns: 1fr;
+        }
+        .sc-builder-rack { height: 320px; }
+      }
+
       @media (max-width: 900px) {
         .sc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .sc-instance { grid-template-columns: 1fr; }
@@ -246,9 +367,9 @@
       <section class="hero sc-hero">
         <div>
           <div class="eyebrow">Scalability story &mdash; deep dive on proof bullet #3</div>
-          <h2>One instance, many agents &mdash; the economics</h2>
-          <p>This page expands the &ldquo;density that displaces API spend&rdquo; bullet from the demo portal. How a single Intel node holds hundreds of concurrent agents, where the latency knee sits, and how much frontier-API spend that displaces per day. Owned hardware &mdash; no per-call $/task on our side. Pick a scenario below.</p>
-          <span class="sc-mock-badge">Reference model &mdash; owned hardware vs frontier API. Numbers in <code>web-demo/scalability-data.json</code>.</span>
+          <h2>One node to a full rack &mdash; the same curve, scaled out</h2>
+          <p>This page expands the &ldquo;density&rdquo; bullet from the demo portal. Single-node scenarios show how dense one Intel chassis gets and where the latency knee sits. The rack-scale scenarios fan that same curve across a 32-node 42U rack &mdash; pure CWF, pure GNR, or a mixed agent + offload rack &mdash; and reproject density, throughput, and daily task / token volume at rack scale. Pick a scenario below.</p>
+          <span class="sc-mock-badge">Mock data &mdash; edit web-demo/scalability-data.json</span>
         </div>
       </section>
 
@@ -281,6 +402,21 @@
         </div>
         <svg class="sc-chart" id="sc-chart" viewBox="0 0 800 320" preserveAspectRatio="none" role="img" aria-label="Latency vs concurrency chart"></svg>
         <div class="sc-chart-note" id="sc-chart-note"></div>
+      </section>
+
+      <section class="panel sc-builder-panel" aria-labelledby="sc-builder-title">
+        <div class="sc-chart-head">
+          <div>
+            <div class="section-title" id="sc-builder-title">Rack builder (interactive)</div>
+            <div class="section-subtitle">Compose a custom rack — add CWF nodes for the agent half, GNR nodes for the SLM/offload half. Every tile below recomputes live as the rack composition changes.</div>
+          </div>
+        </div>
+        <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
+        <div class="sc-builder-grid">
+          <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
+          <div class="sc-builder-controls" id="sc-builder-controls"></div>
+        </div>
+        <div class="sc-tiles sc-builder-tiles" id="sc-builder-tiles" aria-live="polite"></div>
       </section>
 
       <section class="panel sc-notes-panel" aria-labelledby="sc-notes-title">

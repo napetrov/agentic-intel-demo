@@ -2,35 +2,25 @@
  * Scalability story page renderer.
  *
  * Pure client-side: loads scalability-data.json, builds derived numbers
- * (max parallel slots, sweet spot, knee, daily volume, displaced API
- * spend) on the client, and renders tiles + an SVG latency chart. No
- * backend, no demo runs — the JSON is the source of truth and any
- * number can be edited there to reshape the page automatically.
+ * (max parallel slots, sweet spot, knee, daily volume, tokens / day) on
+ * the client, and renders tiles + an SVG latency chart. No backend, no
+ * demo runs — the JSON is the source of truth and any number can be
+ * edited there to reshape the page automatically.
  *
- * Framing: instances are owned hardware, so there is no $/hr on our
- * side. Economics are expressed as "API cost avoided per day" against
- * a Frontier-API comparator, with marginal cost on owned hardware = $0.
+ * The page is intentionally about compute: density, throughput, daily
+ * volume, tokens. It does NOT compare against a frontier-API $/task
+ * rate — cost framing belongs on a separate, dedicated page.
  *
  * Tile renderer registry: each entry takes a `ctx` ({ scenario, instance,
- * workload, comparator, derived }) and returns { label, value, sub,
- * accent? }. The set of tiles shown for a scenario is controlled by
- * scenario.tiles[] in the JSON.
+ * workload, derived }) and returns { label, value, sub, accent? }. The
+ * set of tiles shown for a scenario is controlled by scenario.tiles[]
+ * in the JSON.
  */
 (function () {
   "use strict";
 
   const DATA_URL = "./scalability-data.json";
 
-  const fmtUSD2 = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-  const fmtUSD0 = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
   const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
   const fmtFloat1 = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 1,
@@ -98,7 +88,7 @@
     return Math.max(0, Math.min(byVcpu, byMem));
   }
 
-  function buildDerived(scenario, instance, workload, comparator) {
+  function buildDerived(scenario, instance, workload) {
     const dps = scenario.scaling.datapoints;
     const sweet = findSweetSpot(dps);
     const knee = findKnee(dps);
@@ -114,13 +104,6 @@
     const tasksPerDay = haveThroughput ? throughputAtSweet * 60 * 24 : null;
     const tokensPerDay =
       tasksPerDay != null ? tasksPerDay * workload.tokens_per_task : null;
-    // API cost avoided / day = what running the same daily volume on
-    // the comparator API would cost. On owned hardware the marginal
-    // cost is $0; this tile expresses the *displaced* spend.
-    const apiCostPerDay =
-      tasksPerDay != null && comparator
-        ? (tasksPerDay / 1000) * comparator.cost_per_1k_tasks_usd
-        : null;
     return {
       maxParallelSlots: maxParallelSlots(instance, workload),
       sweetSpot: sweet,
@@ -129,12 +112,35 @@
       sweetThroughput: haveThroughput ? throughputAtSweet : null,
       tasksPerDay: tasksPerDay,
       tokensPerDay: tokensPerDay,
-      comparator: comparator || null,
-      apiCostPerDay: apiCostPerDay,
     };
   }
 
   // ---------- tile renderers ----------
+
+  /**
+   * Sum total vCPU / memory across an instance.composition[] entry list.
+   * Falls back to the flat instance.vcpu / memory_gb when composition is
+   * missing, so single-node rows render the same way they always did.
+   */
+  function rackTotals(instance) {
+    const comp = Array.isArray(instance.composition) ? instance.composition : [];
+    if (!comp.length) {
+      return {
+        nodes: instance.nodes_per_rack || 1,
+        vcpu: instance.vcpu || 0,
+        memory_gb: instance.memory_gb || 0,
+        composition: [],
+      };
+    }
+    let nodes = 0, vcpu = 0, memory_gb = 0;
+    for (const c of comp) {
+      const n = c.count || 0;
+      nodes += n;
+      vcpu += n * (c.vcpu_per_node || 0);
+      memory_gb += n * (c.memory_gb_per_node || 0);
+    }
+    return { nodes, vcpu, memory_gb, composition: comp };
+  }
 
   const TILE_RENDERERS = {
     density: (ctx) => {
@@ -227,39 +233,32 @@
       };
     },
 
-    api_cost_avoided: (ctx) => {
-      const { derived } = ctx;
-      if (!derived.comparator) {
+    rack_capacity: (ctx) => {
+      const { instance } = ctx;
+      const totals = rackTotals(instance);
+      // Single-node rows: report "1 node" so the tile is still meaningful
+      // when the user lands on a non-rack scenario, but lean the framing
+      // on per-node vCPU / memory rather than rack totals.
+      if (totals.nodes <= 1) {
         return {
-          label: "API cost avoided",
-          value: "n/a",
-          sub: "no comparator configured",
+          label: "Rack capacity",
+          value: "1 node",
+          sub: `${fmtInt.format(totals.vcpu)} vCPU · ${fmtInt.format(totals.memory_gb)} GB on a single chassis. Scale-out story is in the rack-scale scenarios above.`,
           accent: "default",
         };
       }
-      if (derived.apiCostPerDay == null) {
-        return {
-          label: "API cost avoided",
-          value: "n/a",
-          sub: "throughput unavailable — cannot project API spend",
-          accent: "default",
-        };
-      }
-      const cmp = derived.comparator;
+      const breakdown = totals.composition.length
+        ? totals.composition
+            .map((c) => `${c.count}× ${c.model || "node"}`)
+            .join(" + ")
+        : `${totals.nodes} nodes`;
       return {
-        label: "API cost avoided",
-        value: `${fmtUSD0.format(derived.apiCostPerDay)} / day`,
-        sub: `Same volume on ${cmp.label} @ ${fmtUSD2.format(cmp.cost_per_1k_tasks_usd)} / 1 000 tasks. On owned hardware: $0 marginal cost.`,
-        accent: "accent-good",
+        label: "Rack capacity",
+        value: `${fmtInt.format(totals.nodes)} nodes`,
+        sub: `${breakdown} · ${fmtInt.format(totals.vcpu)} vCPU · ${fmtInt.format(totals.memory_gb)} GB total in the rack.`,
+        accent: "accent",
       };
     },
-
-    marginal_cost: () => ({
-      label: "Marginal cost / task",
-      value: "$0",
-      sub: "Owned hardware — no per-call API spend. Power and CapEx amortization are out of scope for this page.",
-      accent: "accent-good",
-    }),
 
     human_equivalent: (ctx) => {
       const { workload, derived } = ctx;
@@ -599,15 +598,12 @@
       )}s (~${fmtFloat1.format(last.p95_s / scenario.scaling.datapoints[0].p95_s)}× baseline).`;
   }
 
-  function renderNotes(container, instance, workload, comparator) {
+  function renderNotes(container, instance, workload) {
     container.replaceChildren();
     const items = [
       { label: instance.label, text: instance.notes },
       { label: workload.label, text: workload.notes },
     ];
-    if (comparator) {
-      items.push({ label: comparator.label, text: comparator.notes });
-    }
     for (const it of items) {
       if (!it.text) continue;
       const li = el("li", {}, [
@@ -618,6 +614,283 @@
     }
   }
 
+  // ---------- rack builder ----------
+
+  /**
+   * Pull the per-node sweet-spot baseline (concurrency + throughput) out
+   * of a referenced single-node scenario. Same rule as the per-scenario
+   * tile pipeline: last datapoint where p95 stays under 2× the first
+   * datapoint's p95.
+   */
+  function baselineFromScenario(scenario) {
+    if (!scenario || !scenario.scaling || !scenario.scaling.datapoints?.length) {
+      return null;
+    }
+    const sweet = findSweetSpot(scenario.scaling.datapoints);
+    if (!sweet) return null;
+    return {
+      sweet_concurrency: sweet.concurrency,
+      sweet_throughput_per_min: sweet.throughput_per_min,
+    };
+  }
+
+  /**
+   * Compute live rack metrics from the current per-node-type counts.
+   * Returns a flat object the renderer can map straight onto tiles.
+   */
+  function computeBuilderMetrics(state, cfg, lookups, scenariosById) {
+    const perType = [];
+    let totalNodes = 0,
+      totalVcpu = 0,
+      totalMem = 0,
+      totalTasksPerDay = 0;
+
+    for (const nt of cfg.node_types) {
+      const n = state[nt.id] || 0;
+      totalNodes += n;
+      totalVcpu += n * nt.vcpu_per_node;
+      totalMem += n * nt.memory_gb_per_node;
+
+      const baseline = baselineFromScenario(scenariosById[nt.baseline_scenario_id]);
+      const baseScenario = scenariosById[nt.baseline_scenario_id];
+      const workload = baseScenario ? lookups.workloads[baseScenario.workload_id] : null;
+
+      let density = null,
+        throughput = null,
+        tasksPerDay = null;
+      if (workload) {
+        const byVcpu = Math.floor((n * nt.vcpu_per_node) / workload.vcpu_per_agent);
+        const byMem = Math.floor((n * nt.memory_gb_per_node) / workload.memory_gb_per_agent);
+        density = Math.max(0, Math.min(byVcpu, byMem));
+      }
+      if (baseline && n > 0) {
+        throughput = baseline.sweet_throughput_per_min * n;
+        tasksPerDay = throughput * 60 * 24;
+        totalTasksPerDay += tasksPerDay;
+      } else if (n === 0) {
+        // Zero nodes of this type: render "0 / min" honestly rather than n/a.
+        throughput = 0;
+        tasksPerDay = 0;
+      }
+
+      perType.push({
+        nodeType: nt,
+        count: n,
+        baseline,
+        workload,
+        density,
+        throughput,
+        tasksPerDay,
+      });
+    }
+
+    return {
+      perType,
+      totalNodes,
+      totalVcpu,
+      totalMem,
+      totalTasksPerDay,
+    };
+  }
+
+  function renderBuilderRack(rackEl, state, cfg) {
+    rackEl.replaceChildren();
+    const total = cfg.rack_units_total;
+    const fixtureTop = cfg.rack_units_fixture_top || 0;
+    const fixtureBottom = (cfg.rack_units_fixture || 0) - fixtureTop;
+    const usable = total - fixtureTop - fixtureBottom;
+
+    // Build the slot list top-to-bottom. Top fixture rows first (top
+    // switches), then node rows in the order node_types are declared,
+    // then empty Us, then bottom fixture rows (PDUs).
+    const slots = [];
+    for (let i = 0; i < fixtureTop; i++) {
+      slots.push({ class: "sc-rack-u-fixture", text: i === 0 ? "switch" : "" });
+    }
+    let placed = 0;
+    for (const nt of cfg.node_types) {
+      const n = Math.min(state[nt.id] || 0, usable - placed);
+      for (let i = 0; i < n; i++) {
+        slots.push({ class: nt.swatch_class, text: nt.short_label || nt.label });
+      }
+      placed += n;
+    }
+    while (slots.length < fixtureTop + usable) {
+      slots.push({ class: "", text: "" });
+    }
+    for (let i = 0; i < fixtureBottom; i++) {
+      slots.push({
+        class: "sc-rack-u-fixture",
+        text: i === fixtureBottom - 1 ? "PDU" : "",
+      });
+    }
+
+    for (const s of slots) {
+      const cls = "sc-rack-u" + (s.class ? " " + s.class : "");
+      rackEl.appendChild(el("div", { class: cls, text: s.text || "" }));
+    }
+  }
+
+  function renderBuilderControls(controlsEl, state, cfg, onChange) {
+    controlsEl.replaceChildren();
+    for (const nt of cfg.node_types) {
+      const dec = el("button", {
+        type: "button",
+        class: "sc-builder-btn",
+        "data-id": `dec-${nt.id}`,
+        "aria-label": `Remove one ${nt.label} node`,
+      });
+      dec.textContent = "−";
+      const inc = el("button", {
+        type: "button",
+        class: "sc-builder-btn",
+        "data-id": `inc-${nt.id}`,
+        "aria-label": `Add one ${nt.label} node`,
+      });
+      inc.textContent = "+";
+      const count = el("span", {
+        class: "sc-builder-count",
+        "data-id": `count-${nt.id}`,
+      });
+      count.textContent = String(state[nt.id] || 0);
+
+      const meta = el("div", { class: "sc-builder-row-meta" }, [
+        el("span", { class: "sc-builder-row-label", text: nt.label }),
+        el("span", { class: "sc-builder-row-sub", text: nt.subtitle || "" }),
+      ]);
+
+      const row = el("div", { class: "sc-builder-row", "data-id": `row-${nt.id}` }, [
+        meta,
+        dec,
+        count,
+        inc,
+      ]);
+      controlsEl.appendChild(row);
+
+      dec.addEventListener("click", () => onChange(nt.id, -1));
+      inc.addEventListener("click", () => onChange(nt.id, +1));
+    }
+  }
+
+  function refreshBuilderControlState(controlsEl, state, cfg) {
+    const totalNodes = cfg.node_types.reduce((s, nt) => s + (state[nt.id] || 0), 0);
+    const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+    const hardCap = Math.min(cfg.max_total_nodes || usable, usable);
+    for (const nt of cfg.node_types) {
+      const n = state[nt.id] || 0;
+      const dec = controlsEl.querySelector(`[data-id="dec-${nt.id}"]`);
+      const inc = controlsEl.querySelector(`[data-id="inc-${nt.id}"]`);
+      const count = controlsEl.querySelector(`[data-id="count-${nt.id}"]`);
+      if (count) count.textContent = String(n);
+      if (dec) dec.disabled = n <= 0;
+      if (inc) inc.disabled = n >= (nt.max_count || hardCap) || totalNodes >= hardCap;
+    }
+  }
+
+  function renderBuilderTiles(tilesEl, metrics) {
+    tilesEl.replaceChildren();
+    // Total rack capacity tile.
+    const totalTile = el("article", { class: "sc-tile sc-accent" }, [
+      el("span", { class: "sc-tile-label", text: "Rack total" }),
+      el("span", { class: "sc-tile-value", text: `${fmtInt.format(metrics.totalNodes)} nodes` }),
+      el("span", {
+        class: "sc-tile-sub",
+        text: `${fmtInt.format(metrics.totalVcpu)} vCPU · ${fmtInt.format(metrics.totalMem)} GB across the rack.`,
+      }),
+    ]);
+    tilesEl.appendChild(totalTile);
+
+    // Per-workload tiles.
+    for (const t of metrics.perType) {
+      const w = t.workload;
+      const wlLabel = w ? w.label : "n/a";
+      const densityText = t.density != null ? `${fmtInt.format(t.density)} agents` : "n/a";
+      const throughputText =
+        t.throughput != null ? `${fmtFloat1.format(t.throughput)} / min` : "n/a";
+      const tile = el("article", { class: "sc-tile" }, [
+        el("span", {
+          class: "sc-tile-label",
+          text: `${t.nodeType.short_label || t.nodeType.label} · ${wlLabel}`,
+        }),
+        el("span", { class: "sc-tile-value", text: densityText }),
+        el("span", {
+          class: "sc-tile-sub",
+          text:
+            t.count > 0
+              ? `${t.count}× ${t.nodeType.label} → ${throughputText} at sweet spot.`
+              : `0× ${t.nodeType.label} — workload not running on this rack.`,
+        }),
+      ]);
+      tilesEl.appendChild(tile);
+    }
+
+    // Combined throughput tile — total daily volume across all
+    // configured node types, expressed in tasks/day.
+    const combined = el("article", { class: "sc-tile sc-accent" }, [
+      el("span", { class: "sc-tile-label", text: "Combined daily volume" }),
+      el("span", {
+        class: "sc-tile-value",
+        text: `${fmtBigCount(metrics.totalTasksPerDay)} tasks`,
+      }),
+      el("span", {
+        class: "sc-tile-sub",
+        text: "Sum of sweet-spot throughput across all node types over 24 h.",
+      }),
+    ]);
+    tilesEl.appendChild(combined);
+  }
+
+  function renderBuilderSummary(summaryEl, metrics, cfg) {
+    const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+    const parts = metrics.perType.map(
+      (t) => `<strong>${t.count}× ${t.nodeType.short_label || t.nodeType.label}</strong>`
+    );
+    summaryEl.innerHTML =
+      `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.`;
+  }
+
+  function renderRackBuilder(data, lookups) {
+    const cfg = data.rack_builder;
+    if (!cfg) return; // Builder is optional — don't crash older JSON files.
+
+    const rackEl = document.getElementById("sc-builder-rack");
+    const controlsEl = document.getElementById("sc-builder-controls");
+    const tilesEl = document.getElementById("sc-builder-tiles");
+    const summaryEl = document.getElementById("sc-builder-summary");
+    if (!rackEl || !controlsEl || !tilesEl) return;
+
+    const scenariosById = Object.fromEntries((data.scenarios || []).map((s) => [s.id, s]));
+    const state = Object.fromEntries(
+      cfg.node_types.map((nt) => [nt.id, nt.default_count || 0])
+    );
+
+    function rerender() {
+      const metrics = computeBuilderMetrics(state, cfg, lookups, scenariosById);
+      renderBuilderRack(rackEl, state, cfg);
+      refreshBuilderControlState(controlsEl, state, cfg);
+      renderBuilderTiles(tilesEl, metrics);
+      if (summaryEl) renderBuilderSummary(summaryEl, metrics, cfg);
+    }
+
+    function onChange(typeId, delta) {
+      const nt = cfg.node_types.find((x) => x.id === typeId);
+      if (!nt) return;
+      const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
+      const hardCap = Math.min(cfg.max_total_nodes || usable, usable);
+      const next = (state[typeId] || 0) + delta;
+      const totalAfter =
+        cfg.node_types.reduce((s, x) => s + (state[x.id] || 0), 0) + delta;
+      if (next < 0) return;
+      if (next > (nt.max_count || hardCap)) return;
+      if (totalAfter > hardCap) return;
+      state[typeId] = next;
+      rerender();
+    }
+
+    renderBuilderControls(controlsEl, state, cfg, onChange);
+    rerender();
+  }
+
   // ---------- main ----------
 
   function buildLookups(data) {
@@ -625,7 +898,6 @@
     return {
       instances: byId(data.instances),
       workloads: byId(data.workloads),
-      comparators: byId(data.comparators),
     };
   }
 
@@ -634,23 +906,20 @@
     if (!scenario) return;
     const instance = lookups.instances[scenario.instance_id];
     const workload = lookups.workloads[scenario.workload_id];
-    const comparator = scenario.economics
-      ? lookups.comparators[scenario.economics.comparator_id]
-      : null;
     if (!instance || !workload) {
       showError(
         `Scenario "${scenario.id}" references missing instance/workload (instance_id=${scenario.instance_id}, workload_id=${scenario.workload_id}).`
       );
       return;
     }
-    const derived = buildDerived(scenario, instance, workload, comparator);
-    const ctx = { scenario, instance, workload, comparator, derived };
+    const derived = buildDerived(scenario, instance, workload);
+    const ctx = { scenario, instance, workload, derived };
 
     renderInstanceCard(document.getElementById("sc-instance"), instance, workload, scenario);
     renderTiles(document.getElementById("sc-tiles"), scenario, ctx);
     renderChart(document.getElementById("sc-chart"), scenario, derived);
     renderChartNote(document.getElementById("sc-chart-note"), scenario, derived);
-    renderNotes(document.getElementById("sc-notes"), instance, workload, comparator);
+    renderNotes(document.getElementById("sc-notes"), instance, workload);
   }
 
   function showError(msg) {
@@ -687,6 +956,7 @@
     };
     renderTabs(tabsEl, data.scenarios, activeId, onSelect);
     renderScenario(data, lookups, activeId);
+    renderRackBuilder(data, lookups);
   }
 
   if (document.readyState === "loading") {
