@@ -880,8 +880,8 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .result { min-height: 220px; padding: 18px; white-space: pre-line; }
 .command-log {
-  min-height: 320px;
-  max-height: 60vh;
+  min-height: 520px;
+  max-height: 78vh;
   margin: 0;
   padding: 16px;
   overflow: auto;
@@ -1157,6 +1157,39 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   font-family: inherit;
   padding: 16px;
 }
+.multi-session-table tr.multi-session-fold-row td {
+  background: rgba(255, 255, 255, .025);
+  font-family: inherit;
+  padding: 8px 12px;
+  border-top: 1px dashed var(--line);
+  border-bottom: 1px dashed var(--line);
+}
+.multi-session-fold-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.multi-session-fold-btn:hover { background: rgba(255, 255, 255, .05); }
+.multi-session-fold-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.multi-session-fold-caret {
+  display: inline-block;
+  width: 10px;
+  color: var(--muted);
+}
+.multi-session-fold-hint {
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .session-status {
   display: inline-block;
   padding: 2px 10px;
@@ -1193,6 +1226,33 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .agent-row.persistent[data-status="Stopped"] {
   opacity: .55;
+}
+/* Long-lived rows are clickable in the architecture pool: clicking
+   toggles a presenter-only "force-running" override that lights the row
+   up green regardless of the registry's actual status. The override is
+   purely visual — it does not start or change the underlying runtime. */
+.agent-row-toggle {
+  cursor: pointer;
+}
+.agent-row-toggle:hover {
+  border-color: rgba(73, 217, 135, .55);
+}
+.agent-row-toggle:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.agent-row.persistent.demo-running {
+  /* Demo override wins over the dimmed Stopped state so a presenter can
+     light up agents the registry currently reports as Stopped. */
+  opacity: 1;
+  border-style: solid;
+  border-color: rgba(73, 217, 135, .65);
+  background: rgba(73, 217, 135, .12);
+}
+.agent-row-badge.demo-badge {
+  color: #bff0d2;
+  border-color: rgba(73, 217, 135, .55);
+  background: rgba(73, 217, 135, .12);
 }
 .agent-row-badge {
   display: inline-block;

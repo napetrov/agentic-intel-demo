@@ -379,6 +379,34 @@ let lastSessionRecords = [];
 // the scenario primary and short-lived task rows; refreshAgents() refills
 // this on a 30s timer and the pools redraw immediately.
 let lastAgentRecords = [];
+// Demo-only override: clicking a long-lived agent card flips it into a
+// "force-running" state in the architecture pool so a presenter can light
+// up the visual without touching the underlying runtime. Persisted in
+// localStorage so a presenter doesn't lose the layout on reload.
+const AGENT_DEMO_OVERRIDE_KEY = 'demo.agentRunningOverrides.v1';
+function loadAgentDemoOverrides() {
+  try {
+    const raw = localStorage.getItem(AGENT_DEMO_OVERRIDE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch (_) {
+    return new Set();
+  }
+}
+function saveAgentDemoOverrides() {
+  try {
+    localStorage.setItem(
+      AGENT_DEMO_OVERRIDE_KEY,
+      JSON.stringify(Array.from(agentDemoRunningOverrides))
+    );
+  } catch (_) {
+    // localStorage may be disabled (private browsing, sandboxed iframe);
+    // the override still works for the current page life so swallow the
+    // error rather than failing the click.
+  }
+}
+const agentDemoRunningOverrides = loadAgentDemoOverrides();
 let runTimers = [];
 let liveRunId = 0;
 let liveArchitecturePinned = false;
@@ -670,8 +698,15 @@ const LONG_LIVED_STATE_BY_STATUS = {
 };
 
 function longLivedAgentRowHtml(agent) {
-  const state = LONG_LIVED_STATE_BY_STATUS[agent.status] || 'planned';
-  const status = (agent.status || 'unknown').toLowerCase();
+  // Demo override: when the presenter has clicked this card, force the
+  // visual into the green "running" state regardless of what /api/agents
+  // reports. The actual probed status is preserved on the data attribute
+  // so the override badge can reference it on hover.
+  const isDemoRunning = agentDemoRunningOverrides.has(agent.id);
+  const state = isDemoRunning
+    ? 'running'
+    : (LONG_LIVED_STATE_BY_STATUS[agent.status] || 'planned');
+  const status = isDemoRunning ? 'running' : (agent.status || 'unknown').toLowerCase();
   const kind = agent.kind ? ` · ${escapeHtml(agent.kind)}` : '';
   // Confidential-compute slots (e.g. agents marked `confidential: tdx`
   // in config/agents.yaml) get a visible padlock + "TDX" pill in the
@@ -681,9 +716,18 @@ function longLivedAgentRowHtml(agent) {
   const tdxBadge = isTdx
     ? '<span class="agent-row-badge tdx-badge" title="Confidential session pod (Intel TDX, kata-qemu-tdx runtime)">&#x1F512; TDX</span>'
     : '';
+  const demoBadge = isDemoRunning
+    ? `<span class="agent-row-badge demo-badge" title="Demo override — click to clear (actual status: ${escapeHtml(agent.status || 'unknown')})">demo</span>`
+    : '';
+  const clickTitle = isDemoRunning
+    ? 'Click to clear demo-running override'
+    : 'Click to mark this agent as running for the demo presentation';
   return `
-    <div class="agent-row ${state} persistent${isTdx ? ' tdx' : ''}" data-agent-id="${escapeHtml(agent.id)}" data-status="${escapeHtml(agent.status || 'Unknown')}">
-      <span class="agent-name">${escapeHtml(agent.name || agent.id)}${tdxBadge}<span class="agent-row-badge">long-lived${kind}</span></span>
+    <div class="agent-row ${state} persistent agent-row-toggle${isTdx ? ' tdx' : ''}${isDemoRunning ? ' demo-running' : ''}"
+         data-agent-id="${escapeHtml(agent.id)}"
+         data-status="${escapeHtml(agent.status || 'Unknown')}"
+         role="button" tabindex="0" title="${clickTitle}">
+      <span class="agent-name">${escapeHtml(agent.name || agent.id)}${tdxBadge}<span class="agent-row-badge">long-lived${kind}</span>${demoBadge}</span>
       <span class="agent-cpu">persistent</span>
       <span class="agent-status">${escapeHtml(status)}</span>
     </div>
@@ -1943,6 +1987,7 @@ const multiSessionRows = document.getElementById('multi-session-rows');
 const multiSessionBackend = document.getElementById('multi-session-backend');
 const multiSessionRefresh = document.getElementById('multi-session-refresh');
 const multiSessionClear = document.getElementById('multi-session-clear');
+const multiSessionClearCompleted = document.getElementById('multi-session-clear-completed');
 
 // Tracks the session_ids this browser session asked the backend to
 // spawn. The control plane shows ALL sessions, but the table only shows
@@ -1957,6 +2002,19 @@ const multiSessionClear = document.getElementById('multi-session-clear');
 const trackedSessionIds = new Set();
 let hasSpawnedHere = false;
 const TERMINAL_STATUSES = new Set(['Completed', 'Failed']);
+
+// Default the completed-rows section to collapsed. A density run can drop
+// dozens of terminal rows into the table at once and the operator usually
+// only cares about what's still in flight; the fold toggle lets them peek
+// at the history without scrolling past it on every refresh.
+let completedRowsCollapsed = true;
+// Cached snapshot of whatever was last passed to renderMultiSessionRows.
+// Used by the fold toggle so flipping the collapse state can re-render
+// from cache without making a /api/sessions round-trip. Distinct from
+// lastSessionRecords: that one is filtered to trackedSessionIds for the
+// architecture pool, while this one mirrors the *table* view (which
+// falls back to "all sessions" when this tab has never spawned).
+let lastRenderedRecords = [];
 
 let multiSessionPollTimer = null;
 let multiSessionPolling = false;
@@ -1991,40 +2049,78 @@ function formatAgeOrDuration(rec, now) {
   return formatAge(now - (rec.created_at || now));
 }
 
+function renderSessionRowHtml(rec, now) {
+  const ageOrDuration = formatAgeOrDuration(rec, now);
+  const podOrJob = rec.pod_name || rec.job_name || '—';
+  const statusClass = `status-${(rec.status || 'unknown').toLowerCase()}`;
+  const agentLabel = rec.agent_id ? rec.agent_id : 'ephemeral';
+  // Don't show a Delete button for already-terminal rows — it works
+  // (returns 404 if the backend GC'd it), but adds noise.
+  const canDelete = !TERMINAL_STATUSES.has(rec.status);
+  const deleteBtn = canDelete
+    ? `<button class="ghost small multi-session-del" data-session-id="${escapeHtml(rec.session_id)}" type="button">Delete</button>`
+    : '';
+  return `
+    <tr>
+      <td><code>${escapeHtml(rec.session_id)}</code></td>
+      <td>${escapeHtml(rec.scenario || '—')}</td>
+      <td>${escapeHtml(rec.profile || '—')}</td>
+      <td>${escapeHtml(formatTargetSystem(rec))}</td>
+      <td>${rec.agent_id ? `<code>${escapeHtml(agentLabel)}</code>` : `<span class="agent-cell-ephemeral">${escapeHtml(agentLabel)}</span>`}</td>
+      <td><span class="session-status ${statusClass}">${escapeHtml(rec.status || '—')}</span></td>
+      <td><code>${escapeHtml(podOrJob)}</code></td>
+      <td>${escapeHtml(ageOrDuration)}</td>
+      <td>${deleteBtn}</td>
+    </tr>
+  `;
+}
+
 function renderMultiSessionRows(records) {
   if (!multiSessionRows) return;
+  // Cache for the fold toggle so collapse/expand re-renders from memory
+  // instead of triggering a backend fetch. Defensive copy is overkill —
+  // refreshMultiSession() always passes a fresh array.
+  lastRenderedRecords = Array.isArray(records) ? records : [];
   if (!records.length) {
     multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="9">No tasks yet. Spawn some above.</td></tr>';
     return;
   }
   const now = Date.now() / 1000;
-  multiSessionRows.innerHTML = records
-    .map((rec) => {
-      const ageOrDuration = formatAgeOrDuration(rec, now);
-      const podOrJob = rec.pod_name || rec.job_name || '—';
-      const statusClass = `status-${(rec.status || 'unknown').toLowerCase()}`;
-      const agentLabel = rec.agent_id ? rec.agent_id : 'ephemeral';
-      // Don't show a Delete button for already-terminal rows — it works
-      // (returns 404 if the backend GC'd it), but adds noise.
-      const canDelete = !TERMINAL_STATUSES.has(rec.status);
-      const deleteBtn = canDelete
-        ? `<button class="ghost small multi-session-del" data-session-id="${escapeHtml(rec.session_id)}" type="button">Delete</button>`
-        : '';
-      return `
-        <tr>
-          <td><code>${escapeHtml(rec.session_id)}</code></td>
-          <td>${escapeHtml(rec.scenario || '—')}</td>
-          <td>${escapeHtml(rec.profile || '—')}</td>
-          <td>${escapeHtml(formatTargetSystem(rec))}</td>
-          <td>${rec.agent_id ? `<code>${escapeHtml(agentLabel)}</code>` : `<span class="agent-cell-ephemeral">${escapeHtml(agentLabel)}</span>`}</td>
-          <td><span class="session-status ${statusClass}">${escapeHtml(rec.status || '—')}</span></td>
-          <td><code>${escapeHtml(podOrJob)}</code></td>
-          <td>${escapeHtml(ageOrDuration)}</td>
-          <td>${deleteBtn}</td>
-        </tr>
-      `;
-    })
-    .join('');
+  // Split active (Pending/Running/anything non-terminal) from terminal
+  // rows so the long tail of "Completed" can be folded behind a single
+  // toggle row. Active rows always render; terminal rows render only when
+  // the operator expands the section.
+  const activeRecs = [];
+  const terminalRecs = [];
+  for (const rec of records) {
+    if (TERMINAL_STATUSES.has(rec.status)) terminalRecs.push(rec);
+    else activeRecs.push(rec);
+  }
+  const parts = activeRecs.map((rec) => renderSessionRowHtml(rec, now));
+
+  if (terminalRecs.length) {
+    const collapsed = completedRowsCollapsed;
+    const toggleLabel = collapsed
+      ? `Show ${terminalRecs.length} completed`
+      : `Hide ${terminalRecs.length} completed`;
+    const caret = collapsed ? '▸' : '▾';
+    parts.push(`
+      <tr class="multi-session-fold-row" data-fold-toggle="completed" aria-expanded="${collapsed ? 'false' : 'true'}">
+        <td colspan="9">
+          <button type="button" class="multi-session-fold-btn" data-fold-toggle="completed" aria-expanded="${collapsed ? 'false' : 'true'}">
+            <span class="multi-session-fold-caret">${caret}</span>
+            ${escapeHtml(toggleLabel)}
+          </button>
+          <span class="multi-session-fold-hint">terminal rows tracked by this tab</span>
+        </td>
+      </tr>
+    `);
+    if (!collapsed) {
+      for (const rec of terminalRecs) parts.push(renderSessionRowHtml(rec, now));
+    }
+  }
+
+  multiSessionRows.innerHTML = parts.join('');
 }
 
 function renderMultiSessionSummary(records, backend) {
@@ -2215,6 +2311,16 @@ if (multiSessionRows) {
   multiSessionRows.addEventListener('click', async (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLElement)) return;
+
+    // Fold toggle for the "Completed" group. Flip the local flag and
+    // re-render from the cached snapshot — no backend round-trip needed.
+    const foldEl = target.closest('[data-fold-toggle="completed"]');
+    if (foldEl) {
+      completedRowsCollapsed = !completedRowsCollapsed;
+      renderMultiSessionRows(lastRenderedRecords);
+      return;
+    }
+
     if (!target.classList.contains('multi-session-del')) return;
     const sid = target.dataset.sessionId;
     if (!sid) return;
@@ -2232,6 +2338,26 @@ if (multiSessionRows) {
       target.disabled = false;
       target.textContent = 'Delete';
     }
+  });
+}
+
+if (multiSessionClearCompleted) {
+  multiSessionClearCompleted.addEventListener('click', async () => {
+    // "Clear completed" only drops terminal rows from this tab's tracked
+    // set. We don't issue DELETEs because the backend GC handles terminal
+    // sessions on its own and the operator's intent here is "shrink the
+    // table" rather than "free server resources".
+    const terminal = lastSessionRecords.filter((r) => TERMINAL_STATUSES.has(r.status));
+    if (!terminal.length) {
+      setMultiSessionStatus('No completed sessions to clear.', 'ok');
+      return;
+    }
+    for (const rec of terminal) trackedSessionIds.delete(rec.session_id);
+    setMultiSessionStatus(
+      `Cleared ${terminal.length} completed session${terminal.length === 1 ? '' : 's'} from this tab.`,
+      'ok'
+    );
+    refreshMultiSession();
   });
 }
 
@@ -2325,6 +2451,61 @@ async function refreshAgents() {
 }
 
 refreshAgents();
+
+// Demo-only click handler for long-lived agent rows. Toggles the
+// "force-running" override so a presenter can light up specific agents
+// in the architecture pool without spawning real work. Bound on the
+// pool containers (which are static) so re-rendering doesn't strand
+// listeners.
+function repaintPersistentAgentRow(agentId) {
+  // Targeted in-place replacement so the override applies even while
+  // liveArchitecturePinned is true (redrawSystemA/B no-op in pinned
+  // mode, and that path leaves the click feeling broken). The row
+  // selector matches both pools; the persistent class scopes us away
+  // from transient session rows. Long-lived agents don't contribute to
+  // the vCPU bar so no capacity recompute is needed here.
+  const agent = lastAgentRecords.find((a) => a && a.id === agentId);
+  if (!agent) return;
+  const sel = `.agent-row.persistent[data-agent-id="${CSS.escape(agentId)}"]`;
+  document.querySelectorAll(sel).forEach((row) => {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = longLivedAgentRowHtml(agent).trim();
+    const fresh = tmp.firstElementChild;
+    if (fresh) row.replaceWith(fresh);
+  });
+}
+
+function handleAgentRowToggle(ev) {
+  const row = ev.target instanceof HTMLElement
+    ? ev.target.closest('.agent-row-toggle[data-agent-id]')
+    : null;
+  if (!row) return;
+  // Keyboard activation: Enter or Space on the role="button" row.
+  if (ev.type === 'keydown' && ev.key !== 'Enter' && ev.key !== ' ') return;
+  ev.preventDefault();
+  const agentId = row.dataset.agentId;
+  if (!agentId) return;
+  if (agentDemoRunningOverrides.has(agentId)) {
+    agentDemoRunningOverrides.delete(agentId);
+  } else {
+    agentDemoRunningOverrides.add(agentId);
+  }
+  saveAgentDemoOverrides();
+  // Targeted repaint covers the pinned-architecture case; redraw the
+  // pools too so the unpinned path keeps a single source of truth (no
+  // harm if it no-ops).
+  repaintPersistentAgentRow(agentId);
+  redrawSystemA();
+  redrawSystemB();
+}
+if (sysAAgentsEl) {
+  sysAAgentsEl.addEventListener('click', handleAgentRowToggle);
+  sysAAgentsEl.addEventListener('keydown', handleAgentRowToggle);
+}
+if (sysBOffloadEl) {
+  sysBOffloadEl.addEventListener('click', handleAgentRowToggle);
+  sysBOffloadEl.addEventListener('keydown', handleAgentRowToggle);
+}
 
 // ---------- Optional service launchers ----------
 //
