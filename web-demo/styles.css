@@ -1126,8 +1126,15 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .multi-session-table-wrap {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 360px;
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+.multi-session-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .multi-session-table {
   width: 100%;
