@@ -600,9 +600,15 @@ function renderResultTiles(scenarioKey, jobId) {
   // Artifact link — only market-research has a real MinIO bucket on the
   // shipped path. The other scenarios write artifacts under /tmp inside
   // the offload-worker pod and don't surface them externally; showing a
-  // dead link there would be worse than no tile.
+  // dead link there would be worse than no tile. Also gate on the
+  // viewer being on localhost — a port-forwarded / remote demo would
+  // hit a dead 127.0.0.1:9001 from the browser host.
+  const isLocalHost =
+    location.hostname === '127.0.0.1' ||
+    location.hostname === 'localhost' ||
+    location.hostname === '';
   if (artifactEl) {
-    if (scenarioKey === 'market-research' && jobId) {
+    if (scenarioKey === 'market-research' && jobId && isLocalHost) {
       const minioUrl = `http://127.0.0.1:9001/browser/demo-artifacts/${encodeURIComponent(jobId)}/`;
       artifactEl.href = minioUrl;
       artifactValueEl.textContent = `demo-artifacts/${jobId}/`;
@@ -1007,10 +1013,9 @@ document.querySelectorAll('[data-action="density"]').forEach((el) => {
 });
 
 function runDensityPreset() {
-  // Open the multi-session details if it's collapsed (T4) so the spawn
-  // table is on screen. Today the panel isn't wrapped in <details>, so
-  // this is a no-op until T4 lands — leaving it in keeps the call site
-  // stable.
+  // Open the multi-session details so the spawn table is on screen
+  // before we kick the batch off; the form is folded by default so the
+  // viewer doesn't see the configurator.
   const details = document.querySelector('details.multi-session-details');
   if (details) details.open = true;
 

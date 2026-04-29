@@ -16,7 +16,7 @@ trap 'rm -f "$TMP_SOURCE" "$TMP_PICKED"' EXIT
 narrate_header "taskflow-pull" "Starting TaskFlow scenario pull" "local_standard"
 
 narrate_blank
-narrate "[step 1/6] resolve TaskFlow source"
+narrate "[step 1/5] resolve TaskFlow source"
 SOURCE_KIND="fixture"
 SOURCE_REF="$FIXTURE"
 if [ -n "${TASKFLOW_API_URL:-}" ]; then
@@ -35,7 +35,7 @@ echo "source_kind: $SOURCE_KIND"
 echo "source_ref:  $SOURCE_REF"
 
 narrate_blank
-narrate "[step 2/6] inspect bounded task brief and fetch tasks"
+narrate "[step 2/5] inspect bounded task brief and fetch tasks"
 echo "+ sed -n '1,12p' task-brief.md"
 sed -n '1,12p' "$TASK_BRIEF"
 echo "+ python3 count tasks"
@@ -49,7 +49,7 @@ print(f"task_count: {len(tasks)}")
 PY
 
 narrate_blank
-narrate "[step 3/6] apply selection rules and pick a task"
+narrate "[step 3/5] apply selection rules and pick a task"
 python3 - "$TMP_SOURCE" "$TMP_PICKED" <<'PY'
 import json, sys
 from datetime import date
@@ -84,7 +84,7 @@ PICKED_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id
 PICKED_ACTION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("demo_action","audit"))' "$TMP_PICKED")"
 
 narrate_blank
-narrate "[step 4/6] render and execute the bounded action"
+narrate "[step 4/5] render and execute the bounded action"
 ARTIFACT="/tmp/taskflow-${PICKED_ID}.md"
 echo "action: $PICKED_ACTION"
 echo "artifact: $ARTIFACT"
@@ -141,7 +141,7 @@ print(f"wrote {out}")
 PY
 
 narrate_blank
-narrate "[step 5/6] validate artifact"
+narrate "[step 5/5] validate artifact"
 echo "+ test -s $ARTIFACT"
 test -s "$ARTIFACT"
 echo "+ grep -Fq \"task ${PICKED_ID}\" $ARTIFACT"
@@ -149,8 +149,6 @@ grep -Fq -- "task ${PICKED_ID}" "$ARTIFACT"
 echo "+ tail -n 20 $ARTIFACT"
 tail -n 20 "$ARTIFACT"
 
-narrate_blank
-narrate "[step 6/6] summarize evidence"
 narrate_footer "taskflow-pull: PASS · task=$PICKED_ID · action=$PICKED_ACTION · source=$SOURCE_KIND"
 cat <<JSON
 {"scenario":"taskflow-pull","route":"local_standard","system_owner":"System A","source_kind":"$SOURCE_KIND","source_ref":"$SOURCE_REF","task_id":"$PICKED_ID","action":"$PICKED_ACTION","status":"ok","artifact":"$ARTIFACT"}
