@@ -53,6 +53,65 @@
         text-align: left;
         min-width: 220px;
       }
+      /* Left rail variant: scenario picker sits beside the per-scenario
+         content so the selector and details stay in the same viewport. */
+      .sc-overview {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 24px;
+        padding: 22px;
+        margin-bottom: 22px;
+      }
+      .sc-rail {
+        position: sticky;
+        top: 16px;
+        align-self: start;
+      }
+      .sc-rail .section-title { margin-bottom: 10px; }
+      .sc-rail .sc-tabs {
+        flex-direction: column;
+        flex-wrap: nowrap;
+        gap: 6px;
+        margin-bottom: 0;
+      }
+      .sc-rail .sc-tab {
+        min-width: 0;
+        width: 100%;
+        padding: 9px 12px;
+      }
+      /* Tab sub-story is repeated in the instance card to the right —
+         hide it in the rail so the picker stays a single-glance list. */
+      .sc-rail .sc-tab-sub { display: none; }
+      .sc-overview-main {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        min-width: 0;
+      }
+      .sc-overview-main .sc-instance {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+      }
+      .sc-overview-main .sc-instance .sc-story {
+        margin-top: 10px;
+      }
+      .sc-overview-section {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .sc-overview-section .sc-tiles,
+      .sc-overview-section .sc-chart-head {
+        margin-bottom: 0;
+      }
+      .sc-overview-divider {
+        height: 1px;
+        background: var(--line);
+        margin: 4px 0;
+      }
       .sc-tab:hover { background: rgba(69, 226, 213, 0.06); }
       .sc-tab[aria-selected="true"] {
         background: linear-gradient(135deg, rgba(85, 168, 255, 0.18), rgba(69, 226, 213, 0.18));
@@ -354,6 +413,11 @@
       @media (max-width: 900px) {
         .sc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .sc-instance { grid-template-columns: 1fr; }
+        .sc-overview {
+          grid-template-columns: 1fr;
+          gap: 18px;
+        }
+        .sc-rail { position: static; }
       }
       @media (max-width: 540px) {
         .sc-tiles { grid-template-columns: 1fr; }
@@ -373,35 +437,42 @@
         </div>
       </section>
 
-      <section aria-label="Scenario picker">
-        <div class="section-title">Scenario</div>
-        <div class="sc-tabs" id="sc-tabs" role="tablist"></div>
-      </section>
-
-      <section class="panel sc-instance" id="sc-instance" aria-live="polite">
-        <!-- populated by scalability.js -->
-      </section>
-
-      <section aria-label="Story tiles">
-        <div class="section-title">What this looks like in numbers</div>
-        <div class="sc-tiles" id="sc-tiles" aria-live="polite"></div>
-      </section>
-
-      <section class="panel sc-chart-panel" aria-labelledby="sc-chart-title">
-        <div class="sc-chart-head">
-          <div>
-            <div class="section-title" id="sc-chart-title">Latency vs concurrency</div>
-            <div class="section-subtitle">Where the curve bends is where the queue starts forming.</div>
+      <section class="panel sc-overview" aria-label="Scenario overview">
+        <aside class="sc-rail" aria-label="Scenario picker">
+          <div class="section-title">Scenario</div>
+          <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
+        </aside>
+        <div class="sc-overview-main">
+          <div class="sc-instance" id="sc-instance" aria-live="polite">
+            <!-- populated by scalability.js -->
           </div>
-          <div class="sc-chart-legend" aria-hidden="true">
-            <span><span class="sc-legend-swatch"></span>p50</span>
-            <span><span class="sc-legend-swatch sc-p95"></span>p95</span>
-            <span><span class="sc-legend-swatch sc-marker"></span>sweet spot</span>
-            <span><span class="sc-legend-swatch sc-marker sc-marker-knee"></span>knee</span>
+
+          <div class="sc-overview-divider"></div>
+
+          <div class="sc-overview-section" aria-label="Story tiles">
+            <div class="section-title">What this looks like in numbers</div>
+            <div class="sc-tiles" id="sc-tiles" aria-live="polite"></div>
+          </div>
+
+          <div class="sc-overview-divider"></div>
+
+          <div class="sc-overview-section" aria-labelledby="sc-chart-title">
+            <div class="sc-chart-head">
+              <div>
+                <div class="section-title" id="sc-chart-title">Latency vs concurrency</div>
+                <div class="section-subtitle">Where the curve bends is where the queue starts forming.</div>
+              </div>
+              <div class="sc-chart-legend" aria-hidden="true">
+                <span><span class="sc-legend-swatch"></span>p50</span>
+                <span><span class="sc-legend-swatch sc-p95"></span>p95</span>
+                <span><span class="sc-legend-swatch sc-marker"></span>sweet spot</span>
+                <span><span class="sc-legend-swatch sc-marker sc-marker-knee"></span>knee</span>
+              </div>
+            </div>
+            <svg class="sc-chart" id="sc-chart" viewBox="0 0 800 320" preserveAspectRatio="none" role="img" aria-label="Latency vs concurrency chart"></svg>
+            <div class="sc-chart-note" id="sc-chart-note"></div>
           </div>
         </div>
-        <svg class="sc-chart" id="sc-chart" viewBox="0 0 800 320" preserveAspectRatio="none" role="img" aria-label="Latency vs concurrency chart"></svg>
-        <div class="sc-chart-note" id="sc-chart-note"></div>
       </section>
 
       <section class="panel sc-builder-panel" aria-labelledby="sc-builder-title">
