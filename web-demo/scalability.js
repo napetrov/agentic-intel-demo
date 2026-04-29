@@ -312,6 +312,14 @@
     return node;
   }
 
+  function scenarioKindLabel(scenario) {
+    const id = scenario.id || "";
+    const label = scenario.label || "";
+    if (id.includes("mixed") || /mixed/i.test(label)) return "mixed rack";
+    if (id.includes("rack") || /rack/i.test(label)) return "rack-scale";
+    return "single node";
+  }
+
   function renderTabs(container, scenarios, activeId, onSelect) {
     container.replaceChildren();
     for (const sc of scenarios) {
@@ -323,9 +331,11 @@
           role: "tab",
           "aria-selected": sc.id === activeId ? "true" : "false",
           "data-id": sc.id,
+          title: sc.story || sc.label || sc.id,
         },
         [
-          el("span", { class: "sc-tab-label", text: sc.label }),
+          el("span", { class: "sc-tab-label", text: sc.short_label || sc.label }),
+          el("span", { class: "sc-tab-kind", text: scenarioKindLabel(sc) }),
           el("span", {
             class: "sc-tab-sub",
             text: sc.story || "",

@@ -181,8 +181,8 @@ The bottom panel renders the most recent scenario run:
   scenarios (CWF, GNR) and rack-scale scenarios (32-node CWF rack,
   32-node GNR rack, and a mixed CWF-agent + GNR-offload rack) that
   fan the per-node curve out across a full 42U rack. An interactive
-  **rack builder** at the bottom of the page lets you add / remove
-  CWF and GNR nodes from a 42U chassis and re-projects every tile
+  **rack builder** now sits immediately below the hero so you can add / remove
+  CWF and GNR nodes from a 42U chassis and re-project every tile
   (rack capacity, density, throughput, combined daily volume) live
   as the composition changes. The page is intentionally about
   compute — it does not compare against a cloud / frontier-API

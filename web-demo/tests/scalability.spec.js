@@ -104,8 +104,14 @@ test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ p
 test('rack builder renders default 16+16 composition with live tiles', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
 
-  // Builder panel is visible with title.
+  // Builder panel is visible with title and appears before the preset scenario panel.
   await expect(page.locator('#sc-builder-title')).toContainText(/rack builder/i);
+  const builderBeforeScenarios = await page.evaluate(() => {
+    const builder = document.querySelector('.sc-builder-panel');
+    const scenarios = document.querySelector('.sc-overview');
+    return Boolean(builder && scenarios && (builder.compareDocumentPosition(scenarios) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(builderBeforeScenarios).toBe(true);
 
   // Default 16 CWF + 16 GNR composition surfaces in the summary.
   const summary = page.locator('#sc-builder-summary');

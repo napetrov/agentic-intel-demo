@@ -92,6 +92,7 @@
     {
       "id": "xeon-small-density",
       "label": "Xeon CWF · 1 node · small agents",
+      "short_label": "CWF · small agents",
       "story": "How dense a single dual-socket CWF node gets when packed with light terminal agents.",
       "instance_id": "xeon-cwf-dual",
       "workload_id": "small-terminal-agent",
@@ -117,6 +118,7 @@
     {
       "id": "gnr-research-volume",
       "label": "GNR · 1 node · research workload",
+      "short_label": "GNR · research",
       "story": "Heavier research agents on a GNR node with multi-call inference and offload — same density story, different per-task profile.",
       "instance_id": "gnr-dual",
       "workload_id": "medium-research",
@@ -142,6 +144,7 @@
     {
       "id": "xeon-cwf-rack-density",
       "label": "Xeon CWF rack · 32 nodes · small agents",
+      "short_label": "CWF rack · small agents",
       "story": "Linear scale-out of the per-node story. A full 42U rack of dual-socket CWF nodes packs ~18k concurrent terminal agents and shifts the daily volume / tokens tiles by the same node multiplier.",
       "instance_id": "xeon-cwf-rack-32",
       "workload_id": "small-terminal-agent",
@@ -168,6 +171,7 @@
     {
       "id": "gnr-rack-research",
       "label": "GNR rack · 32 nodes · research workload",
+      "short_label": "GNR rack · research",
       "story": "Same research workload as the single-node row, fanned across a full GNR rack. Each node serves its own vLLM + offload stack; LiteLLM / the front-door router handles routing.",
       "instance_id": "gnr-rack-32",
       "workload_id": "medium-research",
@@ -194,6 +198,7 @@
     {
       "id": "mixed-rack-blend",
       "label": "Mixed rack · 16× CWF agent + 16× GNR offload",
+      "short_label": "Mixed CWF + GNR",
       "story": "Half of the rack runs agent session pods on CWF (high core count); the other half runs the SLM and analytics offload on GNR (AMX-accelerated). The density numbers below are for the CWF agent half — see the rack-capacity tile for the full 32-node footprint.",
       "instance_id": "mixed-rack-cwf-half",
       "workload_id": "small-terminal-agent",
