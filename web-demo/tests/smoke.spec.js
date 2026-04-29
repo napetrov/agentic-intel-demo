@@ -25,10 +25,14 @@ test('page loads with expected landmarks', async ({ page }) => {
 test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
   await page.goto(BASE_URL + '/');
   // The two extension scenarios live inside the collapsed
-  // .extensions-tray <details>. Opening it once at the top of the test
-  // makes their cards clickable; the three main scenarios are visible
-  // without it.
-  await page.locator('details.extensions-tray summary').click();
+  // .extensions-tray <details>. Open it only when actually closed so
+  // we don't toggle it shut if a future change ships it open by
+  // default. The three main scenario cards are visible without this.
+  const tray = page.locator('details.extensions-tray');
+  const isOpen = await tray.evaluate((el) => el.open);
+  if (!isOpen) {
+    await tray.locator('summary').click();
+  }
   for (const scenario of SCENARIOS) {
     await page.locator(`[data-scenario="${scenario}"]`).click();
     // Selecting a scenario must NOT preload command output — the log stays
