@@ -2008,6 +2008,13 @@ const TERMINAL_STATUSES = new Set(['Completed', 'Failed']);
 // only cares about what's still in flight; the fold toggle lets them peek
 // at the history without scrolling past it on every refresh.
 let completedRowsCollapsed = true;
+// Cached snapshot of whatever was last passed to renderMultiSessionRows.
+// Used by the fold toggle so flipping the collapse state can re-render
+// from cache without making a /api/sessions round-trip. Distinct from
+// lastSessionRecords: that one is filtered to trackedSessionIds for the
+// architecture pool, while this one mirrors the *table* view (which
+// falls back to "all sessions" when this tab has never spawned).
+let lastRenderedRecords = [];
 
 let multiSessionPollTimer = null;
 let multiSessionPolling = false;
@@ -2070,6 +2077,10 @@ function renderSessionRowHtml(rec, now) {
 
 function renderMultiSessionRows(records) {
   if (!multiSessionRows) return;
+  // Cache for the fold toggle so collapse/expand re-renders from memory
+  // instead of triggering a backend fetch. Defensive copy is overkill —
+  // refreshMultiSession() always passes a fresh array.
+  lastRenderedRecords = Array.isArray(records) ? records : [];
   if (!records.length) {
     multiSessionRows.innerHTML = '<tr class="multi-session-empty"><td colspan="9">No tasks yet. Spawn some above.</td></tr>';
     return;
@@ -2302,11 +2313,11 @@ if (multiSessionRows) {
     if (!(target instanceof HTMLElement)) return;
 
     // Fold toggle for the "Completed" group. Flip the local flag and
-    // re-render straight away — no backend round-trip needed.
+    // re-render from the cached snapshot — no backend round-trip needed.
     const foldEl = target.closest('[data-fold-toggle="completed"]');
     if (foldEl) {
       completedRowsCollapsed = !completedRowsCollapsed;
-      refreshMultiSession();
+      renderMultiSessionRows(lastRenderedRecords);
       return;
     }
 
@@ -2446,6 +2457,24 @@ refreshAgents();
 // in the architecture pool without spawning real work. Bound on the
 // pool containers (which are static) so re-rendering doesn't strand
 // listeners.
+function repaintPersistentAgentRow(agentId) {
+  // Targeted in-place replacement so the override applies even while
+  // liveArchitecturePinned is true (redrawSystemA/B no-op in pinned
+  // mode, and that path leaves the click feeling broken). The row
+  // selector matches both pools; the persistent class scopes us away
+  // from transient session rows. Long-lived agents don't contribute to
+  // the vCPU bar so no capacity recompute is needed here.
+  const agent = lastAgentRecords.find((a) => a && a.id === agentId);
+  if (!agent) return;
+  const sel = `.agent-row.persistent[data-agent-id="${CSS.escape(agentId)}"]`;
+  document.querySelectorAll(sel).forEach((row) => {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = longLivedAgentRowHtml(agent).trim();
+    const fresh = tmp.firstElementChild;
+    if (fresh) row.replaceWith(fresh);
+  });
+}
+
 function handleAgentRowToggle(ev) {
   const row = ev.target instanceof HTMLElement
     ? ev.target.closest('.agent-row-toggle[data-agent-id]')
@@ -2462,6 +2491,10 @@ function handleAgentRowToggle(ev) {
     agentDemoRunningOverrides.add(agentId);
   }
   saveAgentDemoOverrides();
+  // Targeted repaint covers the pinned-architecture case; redraw the
+  // pools too so the unpinned path keeps a single source of truth (no
+  // harm if it no-ops).
+  repaintPersistentAgentRow(agentId);
   redrawSystemA();
   redrawSystemB();
 }
