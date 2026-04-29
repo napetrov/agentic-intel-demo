@@ -20,6 +20,15 @@ test('page loads with expected landmarks', async ({ page }) => {
   await expect(page.locator('.scenario-card').first()).toBeVisible();
   await expect(page.locator('#run-demo')).toBeVisible();
   await expect(page.locator('#run-demo')).toContainText(/run demo/i);
+
+  // Density is a secondary fan-out control, so it stays below the live-log
+  // workspace instead of interrupting the main demo flow.
+  const densityAfterWorkspace = await page.evaluate(() => {
+    const workspace = document.querySelector('.workspace');
+    const density = document.querySelector('#multi-session-panel');
+    return Boolean(workspace && density && (workspace.compareDocumentPosition(density) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(densityAfterWorkspace).toBe(true);
 });
 
 test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
