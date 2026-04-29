@@ -12,13 +12,23 @@ async function expectToolRowsAtLeast(page, min, message) {
 
 test('page loads with expected landmarks', async ({ page }) => {
   await page.goto(BASE_URL + '/');
-  await expect(page.locator('h2')).toContainText(/scenario/i);
+  // Hero thesis (the demo's headline claim) and the first scenario card
+  // are the two landmarks that mark a successful page load. The old
+  // "Pick a scenario..." h2 was replaced by the thesis line; the
+  // scenario picker now lives in the .scenario-card row below it.
+  await expect(page.locator('h2.hero-thesis')).toContainText(/agents on Intel/i);
+  await expect(page.locator('.scenario-card').first()).toBeVisible();
   await expect(page.locator('#run-demo')).toBeVisible();
   await expect(page.locator('#run-demo')).toContainText(/run demo/i);
 });
 
 test('each scenario card populates tool activity with at least 3 rows', async ({ page }) => {
   await page.goto(BASE_URL + '/');
+  // The two extension scenarios live inside the collapsed
+  // .extensions-tray <details>. Opening it once at the top of the test
+  // makes their cards clickable; the three main scenarios are visible
+  // without it.
+  await page.locator('details.extensions-tray summary').click();
   for (const scenario of SCENARIOS) {
     await page.locator(`[data-scenario="${scenario}"]`).click();
     // Selecting a scenario must NOT preload command output — the log stays
