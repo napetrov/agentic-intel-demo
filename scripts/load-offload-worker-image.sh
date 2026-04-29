@@ -4,21 +4,22 @@
 #
 # Why this exists: k8s/system-b/offload-worker.yaml defaults to
 # `ghcr.io/<owner>/agentic-intel-demo/offload-worker:main` with
-# `imagePullPolicy: IfNotPresent`. On a fresh local cluster that image
+# `imagePullPolicy: Always`. On a fresh local cluster that image
 # may not be reachable (private repo, air-gapped network, registry
 # down). This script builds the image from runtimes/offload-worker/ and
 # imports it under tag `demo-offload-worker:latest`, then prints the
-# `sed` patch you can pipe into `kubectl apply` to use it.
+# safe apply helper command to use it.
 #
 # Usage:
 #   ./scripts/load-offload-worker-image.sh                # autodetect k3d / k3s
 #   RUNTIME=k3d K3D_CLUSTER=demo ./scripts/load-offload-worker-image.sh
 #   RUNTIME=k3s ./scripts/load-offload-worker-image.sh
 #
-# After loading, apply the patched manifest:
-#   sed -e 's|ghcr.io/napetrov/agentic-intel-demo/offload-worker:main|demo-offload-worker:latest|' \
-#       -e 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|' \
-#     k8s/system-b/offload-worker.yaml | kubectl apply -f -
+# After loading, apply the manifest with the local image. Use the helper instead
+# of plain envsubst: the manifest embeds shell scripts whose runtime variables
+# (for example $SCENARIO_DIR) must not be expanded on the deploy workstation.
+#   OFFLOAD_WORKER_IMAGE=demo-offload-worker:latest \
+#     ./scripts/apply-offload-worker-manifest.sh
 set -euo pipefail
 
 IMAGE_TAG="${IMAGE_TAG:-demo-offload-worker:latest}"
@@ -82,7 +83,10 @@ cat <<EOF
 
 [load-offload-worker-image] done. To apply the manifest with the local image:
 
-  sed -e 's|ghcr.io/napetrov/agentic-intel-demo/offload-worker:main|${IMAGE_TAG}|' \\
-      -e 's|imagePullPolicy: IfNotPresent|imagePullPolicy: Never|' \\
-    k8s/system-b/offload-worker.yaml | kubectl apply -f -
+  OFFLOAD_WORKER_IMAGE=${IMAGE_TAG} \\
+    ./scripts/apply-offload-worker-manifest.sh
+
+The helper also switches imagePullPolicy to Never by default for local images.
+Do not run plain envsubst over k8s/system-b/offload-worker.yaml: it embeds
+scenario shell scripts whose runtime variables must remain intact.
 EOF
