@@ -66,6 +66,35 @@ describe('truncateValue', () => {
   });
 });
 
+describe('truncateOutput', () => {
+  it('returns the input unchanged when under the line limit', () => {
+    const text = 'a\nb\nc';
+    expect(lib.truncateOutput(text, 12)).toBe(text);
+  });
+
+  it('keeps the tail and prepends a hidden-lines marker when over the limit', () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `L${i + 1}`);
+    const out = lib.truncateOutput(lines.join('\n'), 5);
+    const outLines = out.split('\n');
+    expect(outLines[0]).toBe('… (25 earlier lines hidden — see Live command log)');
+    expect(outLines.slice(1)).toEqual(['L26', 'L27', 'L28', 'L29', 'L30']);
+  });
+
+  it('returns "" for empty/null/undefined output', () => {
+    expect(lib.truncateOutput('', 5)).toBe('');
+    expect(lib.truncateOutput(null, 5)).toBe('');
+    expect(lib.truncateOutput(undefined, 5)).toBe('');
+  });
+
+  it('falls back to a default limit when maxLines is invalid', () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `L${i + 1}`);
+    const out = lib.truncateOutput(lines.join('\n'), 0);
+    // default keeps last 12 lines + 1 marker
+    expect(out.split('\n')).toHaveLength(13);
+    expect(out.split('\n')[0]).toBe('… (8 earlier lines hidden — see Live command log)');
+  });
+});
+
 describe('formatAge', () => {
   it('returns em-dash for non-finite or negative', () => {
     expect(lib.formatAge(NaN)).toBe('—');

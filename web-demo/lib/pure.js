@@ -40,6 +40,22 @@
     return `${m}m${s.toString().padStart(2, '0')}s`;
   }
 
+  // The Result panel is meant to be a compact "verdict, exit, elapsed"
+  // summary. Live runs include raw stdout/stderr, which can be hundreds
+  // of lines — and the same text is already in the Live command log.
+  // Keep only the tail (where final summary lines typically live) and
+  // mark the trim so users know to look at the full log.
+  function truncateOutput(output, maxLines) {
+    const limit = Number.isFinite(maxLines) && maxLines > 0 ? Math.floor(maxLines) : 12;
+    const text = String(output == null ? '' : output);
+    if (!text) return '';
+    const lines = text.split('\n');
+    if (lines.length <= limit) return text;
+    const kept = lines.slice(-limit);
+    const dropped = lines.length - kept.length;
+    return [`… (${dropped} earlier lines hidden — see Live command log)`, ...kept].join('\n');
+  }
+
   function buildScenarioToolActivity(scenario, defaultStatus) {
     if (!scenario || !Array.isArray(scenario.toolActivity)) return [];
     return scenario.toolActivity.map((row) => ({
@@ -53,6 +69,7 @@
     profileToVcpu,
     escapeHtml,
     truncateValue,
+    truncateOutput,
     formatAge,
     buildScenarioToolActivity
   };
