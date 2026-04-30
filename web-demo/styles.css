@@ -93,55 +93,28 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
-.hero-bullets {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+.hero-lede {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-width: 720px;
 }
-@media (max-width: 1024px) {
-  .hero-bullets { grid-template-columns: minmax(0, 1fr); }
+.scenario-picker {
+  margin-bottom: 20px;
 }
-.hero-bullets a {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.02);
-  color: var(--text);
-  text-decoration: none;
-  font-size: 12.5px;
-  line-height: 1.4;
-  transition: background 120ms ease, border-color 120ms ease;
+.scenario-picker-head {
+  margin-bottom: 12px;
 }
-.hero-bullets a:hover {
-  background: rgba(69,226,213,.06);
-  border-color: rgba(69,226,213,.35);
+.scenario-picker .cards-section {
+  margin-bottom: 8px;
 }
-.hero-bullets .bullet-num {
-  flex: 0 0 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--blue), var(--cyan));
-  color: #04101c;
-  font-weight: 800;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.hero-bullets .bullet-text { color: var(--muted); }
-.hero-bullets .bullet-text strong { color: var(--text); }
 .scenario-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
-  margin: -8px 0 18px;
+  margin: 14px 0 4px;
   padding: 12px 16px;
   border-radius: 16px;
   border: 1px solid var(--line);
@@ -653,6 +626,22 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   font-size: 24px;
   font-weight: 700;
   color: var(--text);
+}
+.scenario-card .scenario-promise {
+  display: block;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(69,226,213,.22);
+  background: rgba(69,226,213,.07);
+  color: #d7e6fb;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.scenario-card .scenario-promise strong { color: var(--text); }
+.scenario-card-density .scenario-promise {
+  border-color: rgba(192,168,255,.25);
+  background: rgba(192,168,255,.08);
 }
 .scenario-card .scenario-desc {
   display: block;
