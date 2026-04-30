@@ -78,18 +78,18 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .dot.down { background: #c25255; box-shadow: 0 0 12px rgba(194,82,85,.6); }
 .dot.idle, .dot.unknown { background: #4a4d55; box-shadow: none; }
 .hero {
-  padding: 24px;
+  padding: 18px 22px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 22px;
-  margin-bottom: 20px;
+  gap: 18px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 .hero-text { flex: 1 1 520px; min-width: 0; }
 .hero-thesis {
-  margin: 6px 0 14px;
-  font-size: 26px;
+  margin: 4px 0 10px;
+  font-size: 22px;
   line-height: 1.25;
   letter-spacing: -0.01em;
 }
@@ -98,20 +98,24 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   padding: 0;
   margin: 0;
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+@media (max-width: 1024px) {
+  .hero-bullets { grid-template-columns: minmax(0, 1fr); }
 }
 .hero-bullets a {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: rgba(255,255,255,.02);
   color: var(--text);
   text-decoration: none;
-  font-size: 13.5px;
-  line-height: 1.45;
+  font-size: 12.5px;
+  line-height: 1.4;
   transition: background 120ms ease, border-color 120ms ease;
 }
 .hero-bullets a:hover {
@@ -119,25 +123,34 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   border-color: rgba(69,226,213,.35);
 }
 .hero-bullets .bullet-num {
-  flex: 0 0 24px;
-  height: 24px;
+  flex: 0 0 22px;
+  height: 22px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--blue), var(--cyan));
   color: #04101c;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 .hero-bullets .bullet-text { color: var(--muted); }
 .hero-bullets .bullet-text strong { color: var(--text); }
-.hero-actions {
+.scenario-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
-  flex: 0 0 auto;
+  margin: -8px 0 18px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.025);
+}
+.scenario-actions-hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
 }
 .hero-deeplinks {
   font-size: 12px;
@@ -145,6 +158,7 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
 }
 .hero-deeplinks a {
   color: var(--cyan);
@@ -402,6 +416,13 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .agent-list, .service-list, .offload-list {
   display: grid;
   gap: 8px;
+}
+.agent-list, .offload-list {
+  /* When the density preset spawns 20+ agents, this list would grow the
+     architecture card unbounded. Cap it so the panel stays a card, not
+     a wall of rows; the inner list scrolls instead. */
+  max-height: 320px;
+  overflow-y: auto;
 }
 .agent-row, .service-row {
   display: grid;
@@ -792,9 +813,9 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .agent-row.tdx {
   border-left: 2px solid rgba(73,217,135,.55);
 }
-.workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 18px; align-items: start; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 18px; align-items: stretch; }
 .stack-right { display: grid; gap: 18px; min-width: 0; }
-.logs-panel-main { min-height: 100%; min-width: 0; }
+.logs-panel-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .compact-status-panel .timeline li { padding: 12px 14px; }
 .panel { padding: 20px; background: var(--panel-2); }
 .panel-note {
@@ -878,15 +899,29 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   max-height: 260px;
   overflow: auto;
 }
-.result { min-height: 220px; padding: 18px; white-space: pre-line; }
+.result {
+  min-height: 220px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 18px;
+  white-space: pre-line;
+}
 .command-log {
+  flex: 1 1 auto;
   min-height: 520px;
-  max-height: 78vh;
   margin: 0;
   padding: 16px;
   overflow: auto;
   color: #cfe2ff;
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.logs-panel-main .command-log {
+  /* Inside the workspace, the logs panel is stretched to the right
+     column's height; let the pre fill that available space instead of
+     the old 78vh viewport cap, so the log scrollbar lines up with the
+     panel rather than ending mid-card. */
+  min-height: 0;
+  max-height: none;
 }
 .metrics-grid {
   display: grid;

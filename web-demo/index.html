@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenClaw Agentic Intel Demo</title>
-    <link rel="stylesheet" href="./styles.css?v=20260427g" />
+    <link rel="stylesheet" href="./styles.css?v=20260430a" />
   </head>
   <body>
     <div class="shell">
@@ -54,15 +54,11 @@
               </li>
             </ul>
           </div>
-          <div class="hero-actions">
-            <button class="primary" id="run-demo">Run demo</button>
-            <button class="ghost" data-action="reset">Reset demo</button>
-            <span class="hero-deeplinks">
-              Deep dives:
-              <a href="./service-views.html">Behind the scenes</a>
-              <span aria-hidden="true">&middot;</span>
-              <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
-            </span>
+          <div class="hero-deeplinks">
+            Deep dives:
+            <a href="./service-views.html">Behind the scenes</a>
+            <span aria-hidden="true">&middot;</span>
+            <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
           </div>
         </section>
 
@@ -102,6 +98,12 @@
           </div>
           <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
         </section>
+
+        <div class="scenario-actions" role="group" aria-label="Demo controls">
+          <button class="primary" id="run-demo">Run demo</button>
+          <button class="ghost" data-action="reset">Reset demo</button>
+          <span class="scenario-actions-hint">Pick a scenario above, then run.</span>
+        </div>
 
         <details class="extensions-tray">
           <summary>
@@ -476,7 +478,7 @@
         </section>
       </main>
     </div>
-    <script src="./lib/pure.js?v=20260427g"></script>
-    <script src="./app.js?v=20260427g"></script>
+    <script src="./lib/pure.js?v=20260430a"></script>
+    <script src="./app.js?v=20260430a"></script>
   </body>
 </html>
