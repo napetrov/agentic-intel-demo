@@ -29,6 +29,7 @@ button { font: inherit; }
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-width: 0;
 }
 .main { padding: 28px; min-width: 0; }
 .eyebrow { text-transform: uppercase; letter-spacing: .12em; color: var(--cyan); font-size: 12px; margin-bottom: 10px; }
@@ -897,12 +898,17 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 }
 .command-log {
   flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 520px;
   margin: 0;
   padding: 16px;
   overflow: auto;
   color: #cfe2ff;
   font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .logs-panel-main .command-log {
   /* Inside the workspace, the logs panel is stretched to the right
@@ -935,6 +941,9 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   display: block;
   color: var(--text);
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .hidden { display: none; }
 
@@ -991,8 +1000,14 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
 .console-line:last-child { border-bottom: 0; }
-.console-key { color: var(--muted); text-transform: lowercase; }
-.console-val { color: var(--text); text-align: right; }
+.console-key { color: var(--muted); text-transform: lowercase; flex: 0 0 auto; }
+.console-val {
+  color: var(--text);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .empty, .empty-state { color: var(--muted); }
 
 .agent-console { padding: 18px 20px; margin-bottom: 20px; }
@@ -1311,7 +1326,15 @@ h2 { font-size: 31px; margin-bottom: 8px; }
   font-size: 12px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1280px) {
+  /* Tablets / small laptops: shrink the rail before it collapses so the
+     main content gets more breathing room. */
+  .shell { grid-template-columns: 260px minmax(0, 1fr); }
+  .rail { padding: 24px 18px; gap: 18px; }
+  .main { padding: 22px; }
+}
+
+@media (max-width: 1100px) {
   .shell, .workspace, .cards { grid-template-columns: minmax(0, 1fr); }
   /* Workspace collapses to one column here, so the logs panel no longer
      inherits the right stack's height. Re-impose a viewport-relative
@@ -1324,6 +1347,19 @@ h2 { font-size: 31px; margin-bottom: 8px; }
     height: 2px;
     width: 48px;
   }
-  .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); padding: 20px 18px; }
   .hero { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 640px) {
+  .main { padding: 16px; }
+  .rail { padding: 18px 16px; gap: 14px; }
+  .panel, .architecture, .services-panel, .agent-console, .flowise-chat-panel { padding: 14px; }
+  .hero { padding: 14px 16px; }
+  h1 { font-size: 26px; }
+  h2 { font-size: 22px; }
+  .command-log { min-height: 360px; padding: 12px; font-size: 12px; }
+  .metrics-grid { grid-template-columns: minmax(0, 1fr); }
+  .console-line { flex-wrap: wrap; gap: 4px; }
+  .console-val { text-align: left; }
 }
