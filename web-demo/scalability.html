@@ -479,8 +479,10 @@
         .sc-rail-builder .sc-builder-grid {
           grid-template-columns: 1fr;
         }
-        .sc-builder-rack,
-        .sc-rail-builder .sc-builder-rack { height: 320px; }
+        /* Default builder layout (used outside the rail) shrinks to a
+           shorter rack on narrow screens. The rail variant keeps its
+           taller rack so 42 U render at >=10 px each. */
+        .sc-builder-rack { height: 320px; }
       }
 
       @media (max-width: 900px) {
