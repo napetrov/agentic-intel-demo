@@ -471,10 +471,12 @@
       .sc-chart.sc-chart-disabled { opacity: 0.55; }
 
       @media (max-width: 720px) {
-        .sc-builder-grid {
+        .sc-builder-grid,
+        .sc-rail-builder .sc-builder-grid {
           grid-template-columns: 1fr;
         }
-        .sc-builder-rack { height: 320px; }
+        .sc-builder-rack,
+        .sc-rail-builder .sc-builder-rack { height: 320px; }
       }
 
       @media (max-width: 900px) {
