@@ -101,50 +101,82 @@ test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ p
   await expect(page.locator('#sc-tiles')).toContainText(/9,216 agents/);
 });
 
-test('rack builder renders default 16+16 composition with live tiles', async ({ page }) => {
+test('rack diagram and summary live inside the same block as the preset picker', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
 
-  // Builder panel is visible with title and appears before the preset scenario panel.
-  await expect(page.locator('#sc-builder-title')).toContainText(/rack builder/i);
-  const builderBeforeScenarios = await page.evaluate(() => {
-    const builder = document.querySelector('.sc-builder-panel');
-    const scenarios = document.querySelector('.sc-overview');
-    return Boolean(builder && scenarios && (builder.compareDocumentPosition(scenarios) & Node.DOCUMENT_POSITION_FOLLOWING));
-  });
-  expect(builderBeforeScenarios).toBe(true);
+  // Single combined block: rack diagram, preset tabs, and tiles all share .sc-overview.
+  const overview = page.locator('.sc-overview');
+  await expect(overview.locator('#sc-tabs')).toBeVisible();
+  await expect(overview.locator('#sc-builder-rack')).toBeVisible();
+  await expect(overview.locator('#sc-builder-controls')).toBeVisible();
+  await expect(overview.locator('#sc-tiles')).toBeVisible();
+  await expect(overview.locator('#sc-chart')).toBeVisible();
 
-  // Default 16 CWF + 16 GNR composition surfaces in the summary.
-  const summary = page.locator('#sc-builder-summary');
-  await expect(summary).toContainText(/16× CWF/);
-  await expect(summary).toContainText(/16× GNR/);
-  await expect(summary).toContainText(/32 of 38 usable U occupied/);
+  // The standalone builder panel is gone; everything is in one block.
+  await expect(page.locator('.sc-builder-panel')).toHaveCount(0);
 
-  // Rack viz contains 42 U slots; 16 are tagged as CWF and 16 as GNR.
+  // Default preset (first scenario, single-node CWF) seeds the rack
+  // diagram with 1× CWF and the summary reports preset mode.
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(1);
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(0);
+  await expect(page.locator('#sc-builder-summary')).toContainText(/Preset/i);
+});
+
+test('selecting the mixed-rack preset reshapes the rack diagram and tiles', async ({ page }) => {
+  await page.goto(BASE + '/scalability.html');
+
+  await page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]').click();
+
+  // Diagram updates: 16 CWF + 16 GNR slots in the same 42U rack.
   await expect(page.locator('#sc-builder-rack > div')).toHaveCount(42);
   await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(16);
   await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(16);
 
-  // Tiles: rack total + per-type CWF + per-type GNR + combined volume.
-  const tiles = page.locator('#sc-builder-tiles .sc-tile');
-  await expect(tiles).toHaveCount(4);
-  await expect(page.locator('#sc-builder-tiles')).toContainText(/32 nodes/);
-  await expect(page.locator('#sc-builder-tiles')).toContainText(/13,312 vCPU/);
-  // Combined volume = (16×3450 + 16×66.7) × 1440 ≈ 81 M tasks/day.
-  await expect(page.locator('#sc-builder-tiles')).toContainText(/81 M tasks/);
+  // Summary reports the composition + 32 of 38 usable U occupied + Preset badge.
+  const summary = page.locator('#sc-builder-summary');
+  await expect(summary).toContainText(/16× CWF/);
+  await expect(summary).toContainText(/16× GNR/);
+  await expect(summary).toContainText(/32 of 38 usable U occupied/);
+  await expect(summary).toContainText(/Preset/i);
+
+  // +/- controls reflect the preset's counts.
+  await expect(page.locator('[data-id="count-cwf"]')).toHaveText('16');
+  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('16');
+
+  // Numbers tile section still hosts the per-scenario tiles (mixed
+  // rack uses the rack-scale 7-tile set).
+  await expect(page.locator('#sc-tiles .sc-tile')).toHaveCount(7);
+  await expect(page.locator('#sc-tiles')).toContainText(/16× Intel Xeon CWF/);
 });
 
-test('rack builder updates live when nodes are added or removed', async ({ page }) => {
+test('using the +/- controls switches into custom mode and updates the diagram', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
+
+  // Start from the mixed preset so we have a non-zero baseline to tweak.
+  await page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]').click();
   const cwfCount = page.locator('[data-id="count-cwf"]');
   const cwfInc = page.locator('[data-id="inc-cwf"]');
-
   await expect(cwfCount).toHaveText('16');
 
-  // Add one CWF node — count should advance and a CWF U slot should
-  // appear in the rack viz.
+  // Add one CWF node — preset mode falls away, summary flips to Custom.
   await cwfInc.click();
   await expect(cwfCount).toHaveText('17');
   await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(17);
+  await expect(page.locator('#sc-builder-summary')).toContainText(/Custom/i);
+
+  // Tabs deselect once the user customizes.
+  const selectedTabs = page.locator('#sc-tabs .sc-tab[aria-selected="true"]');
+  await expect(selectedTabs).toHaveCount(0);
+
+  // Tile section swaps to the rack-builder layout: total + per-type + combined.
+  const tiles = page.locator('#sc-tiles .sc-tile');
+  await expect(tiles).toHaveCount(4);
+  await expect(page.locator('#sc-tiles')).toContainText(/Rack total/i);
+  await expect(page.locator('#sc-tiles')).toContainText(/Combined daily volume/i);
+
+  // Chart is replaced with a "pick a preset" note while in custom mode.
+  await expect(page.locator('#sc-chart')).toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-chart text')).toContainText(/pick a preset/i);
 
   // Remove three GNR nodes; rack viz should drop three orange slots.
   const gnrDec = page.locator('[data-id="dec-gnr"]');
@@ -158,6 +190,13 @@ test('rack builder updates live when nodes are added or removed', async ({ page 
   for (let i = 0; i < 13; i++) await gnrDec.click();
   await expect(page.locator('[data-id="count-gnr"]')).toHaveText('0');
   await expect(gnrDec).toBeDisabled();
+
+  // Picking a preset back resets the diagram and re-enables the chart.
+  await page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]').click();
+  await expect(page.locator('[data-id="count-cwf"]')).toHaveText('16');
+  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('16');
+  await expect(page.locator('#sc-chart')).not.toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-builder-summary')).toContainText(/Preset/i);
 });
 
 test('homepage hero has the Scalability story link', async ({ page }) => {
@@ -278,4 +317,46 @@ test('density tile derives slot count from instance + workload', async ({ page }
 
   await page.goto(BASE + '/scalability.html');
   await expect(page.locator('#sc-tiles')).toContainText(/8 agents/);
+});
+
+test('scenario switching still works when rack_builder is absent from JSON', async ({ page }) => {
+  // Regression: the combined block now carries the rack diagram, but
+  // `rack_builder` is documented as optional. With it missing, clicking
+  // a tab must not throw (previously it dereferenced builderCfg.node_types).
+  const consoleErrors = [];
+  page.on('pageerror', e => consoleErrors.push(String(e)));
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+
+  await injectMockScenario(page, {
+    schema_version: '3',
+    instances: [BASE_INSTANCE, { ...BASE_INSTANCE, id: 'i2', label: 'Other Instance' }],
+    workloads: [BASE_WORKLOAD],
+    scenarios: [
+      {
+        id: 's1', label: 'First', story: '',
+        instance_id: 'i', workload_id: 'w',
+        scaling: { model: 'queueing', datapoints: [
+          { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 6, utilization_pct: 10 },
+        ] },
+        tiles: ['density'],
+      },
+      {
+        id: 's2', label: 'Second', story: '',
+        instance_id: 'i2', workload_id: 'w',
+        scaling: { model: 'queueing', datapoints: [
+          { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 6, utilization_pct: 10 },
+        ] },
+        tiles: ['density'],
+      },
+    ],
+    // Note: no `rack_builder` key — the page must still render and
+    // tab-switching must keep working without it.
+  });
+
+  await page.goto(BASE + '/scalability.html');
+  await expect(page.locator('#sc-tabs .sc-tab')).toHaveCount(2);
+  await expect(page.locator('#sc-instance')).toContainText(/Test Instance/);
+  await page.locator('#sc-tabs .sc-tab[data-id="s2"]').click();
+  await expect(page.locator('#sc-instance')).toContainText(/Other Instance/);
+  expect(consoleErrors).toEqual([]);
 });
