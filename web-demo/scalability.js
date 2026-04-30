@@ -1012,6 +1012,19 @@
     box.textContent = msg;
   }
 
+  // Normalize a caught throwable into something readable. `throw "boom"`,
+  // `throw null`, and `throw new Error('x')` all need to render usefully
+  // in the #sc-error banner.
+  function errorText(err) {
+    if (err instanceof Error && err.message) return err.message;
+    if (err == null) return "Unknown error";
+    try {
+      return String(err);
+    } catch (_) {
+      return "Unknown error";
+    }
+  }
+
   /**
    * Single state-driven render. The page exposes one combined block:
    * a scenario picker on the left, an instance card + rack diagram +
@@ -1189,7 +1202,7 @@
         try {
           renderAll(data, lookups, builderCfg, scenariosById, state);
         } catch (err) {
-          showError(`Render failed after control change: ${err && err.message}`);
+          showError(`Render failed after control change: ${errorText(err)}`);
           throw err;
         }
       });
@@ -1201,7 +1214,7 @@
     try {
       renderAll(data, lookups, builderCfg, scenariosById, state);
     } catch (err) {
-      showError(`Initial render failed: ${err && err.message}`);
+      showError(`Initial render failed: ${errorText(err)}`);
       throw err;
     }
   }
