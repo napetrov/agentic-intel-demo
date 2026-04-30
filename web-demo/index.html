@@ -396,7 +396,7 @@
             <button type="submit" id="agent-command-submit" class="primary">Run command</button>
           </form>
           <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
-          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the selected tool and result appear here.</pre>
+          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite" tabindex="0">Run a command above — the selected tool and result appear here.</pre>
         </section>
 
         <section class="workspace">
@@ -408,7 +408,7 @@
               </div>
             </div>
             <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Direct tool call panel above.</div>
-            <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
+            <pre id="command-log" class="command-log" tabindex="0">Waiting for scenario selection.</pre>
           </div>
 
           <div class="stack-right">
@@ -447,7 +447,7 @@
                   <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite" tabindex="0">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
               <div class="result-tiles" id="result-tiles" hidden>
                 <a class="result-tile result-tile-artifact" id="result-tile-artifact" hidden href="#" target="_blank" rel="noopener">
                   <div class="result-tile-label">Artifact</div>
