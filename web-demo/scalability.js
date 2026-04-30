@@ -1029,7 +1029,12 @@
       const scenario = data.scenarios.find((s) => s.id === id);
       if (!scenario) return;
       state.presetId = id;
-      state.rackCounts = scenarioToRackCounts(scenario, lookups, builderCfg);
+      // Builder is optional; when the JSON omits `rack_builder`, leave
+      // rackCounts as-is and let the rack-diagram render path stay
+      // dormant. Only re-derive composition when the builder is wired.
+      if (builderCfg) {
+        state.rackCounts = scenarioToRackCounts(scenario, lookups, builderCfg);
+      }
       renderAll(data, lookups, builderCfg, scenariosById, state);
     });
 

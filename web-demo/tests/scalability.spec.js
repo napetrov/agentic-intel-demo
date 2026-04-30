@@ -318,3 +318,45 @@ test('density tile derives slot count from instance + workload', async ({ page }
   await page.goto(BASE + '/scalability.html');
   await expect(page.locator('#sc-tiles')).toContainText(/8 agents/);
 });
+
+test('scenario switching still works when rack_builder is absent from JSON', async ({ page }) => {
+  // Regression: the combined block now carries the rack diagram, but
+  // `rack_builder` is documented as optional. With it missing, clicking
+  // a tab must not throw (previously it dereferenced builderCfg.node_types).
+  const consoleErrors = [];
+  page.on('pageerror', e => consoleErrors.push(String(e)));
+  page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+
+  await injectMockScenario(page, {
+    schema_version: '3',
+    instances: [BASE_INSTANCE, { ...BASE_INSTANCE, id: 'i2', label: 'Other Instance' }],
+    workloads: [BASE_WORKLOAD],
+    scenarios: [
+      {
+        id: 's1', label: 'First', story: '',
+        instance_id: 'i', workload_id: 'w',
+        scaling: { model: 'queueing', datapoints: [
+          { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 6, utilization_pct: 10 },
+        ] },
+        tiles: ['density'],
+      },
+      {
+        id: 's2', label: 'Second', story: '',
+        instance_id: 'i2', workload_id: 'w',
+        scaling: { model: 'queueing', datapoints: [
+          { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 6, utilization_pct: 10 },
+        ] },
+        tiles: ['density'],
+      },
+    ],
+    // Note: no `rack_builder` key — the page must still render and
+    // tab-switching must keep working without it.
+  });
+
+  await page.goto(BASE + '/scalability.html');
+  await expect(page.locator('#sc-tabs .sc-tab')).toHaveCount(2);
+  await expect(page.locator('#sc-instance')).toContainText(/Test Instance/);
+  await page.locator('#sc-tabs .sc-tab[data-id="s2"]').click();
+  await expect(page.locator('#sc-instance')).toContainText(/Other Instance/);
+  expect(consoleErrors).toEqual([]);
+});
