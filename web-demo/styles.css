@@ -1324,6 +1324,11 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 
 @media (max-width: 1024px) {
   .shell, .workspace, .cards { grid-template-columns: minmax(0, 1fr); }
+  /* Workspace collapses to one column here, so the logs panel no longer
+     inherits the right stack's height. Re-impose a viewport-relative
+     cap so the inner pre keeps its own scroller instead of growing the
+     page. */
+  .logs-panel-main .command-log { max-height: 78vh; }
   .arch-systems-split { grid-template-columns: minmax(0, 1fr); }
   .arch-cross-arrow { flex-direction: row; min-width: 0; justify-content: center; }
   .arch-cross-arrow .cross-arrow-line {
