@@ -180,9 +180,9 @@ The bottom panel renders the most recent scenario run:
   daily task / token volume on synthetic data. Includes per-node
   scenarios (CWF, GNR) and rack-scale scenarios (32-node CWF rack,
   32-node GNR rack, and a mixed CWF-agent + GNR-offload rack) that
-  fan the per-node curve out across a full 42U rack. An interactive
-  **rack builder** now sits immediately below the hero so you can add / remove
-  CWF and GNR nodes from a 42U chassis and re-project every tile
+  fan the per-node curve out across a full 42U rack. The demo scenario picker
+  and interactive **rack builder** now share one setup panel, so switching a
+  scenario updates the CWF/GNR composition and +/- changes re-project every tile
   (rack capacity, density, throughput, combined daily volume) live
   as the composition changes. The page is intentionally about
   compute — it does not compare against a cloud / frontier-API

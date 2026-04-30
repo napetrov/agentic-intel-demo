@@ -15,8 +15,9 @@ test('scalability page renders the default scenario tiles + chart', async ({ pag
   await expect(tabs).toHaveCount(5);
   await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
 
-  // Instance card populated.
+  // Instance card populated, without the old hardware ownership wording.
   await expect(page.locator('#sc-instance')).toContainText(/Xeon CWF/);
+  await expect(page.locator('#sc-instance')).not.toContainText(/owned hardware/i);
 
   // Single-node CWF scenario shows 6 compute tiles (no economics).
   const tiles = page.locator('#sc-tiles .sc-tile');
@@ -101,36 +102,37 @@ test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ p
   await expect(page.locator('#sc-tiles')).toContainText(/9,216 agents/);
 });
 
-test('rack builder renders default 16+16 composition with live tiles', async ({ page }) => {
+test('demo setup follows the selected scenario and renders live tiles', async ({ page }) => {
   await page.goto(BASE + '/scalability.html');
 
-  // Builder panel is visible with title and appears before the preset scenario panel.
+  // Builder is now merged into the scenario overview panel as the selected demo setup.
+  await expect(page.locator('#sc-builder-title')).toContainText(/demo setup/i);
   await expect(page.locator('#sc-builder-title')).toContainText(/rack builder/i);
-  const builderBeforeScenarios = await page.evaluate(() => {
-    const builder = document.querySelector('.sc-builder-panel');
-    const scenarios = document.querySelector('.sc-overview');
-    return Boolean(builder && scenarios && (builder.compareDocumentPosition(scenarios) & Node.DOCUMENT_POSITION_FOLLOWING));
-  });
-  expect(builderBeforeScenarios).toBe(true);
 
-  // Default 16 CWF + 16 GNR composition surfaces in the summary.
+  // The default scenario is the single-node CWF case, so setup starts at 1× CWF.
   const summary = page.locator('#sc-builder-summary');
-  await expect(summary).toContainText(/16× CWF/);
-  await expect(summary).toContainText(/16× GNR/);
-  await expect(summary).toContainText(/32 of 38 usable U occupied/);
+  await expect(summary).toContainText(/1× CWF/);
+  await expect(summary).toContainText(/0× GNR/);
+  await expect(summary).toContainText(/1 of 38 usable U occupied/);
 
-  // Rack viz contains 42 U slots; 16 are tagged as CWF and 16 as GNR.
+  // Rack viz contains 42 U slots; one is tagged as CWF and none as GNR.
   await expect(page.locator('#sc-builder-rack > div')).toHaveCount(42);
-  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(16);
-  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(16);
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(1);
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(0);
 
-  // Tiles: rack total + per-type CWF + per-type GNR + combined volume.
+  // Tiles recompute from the selected setup.
   const tiles = page.locator('#sc-builder-tiles .sc-tile');
   await expect(tiles).toHaveCount(4);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/1 nodes/);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/576 vCPU/);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/5\.0 M tasks/);
+
+  // Switching to the mixed rack preset updates setup counts and totals too.
+  await page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]').click();
+  await expect(summary).toContainText(/16× CWF/);
+  await expect(summary).toContainText(/16× GNR/);
   await expect(page.locator('#sc-builder-tiles')).toContainText(/32 nodes/);
   await expect(page.locator('#sc-builder-tiles')).toContainText(/13,312 vCPU/);
-  // Combined volume = (16×3450 + 16×66.7) × 1440 ≈ 81 M tasks/day.
-  await expect(page.locator('#sc-builder-tiles')).toContainText(/81 M tasks/);
 });
 
 test('rack builder updates live when nodes are added or removed', async ({ page }) => {
@@ -138,24 +140,22 @@ test('rack builder updates live when nodes are added or removed', async ({ page 
   const cwfCount = page.locator('[data-id="count-cwf"]');
   const cwfInc = page.locator('[data-id="inc-cwf"]');
 
-  await expect(cwfCount).toHaveText('16');
+  await expect(cwfCount).toHaveText('1');
 
-  // Add one CWF node — count should advance and a CWF U slot should
-  // appear in the rack viz.
+  // Add one CWF node — count, rack viz, and setup totals should update.
   await cwfInc.click();
-  await expect(cwfCount).toHaveText('17');
-  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(17);
+  await expect(cwfCount).toHaveText('2');
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(2);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/2 nodes/);
+  await expect(page.locator('#sc-builder-tiles')).toContainText(/1,152 vCPU/);
 
-  // Remove three GNR nodes; rack viz should drop three orange slots.
+  // Add and then remove a GNR node; rack viz should follow the count.
+  const gnrInc = page.locator('[data-id="inc-gnr"]');
   const gnrDec = page.locator('[data-id="dec-gnr"]');
+  await gnrInc.click();
+  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('1');
+  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(1);
   await gnrDec.click();
-  await gnrDec.click();
-  await gnrDec.click();
-  await expect(page.locator('[data-id="count-gnr"]')).toHaveText('13');
-  await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(13);
-
-  // Going below zero is blocked: dec is disabled at 0.
-  for (let i = 0; i < 13; i++) await gnrDec.click();
   await expect(page.locator('[data-id="count-gnr"]')).toHaveText('0');
   await expect(gnrDec).toBeDisabled();
 });

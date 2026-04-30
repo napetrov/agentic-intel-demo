@@ -311,20 +311,20 @@
          the rack visualization (left) and the controls (right). Tiles
          live in the existing .sc-tiles grid below for visual symmetry
          with the per-scenario tile row. */
-      .sc-builder-panel { padding: 22px; margin-bottom: 22px; }
+      .sc-builder-panel { padding: 0; margin-bottom: 0; }
       .sc-builder-grid {
         display: grid;
-        grid-template-columns: 120px 1fr;
-        gap: 24px;
-        margin-top: 14px;
-        margin-bottom: 18px;
+        grid-template-columns: 96px 1fr;
+        gap: 18px;
+        margin-top: 12px;
+        margin-bottom: 14px;
         align-items: stretch;
       }
       .sc-builder-rack {
         display: grid;
         grid-template-rows: repeat(42, 1fr);
         gap: 1px;
-        height: 480px;
+        height: 360px;
         border: 1px solid var(--line);
         border-radius: 6px;
         padding: 4px;
@@ -456,21 +456,6 @@
         </div>
       </section>
 
-      <section class="panel sc-builder-panel" aria-labelledby="sc-builder-title">
-        <div class="sc-chart-head">
-          <div>
-            <div class="section-title" id="sc-builder-title">Rack builder (interactive)</div>
-            <div class="section-subtitle">Compose a custom rack — add CWF nodes for the agent half, GNR nodes for the SLM/offload half. Every tile below recomputes live as the rack composition changes.</div>
-          </div>
-        </div>
-        <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
-        <div class="sc-builder-grid">
-          <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
-          <div class="sc-builder-controls" id="sc-builder-controls"></div>
-        </div>
-        <div class="sc-tiles sc-builder-tiles" id="sc-builder-tiles" aria-live="polite"></div>
-      </section>
-
       <section class="panel sc-overview" aria-label="Scenario overview">
         <aside class="sc-rail" aria-label="Scenario picker">
           <div class="section-title">Demo scenarios</div>
@@ -478,6 +463,23 @@
           <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
         </aside>
         <div class="sc-overview-main">
+          <section class="sc-builder-panel" aria-labelledby="sc-builder-title">
+            <div class="sc-chart-head">
+              <div>
+                <div class="section-title" id="sc-builder-title">Demo setup · Rack builder (interactive)</div>
+                <div class="section-subtitle">Setup now follows the selected demo scenario. Use +/- to adjust CWF/GNR nodes; rack totals and workload tiles recompute live.</div>
+              </div>
+            </div>
+            <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
+            <div class="sc-builder-grid">
+              <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
+              <div class="sc-builder-controls" id="sc-builder-controls"></div>
+            </div>
+            <div class="sc-tiles sc-builder-tiles" id="sc-builder-tiles" aria-live="polite"></div>
+          </section>
+
+          <div class="sc-overview-divider"></div>
+
           <div class="sc-instance" id="sc-instance" aria-live="polite">
             <!-- populated by scalability.js -->
           </div>

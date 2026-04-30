@@ -354,7 +354,7 @@
       el("h3", { text: instance.label }),
       el("p", {
         class: "sc-spec",
-        text: `${instance.subtitle} · owned hardware`,
+        text: instance.subtitle,
       }),
     ]);
     const right = el("div", {}, [
@@ -859,20 +859,41 @@
       `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.`;
   }
 
-  function renderRackBuilder(data, lookups) {
+  function nodeTypeIdForModel(model) {
+    const m = String(model || "").toLowerCase();
+    if (m.includes("cwf") || m.includes("clearwater") || m.includes("xeon")) return "cwf";
+    if (m.includes("gnr") || m.includes("granite")) return "gnr";
+    return null;
+  }
+
+  function builderStateFromScenario(scenario, lookups, cfg) {
+    const state = Object.fromEntries(cfg.node_types.map((nt) => [nt.id, 0]));
+    const instance = scenario ? lookups.instances[scenario.instance_id] : null;
+    const composition = Array.isArray(instance?.composition) ? instance.composition : [];
+    for (const part of composition) {
+      const typeId = nodeTypeIdForModel(part.model);
+      if (typeId && Object.prototype.hasOwnProperty.call(state, typeId)) {
+        state[typeId] += part.count || 0;
+      }
+    }
+    if (!composition.length) {
+      for (const nt of cfg.node_types) state[nt.id] = nt.default_count || 0;
+    }
+    return state;
+  }
+
+  function renderRackBuilder(data, lookups, getActiveScenario) {
     const cfg = data.rack_builder;
-    if (!cfg) return; // Builder is optional — don't crash older JSON files.
+    if (!cfg) return null; // Builder is optional — don't crash older JSON files.
 
     const rackEl = document.getElementById("sc-builder-rack");
     const controlsEl = document.getElementById("sc-builder-controls");
     const tilesEl = document.getElementById("sc-builder-tiles");
     const summaryEl = document.getElementById("sc-builder-summary");
-    if (!rackEl || !controlsEl || !tilesEl) return;
+    if (!rackEl || !controlsEl || !tilesEl) return null;
 
     const scenariosById = Object.fromEntries((data.scenarios || []).map((s) => [s.id, s]));
-    const state = Object.fromEntries(
-      cfg.node_types.map((nt) => [nt.id, nt.default_count || 0])
-    );
+    let state = builderStateFromScenario(getActiveScenario?.(), lookups, cfg);
 
     function rerender() {
       const metrics = computeBuilderMetrics(state, cfg, lookups, scenariosById);
@@ -897,8 +918,14 @@
       rerender();
     }
 
+    function syncToScenario(scenario) {
+      state = builderStateFromScenario(scenario, lookups, cfg);
+      rerender();
+    }
+
     renderBuilderControls(controlsEl, state, cfg, onChange);
     rerender();
+    return { syncToScenario };
   }
 
   // ---------- main ----------
@@ -957,16 +984,19 @@
     let activeId = data.scenarios[0].id;
 
     const tabsEl = document.getElementById("sc-tabs");
+    let builder = null;
+    const activeScenario = () => data.scenarios.find((s) => s.id === activeId);
     const onSelect = (id) => {
       if (id === activeId) return;
       activeId = id;
       // Re-render tabs to update aria-selected, and the rest of the page.
       renderTabs(tabsEl, data.scenarios, activeId, onSelect);
       renderScenario(data, lookups, activeId);
+      if (builder) builder.syncToScenario(activeScenario());
     };
     renderTabs(tabsEl, data.scenarios, activeId, onSelect);
     renderScenario(data, lookups, activeId);
-    renderRackBuilder(data, lookups);
+    builder = renderRackBuilder(data, lookups, activeScenario);
   }
 
   if (document.readyState === "loading") {
