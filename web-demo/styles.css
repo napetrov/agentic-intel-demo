@@ -886,8 +886,7 @@ h2 { font-size: 31px; margin-bottom: 8px; }
 .tool-row-rich[data-status="error"] .tool-status { color: #ff8b8e; }
 .tool-row-rich[data-status="planned"] .tool-status { color: var(--muted); }
 .console-scroll {
-  max-height: 260px;
-  overflow: auto;
+  overflow: visible;
 }
 .result {
   min-height: 220px;
