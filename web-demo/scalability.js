@@ -376,6 +376,71 @@
     }
   }
 
+  /**
+   * "Instance card" content for custom mode. The user has tweaked the
+   * rack into a composition that no longer matches a published preset,
+   * so the header reflects the rack totals + the per-node-type baseline
+   * workloads instead of a single instance/workload pair.
+   */
+  function renderCustomInstanceCard(container, rackCounts, builderCfg, lookups, scenariosById) {
+    container.replaceChildren();
+    const totals = rackTotalsFromCounts(rackCounts, builderCfg);
+    const compParts = builderCfg.node_types
+      .filter((nt) => (rackCounts[nt.id] || 0) > 0)
+      .map((nt) => `${rackCounts[nt.id]}× ${nt.short_label || nt.label}`);
+    const compText = compParts.length ? compParts.join(" + ") : "empty rack";
+    const left = el("div", {}, [
+      el("div", { class: "sc-block-title", text: "Rack" }),
+      el("h3", { text: "Custom rack" }),
+      el("p", {
+        class: "sc-spec",
+        text: `${totals.nodes} nodes · ${fmtInt.format(totals.vcpu)} vCPU · ${fmtInt.format(
+          totals.memory_gb
+        )} GB · owned hardware`,
+      }),
+    ]);
+    // Per-type workload preview in the right column so the reader can
+    // see which baseline curve each node type runs against.
+    const workloadLines = builderCfg.node_types
+      .filter((nt) => (rackCounts[nt.id] || 0) > 0)
+      .map((nt) => {
+        const baseScenario = scenariosById[nt.baseline_scenario_id];
+        const wl = baseScenario ? lookups.workloads[baseScenario.workload_id] : null;
+        return `${nt.short_label || nt.label}: ${wl ? wl.label : "n/a"}`;
+      });
+    const right = el("div", {}, [
+      el("div", { class: "sc-block-title", text: "Composition" }),
+      el("h3", { text: compText }),
+      el("p", {
+        class: "sc-spec",
+        text: workloadLines.length
+          ? workloadLines.join(" · ")
+          : "Use the +/− controls to add nodes.",
+      }),
+    ]);
+    container.appendChild(left);
+    container.appendChild(right);
+    container.appendChild(
+      el("p", {
+        class: "sc-story",
+        text: "Custom rack — derived from per-node baseline scenarios. Density and throughput tiles below recompute live from the current composition; the latency curve is only published for the preset benchmarks.",
+      })
+    );
+  }
+
+  function rackTotalsFromCounts(counts, builderCfg) {
+    let nodes = 0,
+      vcpu = 0,
+      memory_gb = 0;
+    for (const nt of builderCfg.node_types) {
+      const n = counts[nt.id] || 0;
+      nodes += n;
+      vcpu += n * (nt.vcpu_per_node || 0);
+      memory_gb += n * (nt.memory_gb_per_node || 0);
+    }
+    return { nodes, vcpu, memory_gb };
+  }
+
   function renderTiles(container, scenario, ctx) {
     container.replaceChildren();
     const ids = scenario.tiles || [];
@@ -850,55 +915,79 @@
     tilesEl.appendChild(combined);
   }
 
-  function renderBuilderSummary(summaryEl, metrics, cfg) {
+  function renderBuilderSummary(summaryEl, metrics, cfg, mode) {
     const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
     const parts = metrics.perType.map(
       (t) => `<strong>${t.count}× ${t.nodeType.short_label || t.nodeType.label}</strong>`
     );
+    const badgeCls = mode === "custom" ? "sc-mode-custom" : "";
+    const badgeText = mode === "custom" ? "Custom" : "Preset";
     summaryEl.innerHTML =
-      `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.`;
+      `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.` +
+      ` <span class="sc-builder-summary-mode ${badgeCls}">${badgeText}</span>`;
   }
 
-  function renderRackBuilder(data, lookups) {
-    const cfg = data.rack_builder;
-    if (!cfg) return; // Builder is optional — don't crash older JSON files.
-
-    const rackEl = document.getElementById("sc-builder-rack");
-    const controlsEl = document.getElementById("sc-builder-controls");
-    const tilesEl = document.getElementById("sc-builder-tiles");
-    const summaryEl = document.getElementById("sc-builder-summary");
-    if (!rackEl || !controlsEl || !tilesEl) return;
-
-    const scenariosById = Object.fromEntries((data.scenarios || []).map((s) => [s.id, s]));
-    const state = Object.fromEntries(
-      cfg.node_types.map((nt) => [nt.id, nt.default_count || 0])
-    );
-
-    function rerender() {
-      const metrics = computeBuilderMetrics(state, cfg, lookups, scenariosById);
-      renderBuilderRack(rackEl, state, cfg);
-      refreshBuilderControlState(controlsEl, state, cfg);
-      renderBuilderTiles(tilesEl, metrics);
-      if (summaryEl) renderBuilderSummary(summaryEl, metrics, cfg);
+  /**
+   * Map a scenario's instance.composition[] into per-node-type counts
+   * the rack builder understands. Falls back to a heuristic on the
+   * model string ("CWF" / "GNR") so single-node rows render the same
+   * sized rack as their rack-scale siblings without extra JSON.
+   */
+  function scenarioToRackCounts(scenario, lookups, builderCfg) {
+    const counts = Object.fromEntries(builderCfg.node_types.map((nt) => [nt.id, 0]));
+    if (!scenario) return counts;
+    const inst = lookups.instances[scenario.instance_id];
+    if (!inst) return counts;
+    const comp = Array.isArray(inst.composition) ? inst.composition : [];
+    for (const c of comp) {
+      const m = (c.model || "").toLowerCase();
+      let typeId = null;
+      if (m.includes("cwf")) typeId = "cwf";
+      else if (m.includes("gnr")) typeId = "gnr";
+      // Fall back to label-based matching for builder configs that
+      // diverge from the CWF/GNR naming convention used in the JSON.
+      if (!typeId) {
+        for (const nt of builderCfg.node_types) {
+          const ntLabel = (nt.label || "").toLowerCase();
+          const ntShort = (nt.short_label || "").toLowerCase();
+          if ((ntLabel && m.includes(ntLabel)) || (ntShort && m.includes(ntShort))) {
+            typeId = nt.id;
+            break;
+          }
+        }
+      }
+      if (typeId && counts[typeId] !== undefined) {
+        counts[typeId] += c.count || 0;
+      }
     }
-
-    function onChange(typeId, delta) {
-      const nt = cfg.node_types.find((x) => x.id === typeId);
-      if (!nt) return;
-      const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
-      const hardCap = Math.min(cfg.max_total_nodes || usable, usable);
-      const next = (state[typeId] || 0) + delta;
-      const totalAfter =
-        cfg.node_types.reduce((s, x) => s + (state[x.id] || 0), 0) + delta;
-      if (next < 0) return;
-      if (next > (nt.max_count || hardCap)) return;
-      if (totalAfter > hardCap) return;
-      state[typeId] = next;
-      rerender();
+    // Cap each count at the per-type max so a misconfigured JSON entry
+    // can't render a rack that exceeds the visualization budget.
+    for (const nt of builderCfg.node_types) {
+      const cap = nt.max_count || builderCfg.max_total_nodes || builderCfg.rack_units_total;
+      if (counts[nt.id] > cap) counts[nt.id] = cap;
     }
+    return counts;
+  }
 
-    renderBuilderControls(controlsEl, state, cfg, onChange);
-    rerender();
+  /**
+   * Wipe the chart SVG and replace it with a centered note. Used in
+   * custom mode where the per-scenario queueing curve no longer
+   * matches the user's rack composition.
+   */
+  function clearChartWithNote(svg, message) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const W = 800,
+      H = 320;
+    const text = svgEl("text", {
+      x: W / 2,
+      y: H / 2,
+      "text-anchor": "middle",
+      fill: "#9db2cf",
+      "font-size": 14,
+      "font-family": "Inter, sans-serif",
+    });
+    text.textContent = message;
+    svg.appendChild(text);
   }
 
   // ---------- main ----------
@@ -911,31 +1000,128 @@
     };
   }
 
-  function renderScenario(data, lookups, scenarioId) {
-    const scenario = data.scenarios.find((s) => s.id === scenarioId);
-    if (!scenario) return;
-    const instance = lookups.instances[scenario.instance_id];
-    const workload = lookups.workloads[scenario.workload_id];
-    if (!instance || !workload) {
-      showError(
-        `Scenario "${scenario.id}" references missing instance/workload (instance_id=${scenario.instance_id}, workload_id=${scenario.workload_id}).`
-      );
-      return;
-    }
-    const derived = buildDerived(scenario, instance, workload);
-    const ctx = { scenario, instance, workload, derived };
-
-    renderInstanceCard(document.getElementById("sc-instance"), instance, workload, scenario);
-    renderTiles(document.getElementById("sc-tiles"), scenario, ctx);
-    renderChart(document.getElementById("sc-chart"), scenario, derived);
-    renderChartNote(document.getElementById("sc-chart-note"), scenario, derived);
-    renderNotes(document.getElementById("sc-notes"), instance, workload);
-  }
-
   function showError(msg) {
     const box = document.getElementById("sc-error");
     box.hidden = false;
     box.textContent = msg;
+  }
+
+  /**
+   * Single state-driven render. The page exposes one combined block:
+   * a scenario picker on the left, an instance card + rack diagram +
+   * tiles + latency chart on the right. State carries either an
+   * active preset id (drives every section from the matching scenario)
+   * or null (custom mode — rack composition came from the +/- controls).
+   */
+  function renderAll(data, lookups, builderCfg, scenariosById, state) {
+    const tabsEl = document.getElementById("sc-tabs");
+    const instanceEl = document.getElementById("sc-instance");
+    const rackEl = document.getElementById("sc-builder-rack");
+    const controlsEl = document.getElementById("sc-builder-controls");
+    const summaryEl = document.getElementById("sc-builder-summary");
+    const tilesEl = document.getElementById("sc-tiles");
+    const chartEl = document.getElementById("sc-chart");
+    const chartNoteEl = document.getElementById("sc-chart-note");
+    const notesEl = document.getElementById("sc-notes");
+
+    // Tabs always reflect the current presetId — null deselects all.
+    renderTabs(tabsEl, data.scenarios, state.presetId, (id) => {
+      const scenario = data.scenarios.find((s) => s.id === id);
+      if (!scenario) return;
+      state.presetId = id;
+      state.rackCounts = scenarioToRackCounts(scenario, lookups, builderCfg);
+      renderAll(data, lookups, builderCfg, scenariosById, state);
+    });
+
+    // Rack diagram + +/- controls always mirror state.rackCounts.
+    if (rackEl && controlsEl && builderCfg) {
+      renderBuilderRack(rackEl, state.rackCounts, builderCfg);
+      refreshBuilderControlState(controlsEl, state.rackCounts, builderCfg);
+      const metrics = computeBuilderMetrics(
+        state.rackCounts,
+        builderCfg,
+        lookups,
+        scenariosById
+      );
+      if (summaryEl) {
+        renderBuilderSummary(
+          summaryEl,
+          metrics,
+          builderCfg,
+          state.presetId ? "preset" : "custom"
+        );
+      }
+    }
+
+    // Mode-dependent sections: instance card, tiles, chart, notes.
+    if (state.presetId) {
+      const scenario = data.scenarios.find((s) => s.id === state.presetId);
+      const instance = lookups.instances[scenario.instance_id];
+      const workload = lookups.workloads[scenario.workload_id];
+      if (!instance || !workload) {
+        showError(
+          `Scenario "${scenario.id}" references missing instance/workload (instance_id=${scenario.instance_id}, workload_id=${scenario.workload_id}).`
+        );
+        return;
+      }
+      const derived = buildDerived(scenario, instance, workload);
+      const ctx = { scenario, instance, workload, derived };
+      renderInstanceCard(instanceEl, instance, workload, scenario);
+      renderTiles(tilesEl, scenario, ctx);
+      chartEl.classList.remove("sc-chart-disabled");
+      renderChart(chartEl, scenario, derived);
+      renderChartNote(chartNoteEl, scenario, derived);
+      renderNotes(notesEl, instance, workload);
+    } else if (builderCfg) {
+      const metrics = computeBuilderMetrics(
+        state.rackCounts,
+        builderCfg,
+        lookups,
+        scenariosById
+      );
+      renderCustomInstanceCard(instanceEl, state.rackCounts, builderCfg, lookups, scenariosById);
+      renderBuilderTiles(tilesEl, metrics);
+      chartEl.classList.add("sc-chart-disabled");
+      clearChartWithNote(
+        chartEl,
+        "Custom rack — pick a preset above to see a benchmarked latency curve."
+      );
+      chartNoteEl.textContent =
+        "The latency curve is published per benchmarked preset. Tile values above still recompute from per-node baselines for the current rack composition.";
+      // Notes panel: list each baseline scenario the custom rack is
+      // drawing density / throughput numbers from, so the reader can
+      // trace any tile back to a published curve.
+      notesEl.replaceChildren();
+      for (const nt of builderCfg.node_types) {
+        if ((state.rackCounts[nt.id] || 0) <= 0) continue;
+        const baseScenario = scenariosById[nt.baseline_scenario_id];
+        if (!baseScenario) continue;
+        const inst = lookups.instances[baseScenario.instance_id];
+        const wl = lookups.workloads[baseScenario.workload_id];
+        if (!inst || !wl) continue;
+        const li = el("li", {}, [
+          el("span", {
+            class: "sc-note-label",
+            text: `${nt.label} → ${baseScenario.short_label || baseScenario.label}`,
+          }),
+          el("span", {
+            class: "sc-note-text",
+            text: `${inst.notes || ""} ${wl.notes || ""}`.trim() ||
+              "Density and throughput are scaled linearly from the per-node baseline.",
+          }),
+        ]);
+        notesEl.appendChild(li);
+      }
+    }
+  }
+
+  function attachBuilderControls(builderCfg, onChange) {
+    const controlsEl = document.getElementById("sc-builder-controls");
+    if (!controlsEl || !builderCfg) return;
+    // Render the row markup once with stub state — the real counts and
+    // disabled flags get refreshed inside renderAll() on every render.
+    const stubState = Object.fromEntries(builderCfg.node_types.map((nt) => [nt.id, 0]));
+    renderBuilderControls(controlsEl, stubState, builderCfg, onChange);
   }
 
   async function main() {
@@ -954,19 +1140,46 @@
     }
 
     const lookups = buildLookups(data);
-    let activeId = data.scenarios[0].id;
+    const builderCfg = data.rack_builder || null;
+    const scenariosById = Object.fromEntries(
+      (data.scenarios || []).map((s) => [s.id, s])
+    );
 
-    const tabsEl = document.getElementById("sc-tabs");
-    const onSelect = (id) => {
-      if (id === activeId) return;
-      activeId = id;
-      // Re-render tabs to update aria-selected, and the rest of the page.
-      renderTabs(tabsEl, data.scenarios, activeId, onSelect);
-      renderScenario(data, lookups, activeId);
+    // First scenario becomes the default preset; its rack composition
+    // seeds the diagram so the page lands with everything in sync.
+    const firstScenario = data.scenarios[0];
+    const state = {
+      presetId: firstScenario.id,
+      rackCounts: builderCfg
+        ? scenarioToRackCounts(firstScenario, lookups, builderCfg)
+        : {},
     };
-    renderTabs(tabsEl, data.scenarios, activeId, onSelect);
-    renderScenario(data, lookups, activeId);
-    renderRackBuilder(data, lookups);
+
+    if (builderCfg) {
+      attachBuilderControls(builderCfg, (typeId, delta) => {
+        const nt = builderCfg.node_types.find((x) => x.id === typeId);
+        if (!nt) return;
+        const usable =
+          builderCfg.rack_units_total - (builderCfg.rack_units_fixture || 0);
+        const hardCap = Math.min(builderCfg.max_total_nodes || usable, usable);
+        const next = (state.rackCounts[typeId] || 0) + delta;
+        const totalAfter =
+          builderCfg.node_types.reduce(
+            (s, x) => s + (state.rackCounts[x.id] || 0),
+            0
+          ) + delta;
+        if (next < 0) return;
+        if (next > (nt.max_count || hardCap)) return;
+        if (totalAfter > hardCap) return;
+        state.rackCounts[typeId] = next;
+        // Tweaking the +/- controls drops out of preset mode — the
+        // composition no longer matches a published benchmark.
+        state.presetId = null;
+        renderAll(data, lookups, builderCfg, scenariosById, state);
+      });
+    }
+
+    renderAll(data, lookups, builderCfg, scenariosById, state);
   }
 
   if (document.readyState === "loading") {
