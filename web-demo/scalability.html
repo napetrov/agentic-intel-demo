@@ -93,20 +93,24 @@
       .sc-rail .sc-tab-sub { display: none; }
       /* Builder lives below the scenario picker inside the rail.
          Compact variant of the side-by-side rack/controls layout that
-         fits the narrower rail width. */
+         fits the narrower rail width — controls stack above the rack
+         so the +/- buttons are reachable without scrolling past 42 U. */
       .sc-rail-builder {
         padding-top: 16px;
         border-top: 1px solid var(--line);
       }
       .sc-rail-builder .sc-builder-grid {
-        grid-template-columns: 80px 1fr;
+        display: flex;
+        flex-direction: column;
         gap: 10px;
       }
       .sc-rail-builder .sc-builder-rack {
-        height: 360px;
+        /* Tall enough that all 42 U render at ≥10 px each — the previous
+           360 px squeezed slots to ~7 px and the rack looked empty. */
+        height: 520px;
         padding: 3px;
       }
-      .sc-rail-builder .sc-rack-u { font-size: 8px; }
+      .sc-rail-builder .sc-rack-u { font-size: 9px; }
       .sc-rail-builder .sc-builder-row {
         padding: 8px 10px;
         gap: 6px;
@@ -514,14 +518,11 @@
             <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
           </div>
           <div class="sc-overview-section sc-rail-builder" aria-labelledby="sc-builder-title">
-            <div>
-              <div class="section-title" id="sc-builder-title">Rack composition</div>
-              <div class="section-subtitle">42U rack visualization. Selecting a preset above resets the composition; the +/&minus; controls switch to a custom rack.</div>
-            </div>
+            <div class="section-title" id="sc-builder-title">Rack composition</div>
             <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
             <div class="sc-builder-grid">
-              <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
               <div class="sc-builder-controls" id="sc-builder-controls"></div>
+              <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
             </div>
           </div>
         </aside>

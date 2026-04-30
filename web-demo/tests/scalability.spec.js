@@ -132,11 +132,11 @@ test('selecting the mixed-rack preset reshapes the rack diagram and tiles', asyn
   await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(16);
   await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(16);
 
-  // Summary reports the composition + 32 of 38 usable U occupied + Preset badge.
+  // Compact rail summary: occupancy fraction + Preset badge. (Per-type
+  // counts live on the +/- control rows below — no need to duplicate.)
   const summary = page.locator('#sc-builder-summary');
-  await expect(summary).toContainText(/16× CWF/);
-  await expect(summary).toContainText(/16× GNR/);
-  await expect(summary).toContainText(/32 of 38 usable U occupied/);
+  await expect(summary).toContainText(/32 \/ 38 U/);
+  await expect(summary).toContainText(/occupied/i);
   await expect(summary).toContainText(/Preset/i);
 
   // +/- controls reflect the preset's counts.
