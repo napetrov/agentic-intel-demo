@@ -917,14 +917,26 @@
 
   function renderBuilderSummary(summaryEl, metrics, cfg, mode) {
     const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
-    const parts = metrics.perType.map(
-      (t) => `<strong>${t.count}× ${t.nodeType.short_label || t.nodeType.label}</strong>`
-    );
-    const badgeCls = mode === "custom" ? "sc-mode-custom" : "";
     const badgeText = mode === "custom" ? "Custom" : "Preset";
-    summaryEl.innerHTML =
-      `Current rack: ${parts.join(" + ")} · ${metrics.totalNodes} of ${usable} usable U occupied.` +
-      ` <span class="sc-builder-summary-mode ${badgeCls}">${badgeText}</span>`;
+    const badgeCls = "sc-builder-summary-mode" + (mode === "custom" ? " sc-mode-custom" : "");
+    // Build DOM nodes rather than concatenating HTML — node_type labels
+    // come from JSON and could in principle carry markup characters.
+    summaryEl.replaceChildren();
+    summaryEl.appendChild(document.createTextNode("Current rack: "));
+    metrics.perType.forEach((t, i) => {
+      if (i > 0) summaryEl.appendChild(document.createTextNode(" + "));
+      summaryEl.appendChild(
+        el("strong", {
+          text: `${t.count}× ${t.nodeType.short_label || t.nodeType.label}`,
+        })
+      );
+    });
+    summaryEl.appendChild(
+      document.createTextNode(
+        ` · ${metrics.totalNodes} of ${usable} usable U occupied. `
+      )
+    );
+    summaryEl.appendChild(el("span", { class: badgeCls, text: badgeText }));
   }
 
   /**
@@ -944,6 +956,10 @@
       let typeId = null;
       if (m.includes("cwf")) typeId = "cwf";
       else if (m.includes("gnr")) typeId = "gnr";
+      // Drop the heuristic if the builder config doesn't actually
+      // declare that id, so the label-based fallback below still gets
+      // a chance to match.
+      if (typeId && counts[typeId] === undefined) typeId = null;
       // Fall back to label-based matching for builder configs that
       // diverge from the CWF/GNR naming convention used in the JSON.
       if (!typeId) {
