@@ -57,7 +57,7 @@
          content so the selector and details stay in the same viewport. */
       .sc-overview {
         display: grid;
-        grid-template-columns: 220px minmax(0, 1fr);
+        grid-template-columns: 280px minmax(0, 1fr);
         gap: 24px;
         padding: 22px;
         margin-bottom: 22px;
@@ -66,6 +66,9 @@
         position: sticky;
         top: 16px;
         align-self: start;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
       }
       .sc-rail .section-title { margin-bottom: 4px; }
       .sc-rail-help {
@@ -88,6 +91,38 @@
       /* Tab sub-story is repeated in the instance card to the right —
          hide it in the rail so the picker stays a single-glance list. */
       .sc-rail .sc-tab-sub { display: none; }
+      /* Builder lives below the scenario picker inside the rail.
+         Compact variant of the side-by-side rack/controls layout that
+         fits the narrower rail width. */
+      .sc-rail-builder {
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      .sc-rail-builder .sc-builder-grid {
+        grid-template-columns: 80px 1fr;
+        gap: 10px;
+      }
+      .sc-rail-builder .sc-builder-rack {
+        height: 360px;
+        padding: 3px;
+      }
+      .sc-rail-builder .sc-rack-u { font-size: 8px; }
+      .sc-rail-builder .sc-builder-row {
+        padding: 8px 10px;
+        gap: 6px;
+      }
+      .sc-rail-builder .sc-builder-row-label { font-size: 12px; }
+      .sc-rail-builder .sc-builder-row-sub { font-size: 11px; }
+      .sc-rail-builder .sc-builder-btn {
+        width: 26px;
+        height: 26px;
+        font-size: 14px;
+      }
+      .sc-rail-builder .sc-builder-count {
+        min-width: 26px;
+        font-size: 14px;
+      }
+      .sc-rail-builder .sc-builder-summary { font-size: 11px; }
       .sc-overview-main {
         display: flex;
         flex-direction: column;
@@ -436,10 +471,12 @@
       .sc-chart.sc-chart-disabled { opacity: 0.55; }
 
       @media (max-width: 720px) {
-        .sc-builder-grid {
+        .sc-builder-grid,
+        .sc-rail-builder .sc-builder-grid {
           grid-template-columns: 1fr;
         }
-        .sc-builder-rack { height: 320px; }
+        .sc-builder-rack,
+        .sc-rail-builder .sc-builder-rack { height: 320px; }
       }
 
       @media (max-width: 900px) {
@@ -470,28 +507,27 @@
       </section>
 
       <section class="panel sc-overview" aria-label="Rack composer and scenarios">
-        <aside class="sc-rail" aria-label="Scenario picker">
-          <div class="section-title">Rack &amp; demo presets</div>
-          <p class="sc-rail-help">Prebuilt benchmark presets. Pick one and the rack diagram, headline numbers, and latency curve all update together. Use the +/&minus; controls to fine-tune into a custom rack.</p>
-          <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
-        </aside>
-        <div class="sc-overview-main">
-          <div class="sc-instance" id="sc-instance" aria-live="polite">
-            <!-- populated by scalability.js -->
+        <aside class="sc-rail" aria-label="Scenario picker and rack composer">
+          <div>
+            <div class="section-title">Rack &amp; demo presets</div>
+            <p class="sc-rail-help">Prebuilt benchmark presets. Pick one and the rack diagram, headline numbers, and latency curve all update together. Use the +/&minus; controls to fine-tune into a custom rack.</p>
+            <div class="sc-tabs" id="sc-tabs" role="tablist" aria-orientation="vertical"></div>
           </div>
-
-          <div class="sc-overview-divider"></div>
-
-          <div class="sc-overview-section" aria-labelledby="sc-builder-title">
+          <div class="sc-overview-section sc-rail-builder" aria-labelledby="sc-builder-title">
             <div>
               <div class="section-title" id="sc-builder-title">Rack composition</div>
-              <div class="section-subtitle">42U rack visualization. Selecting a preset above resets the composition to that benchmark; the +/&minus; controls switch the view to a custom rack.</div>
+              <div class="section-subtitle">42U rack visualization. Selecting a preset above resets the composition; the +/&minus; controls switch to a custom rack.</div>
             </div>
             <div class="sc-builder-summary" id="sc-builder-summary" aria-live="polite"></div>
             <div class="sc-builder-grid">
               <div class="sc-builder-rack" id="sc-builder-rack" role="img" aria-label="Rack composition diagram"></div>
               <div class="sc-builder-controls" id="sc-builder-controls"></div>
             </div>
+          </div>
+        </aside>
+        <div class="sc-overview-main">
+          <div class="sc-instance" id="sc-instance" aria-live="polite">
+            <!-- populated by scalability.js -->
           </div>
 
           <div class="sc-overview-divider"></div>
