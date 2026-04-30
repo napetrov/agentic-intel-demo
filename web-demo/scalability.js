@@ -919,23 +919,13 @@
     const usable = cfg.rack_units_total - (cfg.rack_units_fixture || 0);
     const badgeText = mode === "custom" ? "Custom" : "Preset";
     const badgeCls = "sc-builder-summary-mode" + (mode === "custom" ? " sc-mode-custom" : "");
-    // Build DOM nodes rather than concatenating HTML — node_type labels
-    // come from JSON and could in principle carry markup characters.
+    // Compact rail summary: per-type counts already live in the +/-
+    // control rows below, so the line just states occupancy + mode.
     summaryEl.replaceChildren();
-    summaryEl.appendChild(document.createTextNode("Current rack: "));
-    metrics.perType.forEach((t, i) => {
-      if (i > 0) summaryEl.appendChild(document.createTextNode(" + "));
-      summaryEl.appendChild(
-        el("strong", {
-          text: `${t.count}× ${t.nodeType.short_label || t.nodeType.label}`,
-        })
-      );
-    });
     summaryEl.appendChild(
-      document.createTextNode(
-        ` · ${metrics.totalNodes} of ${usable} usable U occupied. `
-      )
+      el("strong", { text: `${metrics.totalNodes} / ${usable} U` })
     );
+    summaryEl.appendChild(document.createTextNode(" occupied · "));
     summaryEl.appendChild(el("span", { class: badgeCls, text: badgeText }));
   }
 
