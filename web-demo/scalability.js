@@ -1186,11 +1186,24 @@
         // Tweaking the +/- controls drops out of preset mode — the
         // composition no longer matches a published benchmark.
         state.presetId = null;
-        renderAll(data, lookups, builderCfg, scenariosById, state);
+        try {
+          renderAll(data, lookups, builderCfg, scenariosById, state);
+        } catch (err) {
+          showError(`Render failed after control change: ${err && err.message}`);
+          throw err;
+        }
       });
     }
 
-    renderAll(data, lookups, builderCfg, scenariosById, state);
+    // Top-level guard so anything thrown during the initial render
+    // surfaces in the visible #sc-error banner instead of leaving
+    // the rack composition section silently empty.
+    try {
+      renderAll(data, lookups, builderCfg, scenariosById, state);
+    } catch (err) {
+      showError(`Initial render failed: ${err && err.message}`);
+      throw err;
+    }
   }
 
   if (document.readyState === "loading") {
