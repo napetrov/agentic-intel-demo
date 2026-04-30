@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenClaw Agentic Intel Demo</title>
-    <link rel="stylesheet" href="./styles.css?v=20260427g" />
+    <link rel="stylesheet" href="./styles.css?v=20260430a" />
   </head>
   <body>
     <div class="shell">
@@ -54,15 +54,11 @@
               </li>
             </ul>
           </div>
-          <div class="hero-actions">
-            <button class="primary" id="run-demo">Run demo</button>
-            <button class="ghost" data-action="reset">Reset demo</button>
-            <span class="hero-deeplinks">
-              Deep dives:
-              <a href="./service-views.html">Behind the scenes</a>
-              <span aria-hidden="true">&middot;</span>
-              <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
-            </span>
+          <div class="hero-deeplinks">
+            Deep dives:
+            <a href="./service-views.html">Behind the scenes</a>
+            <span aria-hidden="true">&middot;</span>
+            <a href="./scalability.html" title="One node to a full 32-node rack &mdash; density, throughput, and daily task / token volume at both per-node and rack scale.">Scalability story</a>
           </div>
         </section>
 
@@ -102,6 +98,12 @@
           </div>
           <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
         </section>
+
+        <div class="scenario-actions" role="group" aria-label="Demo controls">
+          <button class="primary" id="run-demo">Run demo</button>
+          <button class="ghost" data-action="reset">Reset demo</button>
+          <span class="scenario-actions-hint">Pick a scenario above, then run.</span>
+        </div>
 
         <details class="extensions-tray">
           <summary>
@@ -394,7 +396,7 @@
             <button type="submit" id="agent-command-submit" class="primary">Run command</button>
           </form>
           <div id="agent-command-status" class="agent-command-status" role="status" aria-live="polite"></div>
-          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite">Run a command above — the selected tool and result appear here.</pre>
+          <pre id="agent-command-log" class="command-log agent-command-log" aria-live="polite" tabindex="0">Run a command above — the selected tool and result appear here.</pre>
         </section>
 
         <section class="workspace">
@@ -406,7 +408,7 @@
               </div>
             </div>
             <div class="panel-note">When /api/health and /api/ready are healthy, "Run demo" submits the selected allow-listed demo scenario via System A; the System B offload-worker runs that scenario script and the returned transcript renders here. The OpenClaw probe powers the separate Direct tool call panel above.</div>
-            <pre id="command-log" class="command-log">Waiting for scenario selection.</pre>
+            <pre id="command-log" class="command-log" tabindex="0">Waiting for scenario selection.</pre>
           </div>
 
           <div class="stack-right">
@@ -445,7 +447,7 @@
                   <div class="section-subtitle">Final artifact summary (verdict, exit, elapsed)</div>
                 </div>
               </div>
-              <div id="result" class="result empty-state" role="status" aria-live="polite">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
+              <div id="result" class="result empty-state" role="status" aria-live="polite" tabindex="0">Pick a scenario above and press <strong>Run demo</strong>. After the run this panel shows the verdict, exit code, and elapsed time, plus (for cross-system runs) a live MinIO console link to the produced artifact.</div>
               <div class="result-tiles" id="result-tiles" hidden>
                 <a class="result-tile result-tile-artifact" id="result-tile-artifact" hidden href="#" target="_blank" rel="noopener">
                   <div class="result-tile-label">Artifact</div>
@@ -476,7 +478,7 @@
         </section>
       </main>
     </div>
-    <script src="./lib/pure.js?v=20260427g"></script>
-    <script src="./app.js?v=20260427g"></script>
+    <script src="./lib/pure.js?v=20260430a"></script>
+    <script src="./app.js?v=20260430a"></script>
   </body>
 </html>
