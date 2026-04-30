@@ -419,6 +419,7 @@ const originalRunLabel = runDemoBtn.textContent;
 const profileToVcpu = window.demoLib.profileToVcpu;
 const escapeHtml = window.demoLib.escapeHtml;
 const truncateValue = window.demoLib.truncateValue;
+const truncateOutput = window.demoLib.truncateOutput;
 const formatAge = window.demoLib.formatAge;
 const buildScenarioToolActivity = window.demoLib.buildScenarioToolActivity;
 
@@ -1414,8 +1415,9 @@ function renderLiveArtifact({ scenarioKey, jobId, chosenTool, exitCode, elapsedM
   if (exitCode !== null) lines.push(`exit      ${exitCode}`);
   lines.push(`elapsed   ${elapsed}${agentElapsedMs !== null ? ` (gateway ${agentElapsedMs} ms)` : ''}`);
   if (resultRef) lines.push(`stored    ${resultRef}`);
-  if (output) {
-    lines.push('', 'Output', output);
+  const trimmedOutput = truncateOutput(output, 12);
+  if (trimmedOutput) {
+    lines.push('', 'Output (tail)', trimmedOutput);
   }
   lines.push('', `Final: ${verdict}`);
   return lines.join('\n');
