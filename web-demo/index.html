@@ -33,26 +33,7 @@
           <div class="hero-text">
             <div class="eyebrow">OpenClaw-powered demo portal</div>
             <h2 class="hero-thesis">Real agents on Intel CPUs &mdash; dense, model-routed, offloadable, no GPU.</h2>
-            <ul class="hero-bullets">
-              <li>
-                <a href="#architecture">
-                  <span class="bullet-num">1</span>
-                  <span class="bullet-text"><strong>Operator-managed lifecycle.</strong> System A owns control + state, System B is execution-only.</span>
-                </a>
-              </li>
-              <li>
-                <a href="#result-panel">
-                  <span class="bullet-num">2</span>
-                  <span class="bullet-text"><strong>Real artifacts, real offload.</strong> A &rarr; B runs pandas / sklearn and lands artifacts in MinIO.</span>
-                </a>
-              </li>
-              <li>
-                <a href="#density">
-                  <span class="bullet-num">3</span>
-                  <span class="bullet-text"><strong>Density at scale.</strong> Pack one CWF node with hundreds of agents; same curve scales to a 32-node rack.</span>
-                </a>
-              </li>
-            </ul>
+            <p class="hero-lede">Pick one of the three scenarios below to see the platform's three core promises end-to-end &mdash; operator-managed lifecycle, real cross-system offload, and density at scale.</p>
           </div>
           <div class="hero-deeplinks">
             Deep dives:
@@ -62,77 +43,87 @@
           </div>
         </section>
 
-        <section class="cards-section" aria-label="Demo scenarios">
-          <button class="cards-nav cards-nav-prev" type="button" aria-label="Show previous scenarios" data-cards-scroll="prev">‹</button>
-          <div class="cards" id="scenario-cards">
-            <button class="scenario-card" data-scenario="terminal-agent">
-              <span class="tag">1 &middot; Local task</span>
-              <span class="scenario-title">Terminal agent on System A</span>
-              <span class="scenario-desc">A real shell agent runs on a System A pod. ~25s, ~1 vCPU, real artifact.</span>
-              <span class="scenario-stats">
-                <span><strong>~25s</strong> wall</span>
-                <span><strong>1</strong> vCPU</span>
-                <span>System A</span>
-              </span>
-            </button>
-            <button class="scenario-card" data-scenario="market-research">
-              <span class="tag">2 &middot; Cross-system offload</span>
-              <span class="scenario-title">Market research, A&rarr;B</span>
-              <span class="scenario-desc">System A frames the question, System B runs pandas. Watch the cross-system arrow light up.</span>
-              <span class="scenario-stats">
-                <span><strong>~40s</strong> wall</span>
-                <span><strong>4+4</strong> vCPU</span>
-                <span>A &rarr; B</span>
-              </span>
-            </button>
-            <button class="scenario-card scenario-card-density" data-action="density" type="button">
-              <span class="tag">3 &middot; Density</span>
-              <span class="scenario-title">Pack one CWF node</span>
-              <span class="scenario-desc">Spawn 20 small agents on a single System A node. Watch capacity fill, p95 hold.</span>
-              <span class="scenario-stats">
-                <span><strong>20</strong> agents</span>
-                <span><strong>~8s</strong> each</span>
-                <span>System A</span>
-              </span>
-            </button>
+        <section class="scenario-picker" aria-label="Demo scenarios">
+          <div class="scenario-picker-head">
+            <div class="section-title">Choose a demo</div>
+            <div class="section-subtitle">Three flagship scenarios, each carrying one platform promise. Heavier and external-source variants live in <em>More scenarios</em> below &mdash; same selection model.</div>
           </div>
-          <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
+
+          <div class="cards-section">
+            <button class="cards-nav cards-nav-prev" type="button" aria-label="Show previous scenarios" data-cards-scroll="prev">‹</button>
+            <div class="cards" id="scenario-cards">
+              <button class="scenario-card" data-scenario="terminal-agent">
+                <span class="tag">1 &middot; Local task</span>
+                <span class="scenario-title">Terminal agent on System A</span>
+                <span class="scenario-promise"><strong>Operator-managed lifecycle.</strong> System A owns control + state, System B is execution-only.</span>
+                <span class="scenario-desc">A real shell agent runs on a System A pod and writes a real artifact.</span>
+                <span class="scenario-stats">
+                  <span><strong>~25s</strong> wall</span>
+                  <span><strong>1</strong> vCPU</span>
+                  <span>System A</span>
+                </span>
+              </button>
+              <button class="scenario-card" data-scenario="market-research">
+                <span class="tag">2 &middot; Cross-system offload</span>
+                <span class="scenario-title">Market research, A&rarr;B</span>
+                <span class="scenario-promise"><strong>Real artifacts, real offload.</strong> A &rarr; B runs pandas / sklearn and lands artifacts in MinIO.</span>
+                <span class="scenario-desc">System A frames the question, System B runs pandas &mdash; watch the cross-system arrow light up.</span>
+                <span class="scenario-stats">
+                  <span><strong>~40s</strong> wall</span>
+                  <span><strong>4+4</strong> vCPU</span>
+                  <span>A &rarr; B</span>
+                </span>
+              </button>
+              <button class="scenario-card scenario-card-density" data-action="density" type="button">
+                <span class="tag">3 &middot; Density</span>
+                <span class="scenario-title">Pack one CWF node</span>
+                <span class="scenario-promise"><strong>Density at scale.</strong> Pack one CWF node with hundreds of agents; same curve scales to a 32-node rack.</span>
+                <span class="scenario-desc">Spawn 20 small agents on a single System A node &mdash; capacity fills, p95 holds.</span>
+                <span class="scenario-stats">
+                  <span><strong>20</strong> agents</span>
+                  <span><strong>~8s</strong> each</span>
+                  <span>System A</span>
+                </span>
+              </button>
+            </div>
+            <button class="cards-nav cards-nav-next" type="button" aria-label="Show more scenarios" data-cards-scroll="next">›</button>
+          </div>
+
+          <details class="extensions-tray">
+            <summary>
+              <span class="ext-summary-title">More scenarios</span>
+              <span class="ext-summary-hint">Heavier and external-source variants &mdash; same machinery, different shape.</span>
+            </summary>
+            <div class="cards extensions-cards">
+              <button class="scenario-card scenario-card-ext" data-scenario="large-build-test">
+                <span class="tag tag-ext">Heavier profile</span>
+                <span class="scenario-title">Large build/test</span>
+                <span class="scenario-desc">compileall + unittest + sklearn train on a 16 vCPU System A pod. Same contract as Local task, larger profile.</span>
+                <span class="scenario-stats">
+                  <span><strong>~60s</strong> wall</span>
+                  <span><strong>16</strong> vCPU</span>
+                  <span>System A</span>
+                </span>
+              </button>
+              <button class="scenario-card scenario-card-ext" data-scenario="taskflow-pull">
+                <span class="tag tag-ext">External source</span>
+                <span class="scenario-title">TaskFlow pull</span>
+                <span class="scenario-desc">Pull one task from the TaskFlow API (or shipped fixture), select by business rules, run bounded on System A.</span>
+                <span class="scenario-stats">
+                  <span><strong>~30s</strong> wall</span>
+                  <span><strong>1</strong> vCPU</span>
+                  <span>System A</span>
+                </span>
+              </button>
+            </div>
+          </details>
+
+          <div class="scenario-actions" role="group" aria-label="Demo controls">
+            <button class="primary" id="run-demo">Run demo</button>
+            <button class="ghost" data-action="reset">Reset demo</button>
+            <span class="scenario-actions-hint">Pick a scenario above, then run.</span>
+          </div>
         </section>
-
-        <div class="scenario-actions" role="group" aria-label="Demo controls">
-          <button class="primary" id="run-demo">Run demo</button>
-          <button class="ghost" data-action="reset">Reset demo</button>
-          <span class="scenario-actions-hint">Pick a scenario above, then run.</span>
-        </div>
-
-        <details class="extensions-tray">
-          <summary>
-            <span class="ext-summary-title">More scenarios</span>
-            <span class="ext-summary-hint">Heavier and external-source variants &mdash; same machinery, different shape.</span>
-          </summary>
-          <div class="cards extensions-cards">
-            <button class="scenario-card scenario-card-ext" data-scenario="large-build-test">
-              <span class="tag tag-ext">Heavier profile</span>
-              <span class="scenario-title">Large build/test</span>
-              <span class="scenario-desc">compileall + unittest + sklearn train on a 16 vCPU System A pod. Same contract as Local task, larger profile.</span>
-              <span class="scenario-stats">
-                <span><strong>~60s</strong> wall</span>
-                <span><strong>16</strong> vCPU</span>
-                <span>System A</span>
-              </span>
-            </button>
-            <button class="scenario-card scenario-card-ext" data-scenario="taskflow-pull">
-              <span class="tag tag-ext">External source</span>
-              <span class="scenario-title">TaskFlow pull</span>
-              <span class="scenario-desc">Pull one task from the TaskFlow API (or shipped fixture), select by business rules, run bounded on System A.</span>
-              <span class="scenario-stats">
-                <span><strong>~30s</strong> wall</span>
-                <span><strong>1</strong> vCPU</span>
-                <span>System A</span>
-              </span>
-            </button>
-          </div>
-        </details>
 
         <section class="architecture panel" id="architecture">
           <div class="panel-head panel-head-wrap">
