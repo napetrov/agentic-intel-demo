@@ -1012,6 +1012,19 @@
     box.textContent = msg;
   }
 
+  // Normalize a caught throwable into something readable. `throw "boom"`,
+  // `throw null`, and `throw new Error('x')` all need to render usefully
+  // in the #sc-error banner.
+  function errorText(err) {
+    if (err instanceof Error && err.message) return err.message;
+    if (err == null) return "Unknown error";
+    try {
+      return String(err);
+    } catch (_) {
+      return "Unknown error";
+    }
+  }
+
   /**
    * Single state-driven render. The page exposes one combined block:
    * a scenario picker on the left, an instance card + rack diagram +
@@ -1186,11 +1199,24 @@
         // Tweaking the +/- controls drops out of preset mode — the
         // composition no longer matches a published benchmark.
         state.presetId = null;
-        renderAll(data, lookups, builderCfg, scenariosById, state);
+        try {
+          renderAll(data, lookups, builderCfg, scenariosById, state);
+        } catch (err) {
+          showError(`Render failed after control change: ${errorText(err)}`);
+          throw err;
+        }
       });
     }
 
-    renderAll(data, lookups, builderCfg, scenariosById, state);
+    // Top-level guard so anything thrown during the initial render
+    // surfaces in the visible #sc-error banner instead of leaving
+    // the rack composition section silently empty.
+    try {
+      renderAll(data, lookups, builderCfg, scenariosById, state);
+    } catch (err) {
+      showError(`Initial render failed: ${errorText(err)}`);
+      throw err;
+    }
   }
 
   if (document.readyState === "loading") {
