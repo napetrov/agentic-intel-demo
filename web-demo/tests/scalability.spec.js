@@ -26,11 +26,11 @@ test('scalability page renders the default scenario tiles + chart', async ({ pag
   await expect(tiles.first().locator('.sc-tile-value')).toContainText(/\d/);
 
   // Specific expected numbers from JSON for the first CWF scenario:
-  //  density = floor(min(576/1, 1536/2)) = 576 agents
-  //  sweet spot at concurrency=460, throughput=3450/min
-  //  daily volume = 3450 * 60 * 24 = 4,968,000 tasks
-  await expect(page.locator('#sc-tiles')).toContainText(/576 agents/);
-  await expect(page.locator('#sc-tiles')).toContainText(/4,968,000 tasks/);
+  //  density = floor(min(1152/1, 12288/2)) = 1152 agents
+  //  sweet spot at concurrency=920, throughput=6900/min
+  //  daily volume = 6900 * 60 * 24 = 9,936,000 tasks
+  await expect(page.locator('#sc-tiles')).toContainText(/1,152 agents/);
+  await expect(page.locator('#sc-tiles')).toContainText(/9,936,000 tasks/);
 
   // Money / cost framing is intentionally absent from the page.
   const pageText = (await page.locator('main').textContent()) || '';
@@ -58,11 +58,11 @@ test('switching to GNR scenario re-renders tiles + chart', async ({ page }) => {
   await expect(gnrTab).toHaveAttribute('aria-selected', 'true');
 
   await expect(page.locator('#sc-instance')).toContainText(/Intel GNR/);
-  // GNR scenario: density = floor(min(256/4, 1024/8)) = 64 agents
-  // sweet spot at concurrency=50, throughput=66.7/min
-  // daily volume = 66.7 * 60 * 24 = 96,048 tasks
-  await expect(page.locator('#sc-tiles')).toContainText(/64 agents/);
-  await expect(page.locator('#sc-tiles')).toContainText(/96,048 tasks/);
+  // GNR scenario: density = floor(min(1024/4, 12288/8)) = 256 agents
+  // sweet spot at concurrency=200, throughput=266.8/min
+  // daily volume = 266.8 * 60 * 24 = 384,192 tasks
+  await expect(page.locator('#sc-tiles')).toContainText(/256 agents/);
+  await expect(page.locator('#sc-tiles')).toContainText(/384,192 tasks/);
 });
 
 test('rack-scale CWF scenario reports 32-node rack capacity and rack-scale volume', async ({ page }) => {
@@ -80,11 +80,11 @@ test('rack-scale CWF scenario reports 32-node rack capacity and rack-scale volum
 
   // Rack-capacity tile highlights the overall rack size.
   await expect(page.locator('#sc-tiles')).toContainText(/32 nodes/);
-  await expect(page.locator('#sc-tiles')).toContainText(/18,432 vCPU/);
-  // Density at the rack: floor(min(18432/1, 49152/2)) = 18,432 agents.
-  await expect(page.locator('#sc-tiles')).toContainText(/18,432 agents/);
-  // Sweet-spot throughput = 110,400/min → 158,976,000 tasks/day.
-  await expect(page.locator('#sc-tiles')).toContainText(/158,976,000 tasks/);
+  await expect(page.locator('#sc-tiles')).toContainText(/36,864 vCPU/);
+  // Density at the rack: floor(min(36864/1, 393216/2)) = 36,864 agents.
+  await expect(page.locator('#sc-tiles')).toContainText(/36,864 agents/);
+  // Sweet-spot throughput = 220,800/min → 317,952,000 tasks/day.
+  await expect(page.locator('#sc-tiles')).toContainText(/317,952,000 tasks/);
 });
 
 test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ page }) => {
@@ -96,9 +96,9 @@ test('mixed rack scenario shows the CWF + GNR composition breakdown', async ({ p
   // The rack-capacity tile should call out the mixed composition.
   await expect(page.locator('#sc-tiles')).toContainText(/16× Intel Xeon CWF/);
   await expect(page.locator('#sc-tiles')).toContainText(/16× Intel GNR/);
-  // Density tile reflects only the 16-node CWF agent half:
-  //   floor(min(9216/1, 24576/2)) = 9,216 agents.
-  await expect(page.locator('#sc-tiles')).toContainText(/9,216 agents/);
+  // Density tile reflects only the 16-tray CWF agent half:
+  //   floor(min(18432/1, 196608/2)) = 18,432 agents.
+  await expect(page.locator('#sc-tiles')).toContainText(/18,432 agents/);
 });
 
 test('rack diagram and summary live inside the same block as the preset picker', async ({ page }) => {
@@ -158,7 +158,7 @@ test('using the +/- controls switches into custom mode and updates the diagram',
   const cwfInc = page.locator('[data-id="inc-cwf"]');
   await expect(cwfCount).toHaveText('16');
 
-  // Add one CWF node — preset mode falls away, summary flips to Custom.
+  // Add one CWF tray — preset mode falls away, summary flips to Custom.
   await cwfInc.click();
   await expect(cwfCount).toHaveText('17');
   await expect(page.locator('#sc-builder-rack .sc-rack-u-cwf')).toHaveCount(17);
@@ -174,28 +174,47 @@ test('using the +/- controls switches into custom mode and updates the diagram',
   await expect(page.locator('#sc-tiles')).toContainText(/Rack total/i);
   await expect(page.locator('#sc-tiles')).toContainText(/Combined daily volume/i);
 
-  // Chart is replaced with a "pick a preset" note while in custom mode.
-  await expect(page.locator('#sc-chart')).toHaveClass(/sc-chart-disabled/);
-  await expect(page.locator('#sc-chart text')).toContainText(/pick a preset/i);
+  // Custom mode now projects a latency curve per active node type by
+  // scaling the per-tray baseline by tray count. Two active types →
+  // two p50 lines + two p95 lines = 4 paths.
+  await expect(page.locator('#sc-chart')).not.toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-chart path')).toHaveCount(4);
+  await expect(page.locator('#sc-chart-note')).toContainText(/Projected from per-tray baselines/i);
+  // Chart must not regress to the old "pick a preset" placeholder.
+  await expect(page.locator('#sc-chart')).not.toContainText(/pick a preset/i);
 
-  // Remove three GNR nodes; rack viz should drop three orange slots.
+  // Remove three GNR trays; rack viz should drop three orange slots and
+  // the GNR curve should still render (alongside CWF).
   const gnrDec = page.locator('[data-id="dec-gnr"]');
   await gnrDec.click();
   await gnrDec.click();
   await gnrDec.click();
   await expect(page.locator('[data-id="count-gnr"]')).toHaveText('13');
   await expect(page.locator('#sc-builder-rack .sc-rack-u-gnr')).toHaveCount(13);
+  await expect(page.locator('#sc-chart path')).toHaveCount(4);
 
-  // Going below zero is blocked: dec is disabled at 0.
+  // Going below zero is blocked: dec is disabled at 0. With GNR=0 only
+  // the CWF curve survives (p50 + p95 = 2 paths).
   for (let i = 0; i < 13; i++) await gnrDec.click();
   await expect(page.locator('[data-id="count-gnr"]')).toHaveText('0');
   await expect(gnrDec).toBeDisabled();
+  await expect(page.locator('#sc-chart path')).toHaveCount(2);
+  await expect(page.locator('#sc-chart')).not.toHaveClass(/sc-chart-disabled/);
+
+  // Drop the remaining CWF trays too: the rack is now empty, so the
+  // chart falls back to the placeholder note.
+  const cwfDec = page.locator('[data-id="dec-cwf"]');
+  for (let i = 0; i < 17; i++) await cwfDec.click();
+  await expect(cwfCount).toHaveText('0');
+  await expect(page.locator('#sc-chart')).toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-chart text')).toContainText(/Empty rack/i);
 
   // Picking a preset back resets the diagram and re-enables the chart.
   await page.locator('#sc-tabs .sc-tab[data-id="mixed-rack-blend"]').click();
   await expect(page.locator('[data-id="count-cwf"]')).toHaveText('16');
   await expect(page.locator('[data-id="count-gnr"]')).toHaveText('16');
   await expect(page.locator('#sc-chart')).not.toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-chart path')).toHaveCount(2);  // preset = single curve
   await expect(page.locator('#sc-builder-summary')).toContainText(/Preset/i);
 });
 

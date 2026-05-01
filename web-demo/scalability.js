@@ -462,8 +462,10 @@
   }
 
   // SVG line chart: latency (p50 solid, p95 dashed) vs concurrency.
-  // Markers for sweet spot (green) and knee (yellow).
-  function renderChart(svg, scenario, derived) {
+  // Markers for sweet spot (green) and knee (yellow). Used by both the
+  // preset path (single curve in canonical cyan / orange) and the custom
+  // rack path (one curve per active node type, each in its own hue).
+  function renderChartCurves(svg, opts) {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
     const W = 800,
@@ -475,11 +477,36 @@
     const innerW = W - padL - padR;
     const innerH = H - padT - padB;
 
-    const dps = scenario.scaling.datapoints;
-    if (!dps.length) return;
+    const curves = (opts.curves || []).filter(
+      (c) => c.datapoints && c.datapoints.length
+    );
+    if (!curves.length) {
+      if (opts.empty_message) {
+        const text = svgEl("text", {
+          x: W / 2,
+          y: H / 2,
+          "text-anchor": "middle",
+          fill: "#9db2cf",
+          "font-size": 14,
+          "font-family": "Inter, sans-serif",
+        });
+        text.textContent = opts.empty_message;
+        svg.appendChild(text);
+      }
+      return;
+    }
 
-    const xMax = Math.max(...dps.map((d) => d.concurrency));
-    const yMax = Math.max(...dps.map((d) => d.p95_s)) * 1.1;
+    let xMaxRaw = 0;
+    let yMaxRaw = 0;
+    for (const c of curves) {
+      for (const dp of c.datapoints) {
+        if (dp.concurrency > xMaxRaw) xMaxRaw = dp.concurrency;
+        if (dp.p95_s > yMaxRaw) yMaxRaw = dp.p95_s;
+      }
+    }
+    if (xMaxRaw === 0 || yMaxRaw === 0) return;
+    const xMax = xMaxRaw;
+    const yMax = yMaxRaw * 1.1;
 
     const sx = (x) => padL + (x / xMax) * innerW;
     const sy = (y) => padT + innerH - (y / yMax) * innerH;
@@ -511,9 +538,19 @@
       svg.appendChild(lbl);
     }
 
-    // X ticks at each datapoint (small labels).
-    for (const dp of dps) {
-      const x = sx(dp.concurrency);
+    // X ticks. With a single curve we mark each datapoint (matches the
+    // historical preset chart). With multiple curves the datapoint sets
+    // typically differ, so we fall back to 5 evenly-spaced ticks.
+    const xTickValues =
+      curves.length === 1
+        ? curves[0].datapoints.map((dp) => dp.concurrency)
+        : (() => {
+            const ticks = [];
+            for (let i = 0; i <= 4; i++) ticks.push(Math.round((xMax * i) / 4));
+            return ticks;
+          })();
+    for (const xVal of xTickValues) {
+      const x = sx(xVal);
       svg.appendChild(
         svgEl("line", {
           x1: x,
@@ -532,7 +569,7 @@
         "font-size": 11,
         "font-family": "Inter, sans-serif",
       });
-      lbl.textContent = String(dp.concurrency);
+      lbl.textContent = String(xVal);
       svg.appendChild(lbl);
     }
 
@@ -560,103 +597,142 @@
     yTitle.textContent = "latency";
     svg.appendChild(yTitle);
 
-    // p95 line (dashed orange) — drawn first so p50 sits on top visually.
-    const p95Path = dps
-      .map((d, i) => `${i === 0 ? "M" : "L"}${sx(d.concurrency)},${sy(d.p95_s)}`)
-      .join(" ");
-    svg.appendChild(
-      svgEl("path", {
-        d: p95Path,
-        fill: "none",
-        stroke: "#ff8e5d",
-        "stroke-width": 2,
-        "stroke-dasharray": "6 4",
-      })
-    );
-    // p50 line (solid cyan).
-    const p50Path = dps
-      .map((d, i) => `${i === 0 ? "M" : "L"}${sx(d.concurrency)},${sy(d.p50_s)}`)
-      .join(" ");
-    svg.appendChild(
-      svgEl("path", {
-        d: p50Path,
-        fill: "none",
-        stroke: "#45e2d5",
-        "stroke-width": 2.5,
-      })
-    );
+    // Per-curve rendering: p95 (dashed) drawn first, p50 (solid) on top,
+    // datapoint dots, and a green sweet-spot ring per curve.
+    for (const c of curves) {
+      const p50Color = c.p50_color || c.color || "#45e2d5";
+      const p95Color = c.p95_color || c.color || "#ff8e5d";
+      const dps = c.datapoints;
 
-    // Datapoint dots for both lines.
-    for (const dp of dps) {
+      const p95Path = dps
+        .map(
+          (d, i) => `${i === 0 ? "M" : "L"}${sx(d.concurrency)},${sy(d.p95_s)}`
+        )
+        .join(" ");
       svg.appendChild(
-        svgEl("circle", {
-          cx: sx(dp.concurrency),
-          cy: sy(dp.p50_s),
-          r: 4,
-          fill: "#45e2d5",
-        })
-      );
-      svg.appendChild(
-        svgEl("circle", {
-          cx: sx(dp.concurrency),
-          cy: sy(dp.p95_s),
-          r: 3,
-          fill: "#ff8e5d",
-        })
-      );
-    }
-
-    // Sweet-spot marker: green ring around the p95 dot.
-    if (derived.sweetSpot) {
-      const s = derived.sweetSpot;
-      svg.appendChild(
-        svgEl("circle", {
-          cx: sx(s.concurrency),
-          cy: sy(s.p95_s),
-          r: 10,
+        svgEl("path", {
+          d: p95Path,
           fill: "none",
-          stroke: "#49d987",
+          stroke: p95Color,
           "stroke-width": 2,
+          "stroke-dasharray": "6 4",
         })
       );
-      // Vertical guide line.
-      svg.appendChild(
-        svgEl("line", {
-          x1: sx(s.concurrency),
-          x2: sx(s.concurrency),
-          y1: padT,
-          y2: padT + innerH,
-          stroke: "rgba(73, 217, 135, 0.28)",
-          "stroke-width": 1,
-          "stroke-dasharray": "3 3",
-        })
-      );
-      const lbl = svgEl("text", {
-        x: sx(s.concurrency) + 12,
-        y: sy(s.p95_s) - 12,
-        fill: "#49d987",
-        "font-size": 11,
-        "font-family": "Inter, sans-serif",
-      });
-      lbl.textContent = `sweet spot: ${s.concurrency}`;
-      svg.appendChild(lbl);
-    }
 
-    // Knee marker (yellow ring on p95). Coincides with sweet-spot in
-    // current data; offset visually so the two rings don't overlap.
-    if (derived.knee && derived.knee !== derived.sweetSpot) {
-      const k = derived.knee;
+      const p50Path = dps
+        .map(
+          (d, i) => `${i === 0 ? "M" : "L"}${sx(d.concurrency)},${sy(d.p50_s)}`
+        )
+        .join(" ");
       svg.appendChild(
-        svgEl("circle", {
-          cx: sx(k.concurrency),
-          cy: sy(k.p95_s),
-          r: 8,
+        svgEl("path", {
+          d: p50Path,
           fill: "none",
-          stroke: "#ffc15c",
-          "stroke-width": 2,
+          stroke: p50Color,
+          "stroke-width": 2.5,
         })
       );
+
+      for (const dp of dps) {
+        svg.appendChild(
+          svgEl("circle", {
+            cx: sx(dp.concurrency),
+            cy: sy(dp.p50_s),
+            r: 4,
+            fill: p50Color,
+          })
+        );
+        svg.appendChild(
+          svgEl("circle", {
+            cx: sx(dp.concurrency),
+            cy: sy(dp.p95_s),
+            r: 3,
+            fill: p95Color,
+          })
+        );
+      }
+
+      if (c.sweet) {
+        const s = c.sweet;
+        svg.appendChild(
+          svgEl("circle", {
+            cx: sx(s.concurrency),
+            cy: sy(s.p95_s),
+            r: 10,
+            fill: "none",
+            stroke: "#49d987",
+            "stroke-width": 2,
+          })
+        );
+        svg.appendChild(
+          svgEl("line", {
+            x1: sx(s.concurrency),
+            x2: sx(s.concurrency),
+            y1: padT,
+            y2: padT + innerH,
+            stroke: "rgba(73, 217, 135, 0.28)",
+            "stroke-width": 1,
+            "stroke-dasharray": "3 3",
+          })
+        );
+        const lbl = svgEl("text", {
+          x: sx(s.concurrency) + 12,
+          y: sy(s.p95_s) - 12,
+          fill: "#49d987",
+          "font-size": 11,
+          "font-family": "Inter, sans-serif",
+        });
+        lbl.textContent = c.sweet_label || `sweet spot: ${s.concurrency}`;
+        svg.appendChild(lbl);
+      }
+
+      if (c.knee && c.knee !== c.sweet) {
+        svg.appendChild(
+          svgEl("circle", {
+            cx: sx(c.knee.concurrency),
+            cy: sy(c.knee.p95_s),
+            r: 8,
+            fill: "none",
+            stroke: "#ffc15c",
+            "stroke-width": 2,
+          })
+        );
+      }
+
+      // Multi-curve mode: tag each curve with its label near the tail of
+      // the p50 line so the reader can tell CWF and GNR apart.
+      if (curves.length > 1 && c.label) {
+        const lastDp = dps[dps.length - 1];
+        const tag = svgEl("text", {
+          x: sx(lastDp.concurrency) - 6,
+          y: sy(lastDp.p50_s) - 10,
+          "text-anchor": "end",
+          fill: p50Color,
+          "font-size": 11,
+          "font-weight": 600,
+          "font-family": "Inter, sans-serif",
+        });
+        tag.textContent = c.label;
+        svg.appendChild(tag);
+      }
     }
+  }
+
+  // Preset-mode wrapper: builds a single-curve opts object and reuses
+  // the canonical cyan / orange p50 / p95 colors.
+  function renderChart(svg, scenario, derived) {
+    renderChartCurves(svg, {
+      curves: [
+        {
+          label: scenario.short_label || scenario.label || "",
+          datapoints: scenario.scaling.datapoints,
+          sweet: derived.sweetSpot,
+          knee: derived.knee,
+          p50_color: "#45e2d5",
+          p95_color: "#ff8e5d",
+        },
+      ],
+    });
   }
 
   function renderChartNote(noteEl, scenario, derived) {
@@ -707,6 +783,62 @@
       sweet_concurrency: sweet.concurrency,
       sweet_throughput_per_min: sweet.throughput_per_min,
     };
+  }
+
+  /**
+   * Project a per-node baseline curve to a `count`-node deployment by
+   * scaling concurrency and throughput linearly with node count, holding
+   * p50 / p95 / utilization constant. Same scale-out assumption that
+   * the published preset rack scenarios already bake in: each node runs
+   * its own queueing curve, the front-door router fans across nodes.
+   *
+   * Returns null when the baseline scenario is missing or empty so the
+   * caller can decide whether to suppress the curve.
+   */
+  function projectBaselineCurve(baseScenario, count) {
+    if (!baseScenario || !baseScenario.scaling) return null;
+    const dps = baseScenario.scaling.datapoints || [];
+    if (!dps.length || count <= 0) return null;
+    return dps.map((dp) => ({
+      concurrency: dp.concurrency * count,
+      p50_s: dp.p50_s,
+      p95_s: dp.p95_s,
+      throughput_per_min: dp.throughput_per_min * count,
+      utilization_pct: dp.utilization_pct,
+    }));
+  }
+
+  /**
+   * Build per-node-type latency curves for the current rack composition.
+   * One curve per active node type — different node types serve different
+   * workloads, so combining them into a single weighted curve would
+   * invent a number that doesn't match anything physical.
+   */
+  function buildCustomCurves(state, cfg, scenariosById) {
+    const curves = [];
+    for (const nt of cfg.node_types) {
+      const n = state[nt.id] || 0;
+      if (n <= 0) continue;
+      const base = scenariosById[nt.baseline_scenario_id];
+      const projected = projectBaselineCurve(base, n);
+      if (!projected) continue;
+      const sweet = findSweetSpot(projected);
+      const knee = findKnee(projected);
+      const color = nt.curve_color || "#45e2d5";
+      const trayWord = n === 1 ? "tray" : "trays";
+      curves.push({
+        label: `${nt.short_label || nt.label} · ${n} ${trayWord}`,
+        datapoints: projected,
+        sweet,
+        knee,
+        p50_color: color,
+        p95_color: color,
+        sweet_label: sweet
+          ? `${nt.short_label || nt.label} sweet: ${sweet.concurrency}`
+          : "",
+      });
+    }
+    return curves;
   }
 
   /**
@@ -1105,13 +1237,37 @@
       );
       renderCustomInstanceCard(instanceEl, state.rackCounts, builderCfg, lookups, scenariosById);
       renderBuilderTiles(tilesEl, metrics);
-      chartEl.classList.add("sc-chart-disabled");
-      clearChartWithNote(
-        chartEl,
-        "Custom rack — pick a preset above to see a benchmarked latency curve."
+      const customCurves = buildCustomCurves(
+        state.rackCounts,
+        builderCfg,
+        scenariosById
       );
-      chartNoteEl.textContent =
-        "The latency curve is published per benchmarked preset. Tile values above still recompute from per-node baselines for the current rack composition.";
+      if (customCurves.length === 0) {
+        // Empty rack — nothing to draw, fall back to a placeholder.
+        chartEl.classList.add("sc-chart-disabled");
+        clearChartWithNote(
+          chartEl,
+          "Empty rack — add at least one tray to see a projected curve."
+        );
+        chartNoteEl.textContent =
+          "Add trays from the +/− controls to project a latency curve from the per-tray baselines.";
+      } else {
+        chartEl.classList.remove("sc-chart-disabled");
+        renderChartCurves(chartEl, { curves: customCurves });
+        const summaries = customCurves
+          .filter((c) => c.sweet)
+          .map(
+            (c) =>
+              `${c.label}: sweet ~${c.sweet.concurrency} concurrent at ${fmtFloat1.format(
+                c.sweet.throughput_per_min
+              )}/min`
+          );
+        chartNoteEl.textContent = summaries.length
+          ? `Projected from per-tray baselines — concurrency / throughput scaled linearly with tray count, p50 / p95 held constant. ${summaries.join(
+              " · "
+            )}.`
+          : "Projected from per-tray baselines (concurrency / throughput scaled linearly with tray count).";
+      }
       // Notes panel: list each baseline scenario the custom rack is
       // drawing density / throughput numbers from, so the reader can
       // trace any tile back to a published curve.
