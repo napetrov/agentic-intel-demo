@@ -1243,14 +1243,28 @@
         scenariosById
       );
       if (customCurves.length === 0) {
-        // Empty rack — nothing to draw, fall back to a placeholder.
+        // Two distinct failure modes share this branch:
+        //   1. The rack is empty (no trays selected at all).
+        //   2. Trays are selected but every active node type has a
+        //      missing / invalid baseline scenario, so projection fails.
+        // Surfacing them with the same copy hides config bugs, so the
+        // placeholder text is picked from `metrics.totalNodes`.
         chartEl.classList.add("sc-chart-disabled");
-        clearChartWithNote(
-          chartEl,
-          "Empty rack — add at least one tray to see a projected curve."
-        );
-        chartNoteEl.textContent =
-          "Add trays from the +/− controls to project a latency curve from the per-tray baselines.";
+        if (metrics.totalNodes <= 0) {
+          clearChartWithNote(
+            chartEl,
+            "Empty rack — add at least one tray to see a projected curve."
+          );
+          chartNoteEl.textContent =
+            "Add trays from the +/− controls to project a latency curve from the per-tray baselines.";
+        } else {
+          clearChartWithNote(
+            chartEl,
+            "No baseline curve available for the current composition."
+          );
+          chartNoteEl.textContent =
+            "The selected node types reference baseline scenarios that are missing or have no datapoints — fix the rack_builder.node_types[].baseline_scenario_id wiring in scalability-data.json.";
+        }
       } else {
         chartEl.classList.remove("sc-chart-disabled");
         renderChartCurves(chartEl, { curves: customCurves });

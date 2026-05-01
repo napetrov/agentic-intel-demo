@@ -379,3 +379,57 @@ test('scenario switching still works when rack_builder is absent from JSON', asy
   await expect(page.locator('#sc-instance')).toContainText(/Other Instance/);
   expect(consoleErrors).toEqual([]);
 });
+
+test('custom mode distinguishes empty rack from missing baseline scenarios', async ({ page }) => {
+  // Regression: customCurves.length === 0 used to be treated as "empty
+  // rack" universally, hiding the case where the rack has trays but
+  // the wired baseline_scenario_id points at nothing renderable.
+  await injectMockScenario(page, {
+    schema_version: '3',
+    instances: [{ ...BASE_INSTANCE, vcpu: 16, memory_gb: 32 }],
+    workloads: [{ ...BASE_WORKLOAD, vcpu_per_agent: 1, memory_gb_per_agent: 2 }],
+    // The single scenario is not referenced by any node_type's
+    // baseline_scenario_id, so projection always fails — custom mode
+    // with non-zero trays must say so explicitly.
+    scenarios: [{
+      id: 'unused-scenario', label: 'Unused', story: '',
+      instance_id: 'i', workload_id: 'w',
+      scaling: { model: 'queueing', datapoints: [
+        { concurrency: 1, p50_s: 1, p95_s: 2, throughput_per_min: 6, utilization_pct: 10 },
+      ] },
+      tiles: ['density'],
+    }],
+    rack_builder: {
+      rack_units_total: 42,
+      rack_units_fixture: 4,
+      rack_units_fixture_top: 2,
+      max_total_nodes: 38,
+      node_types: [{
+        id: 'broken',
+        label: 'Broken Node',
+        short_label: 'BAD',
+        subtitle: 'no baseline',
+        vcpu_per_node: 8,
+        memory_gb_per_node: 16,
+        max_count: 8,
+        // Points at a scenario id that does not exist in scenarios[].
+        baseline_scenario_id: 'does-not-exist',
+        swatch_class: 'sc-rack-u-cwf',
+      }],
+    },
+  });
+
+  await page.goto(BASE + '/scalability.html');
+
+  // Empty rack message renders when no trays are added (preset 'unused-
+  // scenario' has no rack_builder mapping, so the diagram lands empty).
+  // We bump the count so the rack is non-empty but baseline is broken.
+  const inc = page.locator('[data-id="inc-broken"]');
+  await inc.click();
+  await expect(page.locator('[data-id="count-broken"]')).toHaveText('1');
+
+  await expect(page.locator('#sc-chart')).toHaveClass(/sc-chart-disabled/);
+  await expect(page.locator('#sc-chart text')).toContainText(/No baseline curve available/i);
+  await expect(page.locator('#sc-chart text')).not.toContainText(/Empty rack/i);
+  await expect(page.locator('#sc-chart-note')).toContainText(/baseline_scenario_id/i);
+});
